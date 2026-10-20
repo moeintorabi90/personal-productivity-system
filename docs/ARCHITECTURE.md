@@ -1,8 +1,8 @@
-# Architecture Proposal
+# Architecture
 
 ## Goals
 
-Support offline daily use on Windows 11 and Android, keep iPhone installability feasible, and preserve trustworthy history. **Version 1** keeps data only on each device and moves it between devices with a merged backup file (DECISIONS D-008 to D-012). Automatic sync between a single owner's devices is a later, optional addition. Keep the implementation understandable and recoverable.
+Support offline daily use on Windows 11 and Android, keep iPhone installability feasible, and preserve trustworthy history. **Version 1** is an installable PWA (D-013) that keeps data only on each device and moves it between devices with a merged backup file (DECISIONS D-008 to D-017). Automatic sync between a single owner's devices is a later, optional addition. Keep the implementation understandable and recoverable.
 
 ## Version 1 shape
 
@@ -22,17 +22,56 @@ flowchart LR
   File -->|import + merge| WebB
   WebB -->|export| File2[[Backup file]]
   File2 -->|import + merge| WebA
-  Host[App delivery: static HTTPS host or native package<br/>serves app code, receives no user data<br/>open question 8] -.->|install / update app| WebA
+  Host[Static HTTPS host for the PWA files<br/>serves app code, receives no user data<br/>provider: open question 8] -.->|install / update app| WebA
   Host -.-> WebB
 ```
 
 User data never leaves a device except in a backup file the user exports.
 
-**What still needs internet in v1.** Daily use after installation works offline. Installing the app the first time, and receiving app updates, may need internet: as a PWA, the app files are downloaded from a web address (HTTPS is required for the service worker and for installation on Android and iPhone), and updates are fetched from the same address when the device is online. A native package (option b in DECISIONS open question 8) could instead be installed from a file. How the app is delivered is an open owner decision.
+**What still needs internet in v1.** Daily use after installation works offline. Installing the app the first time and receiving app updates need internet: v1 is an installable PWA (D-013), so the app files are downloaded from a web address (HTTPS is required for the service worker and for installation on Android and iPhone), and updates are fetched from the same address when the device is online. Native wrappers are not part of v1. Which service hosts the files is still open (DECISIONS open question 8).
 
 **Local data is tied to the app's origin.** Browsers store IndexedDB and the service-worker cache per **origin**: the combination of scheme, host, and port (e.g. `https://app.example.org:443`). The path does not matter, so `…/index.html` and `…/settings` share data, but `http://` vs `https://`, a different host or subdomain, or a different port is a separate origin with separate, empty storage. Changing the origin later makes existing local data invisible to the new one; a backup export/import is the migration path. The origin should therefore be chosen once and kept stable.
 
-**Trust in whoever serves the app code.** A static host never receives user data from the app, but it delivers the code that runs with full access to that origin's local data. If code served from that origin is malicious or tampered with (a compromised hosting account, a modified build, a hijacked domain), it can technically read, change, or send the local data. Mitigations to weigh with the delivery decision: HTTPS only; strong protection (2FA) of the hosting and domain accounts; reproducible builds from this repository; no third-party scripts and a strict Content-Security-Policy; showing the app version and applying updates visibly; for a native package, code signing. No hosting provider has been chosen, and availability of any provider from Iran has not been evaluated; both remain part of open question 8.
+**Trust in whoever serves the app code.** A static host never receives user data from the app, but it delivers the code that runs with full access to that origin's local data. If code served from that origin is malicious or tampered with (a compromised hosting account, a modified build, a hijacked domain), it can technically read, change, or send the local data. Mitigations to weigh with the hosting decision: HTTPS only; strong protection (2FA) of the hosting and domain accounts; reproducible builds from this repository; no third-party scripts and a strict Content-Security-Policy; showing the app version and applying updates visibly. No hosting provider has been chosen, and availability of any provider from Iran has not been evaluated; both remain part of open question 8.
+
+### Platform installation, updates, and storage (v1, D-013)
+
+The statements below describe documented or commonly observed browser behavior. Items marked **(verify)** have not been checked on a real device for this app yet; the device checks in ROADMAP Stage 1/1B confirm or correct them. Browser behavior changes between versions, so record the device, OS, and browser version with every check.
+
+**All platforms**
+
+- **Install** needs internet and the app's HTTPS origin; nothing can be installed before a host is chosen (open question 8). During development, `localhost` is the only exception.
+- **Updates** need internet. When the installed app is opened online, the browser checks for a new service worker; the v1 service worker installs the new version in the background and activates it immediately, but the open window keeps running the old code until the app is reloaded or relaunched. Offline, the last installed version keeps working indefinitely. Updates never touch local data; data-format changes run as tested local migrations.
+- **Storage scope:** local data belongs to one browser (or browser profile) **and** one origin. Another browser, another browser profile, or (on iPhone) Safari tabs versus the Home Screen app have separate, independent storage.
+- **Losing data:** uninstalling the app with its data, clearing site or browser data, resetting the device, or browser eviction under storage pressure deletes local data. **Only exported backup files protect against this.**
+- **Persistent storage:** the app asks the browser to mark its storage as persistent (`navigator.storage.persist()`); the browser decides whether to grant it, and granting reduces but does not eliminate eviction risk. The "last backup" indicator (Stage 1B) is the user's main signal.
+
+**Windows 11 — Microsoft Edge**
+
+- Install from Edge ("Install this site as an app" from the address bar or the Apps menu). The app gets its own window and a Start menu entry.
+- Data lives in the Edge profile used for installing; another Edge profile or another browser starts empty.
+- Chromium-based browsers allow a large storage quota (a share of free disk space). Eviction under disk pressure is possible for non-persistent storage; whether Edge grants persistent storage to the installed app **(verify)**.
+- Uninstalling offers to clear the app's data as well; choosing it deletes local data.
+- Verified so far (automated, headless Edge 155): offline reload of the installed shell, data surviving a browser restart and an offline reopen. The install UI itself has not been tested.
+
+**Android — compatible browser**
+
+- Targets are Chromium-based browsers (Chrome; Edge and Samsung Internet are expected to behave similarly **(verify)**). Other browsers may only offer a home-screen shortcut with different offline/storage behavior and are not targets until verified.
+- Install from the browser menu ("Install app" / "Add to Home screen"). Chrome creates a WebAPK that looks like a normal app.
+- Data lives inside the browser that installed the app. Installing from Chrome but opening the site in another browser shows empty, separate storage. Clearing that browser's storage in Android settings deletes the app's data.
+- Eviction under low storage is possible unless persistent storage is granted **(verify)**; app name/icon changes may take a while to reach an installed WebAPK.
+- Backup export via the share sheet or a download; import via the system file picker **(verify)**.
+
+**iPhone — Safari**
+
+- Install only via Safari → Share → **Add to Home Screen**; iOS shows no automatic install prompt, so the app should show a short instruction.
+- The Home Screen app has **its own storage, separate from Safari tabs**: data entered in a Safari tab is not visible in the installed app and vice versa. Users should use only the installed app.
+- WebKit may delete script-writable storage (IndexedDB) of web content that has not been used for a period, and may evict data under storage pressure. Home Screen web apps are treated separately from Safari browsing, but **long-term retention is not guaranteed** **(verify the current behavior on the target iOS version)**. Regular backups are essential on iPhone.
+- Deleting the Home Screen app deletes its data.
+- Updates are fetched when the app is opened online; iOS may keep a suspended app on its old code until it is fully closed and reopened.
+- No background sync (not needed in v1). Notifications are only possible for Home Screen apps on newer iOS versions and are not part of v1.
+- Backup export via the share sheet (save to Files) and import via the Files picker; selecting `.json` files **(verify)**. Storage quotas differ by iOS version **(verify)**.
+- The minimum supported iOS version is to be set after device testing.
 
 ### After v1 (not built now)
 
@@ -42,19 +81,19 @@ flowchart LR
   API <--> DB[(PostgreSQL)]
 ```
 
-The Stage 1 sync API, authentication, PostgreSQL schema, and client sync engine exist and are tested, but are frozen and not part of v1 (T-019). A future sync would exchange the same record envelopes as backups (T-016).
+The Stage 1 sync API, authentication, PostgreSQL schema, and client sync engine stay in the repository but are **frozen and inactive** in v1 (D-016): no sync service is developed or run. A future sync would exchange the same record envelopes as backups (T-016); the frozen code would be reviewed first and may need changes.
 
-The installable web app/PWA is the leading cross-platform option because it can share one interface across Windows, Android, and iPhone while storing local data. Its offline and installation behavior, and file import/export on each platform, must be verified on real devices. If a critical requirement fails on iPhone, document a native-wrapper alternative.
+The installable PWA is the v1 delivery method (D-013) because it shares one interface across Windows, Android, and iPhone while storing local data. Its offline and installation behavior, and file import/export on each platform, must still be verified on real devices. If a critical requirement fails on a platform, report it to the owner; a native wrapper would be a new product decision.
 
 ## Main components
 
 - **Client app:** React, TypeScript, Vite, accessible UI, semantic CSS tokens, i18n. English default; Persian RTL; theme and date display preferences.
 - **Local persistence:** IndexedDB through a small typed repository layer (Dexie). It is the only data store in v1. Every record uses the envelope of T-016 (UUID, timestamps, version vector, content hash); deletions keep tombstones. The repository layer, not the UI, enforces domain rules (relationships, history immutability), so the same rules apply to typed-in and imported data.
-- **Backup module (v1):** export, validation, versioned upgrade chain, import preview, atomic merge, pending conflicts, replaced-version archive, and import log, as specified in `BACKUP_FORMAT.md`. Optional encryption via Web Crypto (AES-GCM, PBKDF2) if the owner chooses it.
+- **Backup module (v1):** export, validation, versioned upgrade chain, import preview, atomic merge, pending conflicts, replaced-version archive, and import log, as specified in `BACKUP_FORMAT.md`. Optional per-export password encryption via Web Crypto (AES-GCM, PBKDF2), off by default (D-014).
 - **Offline assets:** service worker caches the versioned application shell. Updating the app must not erase local records; local data schema upgrades run in IndexedDB version upgrades and are tested like backup upgrades.
 - **Shared packages:** shared schemas/types (also the backup schemas) and a separate date/time package for timezone-safe local-date, week-boundary, recurrence, and Gregorian/Jalali display behavior.
-- **App delivery (v1):** static HTTPS hosting of the app files, or a native wrapper (open question 8, undecided). No user data on any server; the app code's source must be trusted (see above).
-- **After v1 only:** sync client (outbox), private sync API (Express/Zod), PostgreSQL. Built in Stage 1, frozen (T-019).
+- **App delivery (v1):** installable PWA (D-013) served as static files over HTTPS; the hosting provider is open (question 8). No user data on any server; the app code's source must be trusted (see above).
+- **After v1 only:** sync client (outbox), private sync API (Express/Zod), PostgreSQL. Built in Stage 1; frozen and inactive in v1 (D-016).
 
 ## Local-first model and backup merge (v1)
 
@@ -87,7 +126,7 @@ The installable web app/PWA is the leading cross-platform option because it can 
 
 - User data stays on the device; there is no network traffic carrying user data. The app host (if used) only serves app files, but the code it serves can access the origin's local data, so the host, domain, and build pipeline are part of the trust boundary.
 - Data at rest in IndexedDB is protected by the device's lock and storage encryption; the app does not add its own encryption in v1.
-- A backup file contains all personal data. Its protection (optional password encryption, recovery key, or none) is an open owner decision; options and the forgotten-password consequence are in `BACKUP_FORMAT.md`.
+- A backup file contains all personal data. Password encryption is optional per export and off by default (D-014); an unprotected file is readable by anyone who gets it, and a forgotten password makes a protected file impossible to restore (`BACKUP_FORMAT.md`). A recovery key is not part of v1.
 - Imported files are untrusted input: size limits, full schema validation, reference checks, and no execution of anything from the file; text from files is rendered as text only.
 - A strict Content-Security-Policy on the app host, and no third-party scripts.
 
@@ -117,8 +156,8 @@ Known limitations of the frozen Stage 1 server code, to address before it is eve
 | Platform | Status |
 |---|---|
 | Windows 11, Microsoft Edge 155 | Verified by automated E2E: offline reload of the installed shell, data surviving a browser restart and an offline reopen, RTL/theme persistence. Install UI itself not exercised by tests. |
-| Android (Chrome) | Not yet tested on a device. Manifest has 192/512 PNG and maskable icons, which Chrome requires for installation. To verify for v1: file export via share sheet/download and import via file picker. |
-| iPhone (Safari) | Not yet tested on a device. `apple-touch-icon` and standalone meta tags are present. Known platform limits to verify: storage eviction of web apps not added to the Home Screen (backups therefore matter more), share sheet export and Files import of `.json`, no background sync, notification support only for Home Screen web apps. |
+| Android (Chrome) | Not yet tested on a device. Manifest has 192/512 PNG and maskable icons, which Chrome requires for installation. Items to verify: see "Platform installation, updates, and storage". |
+| iPhone (Safari) | Not yet tested on a device. `apple-touch-icon` and standalone meta tags are present. Items to verify: see "Platform installation, updates, and storage". |
 
 ## Technology stack
 
@@ -132,7 +171,8 @@ Known limitations of the frozen Stage 1 server code, to address before it is eve
 | Shared validation | Zod 4 schemas in `packages/shared` | Stage 1 |
 | Tests | Vitest (unit, repository, component with React Testing Library + jsdom), Playwright with the installed Microsoft Edge | T-013 |
 | v1 backup (planned, Stage 1B) | Web Crypto for hashing and optional encryption; JCS canonical JSON | T-016–T-018 |
-| Frozen post-v1 server | Express 5 + Zod; plain SQL with the `pg` driver (no Prisma); PGlite for development/tests | T-006, T-007, T-019 |
+| Frozen post-v1 server (inactive in v1) | Express 5 + Zod; plain SQL with the `pg` driver (no Prisma); PGlite for development/tests | T-006, T-007, T-019, D-016 |
+| App delivery | Installable PWA (Edge on Windows, compatible browser on Android, Safari on iPhone); hosting provider open | D-013 |
 
 Not used: Docker (T-005), Prisma (T-006), npm workspaces (T-014), i18next (T-009), `vite-plugin-pwa` (T-008).
 

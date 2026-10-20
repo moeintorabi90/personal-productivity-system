@@ -4,9 +4,9 @@ An offline personal planning and reflection app for Windows 11 and Android, with
 
 ## Project status
 
-**Stage 1: foundation and offline proof — implemented; next is Stage 1B (offline backup).** The repository contains an installable web app shell (React, IndexedDB, service worker). It also contains a tested sync API, authentication, and PostgreSQL migrations from Stage 1; these are **frozen and not part of v1** (DECISIONS D-012, T-019). See [docs/ROADMAP.md](docs/ROADMAP.md), the backup design in [docs/BACKUP_FORMAT.md](docs/BACKUP_FORMAT.md), and the test report in [docs/TESTING.md](docs/TESTING.md).
+**Stage 1: foundation and offline proof — implemented; next is Stage 1B (offline backup).** The repository contains an installable web app shell (React, IndexedDB, service worker). It also contains a tested sync API, authentication, and PostgreSQL migrations from Stage 1; these stay in the repository but are **frozen and inactive in v1** (DECISIONS D-012, D-016). See [docs/ROADMAP.md](docs/ROADMAP.md), the backup design in [docs/BACKUP_FORMAT.md](docs/BACKUP_FORMAT.md), and the test report in [docs/TESTING.md](docs/TESTING.md).
 
-**Do not rely on the app for real personal data yet:** backup export/import is not implemented, and the backup protection and app delivery decisions are still open.
+**Do not rely on the app for real personal data yet:** backup export/import is not implemented, and no hosting for installing the PWA on phones has been chosen.
 
 ## Quick start (Windows, PowerShell)
 
@@ -26,13 +26,14 @@ Details, database options, and workspace constraints: [docs/DEVELOPMENT.md](docs
 - Version 1 works without internet; each device stores its own data.
 - Manual backup: export one versioned file; importing merges without replacing, deleting, or duplicating; differing items become visible conflicts the user resolves.
 - No sync, data server, accounts, or email recovery in v1; the structure stays ready for sync later.
-- Windows 11 and Android are target platforms. iPhone installation is a desired capability.
+- Windows 11 and Android are target platforms; iPhone is supported through Safari. v1 is an installable PWA (Edge on Windows, a compatible browser on Android, Safari on iPhone); daily use is offline, while installing and updating need internet.
+- Optional password protection for each backup file (off by default); a forgotten password cannot be recovered.
 - Core scope includes goals, projects, tasks, planning, actual-work logs, habits, weekly review, and backup.
 
 ## Documents
 
 - [Product specification](docs/PRODUCT_SPEC.md)
-- [Architecture proposal](docs/ARCHITECTURE.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [Data model and invariants](docs/DATA_MODEL.md)
 - [Offline backup format, merge, and conflicts](docs/BACKUP_FORMAT.md)
 - [API and sync contract (after v1)](docs/API_CONTRACT.md)
@@ -43,4 +44,4 @@ Details, database options, and workspace constraints: [docs/DEVELOPMENT.md](docs
 
 ## Next step
 
-Owner decisions in `docs/DECISIONS.md`: backup protection (open question 7), how the app is delivered (8), and keeping or archiving the frozen server code (9); review of the conflict-resolution proposal (T-017). Then Stage 1B: offline backup. Android/iPhone device checks remain open.
+Stage 1B: offline backup, following the owner decisions D-013 to D-017 in `docs/DECISIONS.md` (PWA delivery, optional backup password, conflict flow, frozen server code, preferences split). Still open: the hosting provider and stable origin for the PWA (open question 8), and installation/offline checks on real Android and iPhone devices.

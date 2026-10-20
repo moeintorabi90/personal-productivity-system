@@ -15,7 +15,7 @@ This file is for any AI tool working in this repository (Codex, Claude Code, Gem
 1. **One primary writer per change.** If you were asked to review, report findings; do not edit files. If you were given a scoped task, work on your own branch or worktree and touch only that task's files.
 2. **Before starting:** run `git status` and read the latest commits. Never overwrite, revert, or reformat another writer's uncommitted work.
 3. **The repository is the source of truth.** Follow `docs/` (product spec, architecture, data model, API contract, testing, roadmap). Decisions count only when recorded in `docs/DECISIONS.md`; do not reverse a recorded decision without the owner's approval.
-4. **Stay within the current stage** of `docs/ROADMAP.md`. Version 1 is offline-only with manual backup (`docs/BACKUP_FORMAT.md`); do not extend the frozen server/sync code (`apps/api`, `apps/web/src/sync`) unless the owner schedules sync.
+4. **Stay within the current stage** of `docs/ROADMAP.md`. Version 1 is an offline-only installable PWA with manual backup (`docs/BACKUP_FORMAT.md`; decisions D-008 to D-017). The server/sync code (`apps/api`, `apps/web/src/sync`) stays in the repository but is frozen and inactive in v1 (D-016): do not extend it, start a sync service, or choose a hosting provider unless the owner decides so.
 5. **Report only tests you actually ran**, with the exact command and the observed result.
 6. **No real personal data, no secrets in Git** (`.env`, database files, exports). Do not push or publish without the owner's decision.
 7. **Do not install Docker Desktop** or other system software without checking resource needs and asking the owner (about 7.8 GB RAM, little free).

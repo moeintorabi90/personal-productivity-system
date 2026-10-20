@@ -1,6 +1,6 @@
-# Offline Backup: File Format, Merge, and Conflicts (Proposal)
+# Offline Backup: File Format, Merge, and Conflicts
 
-Status: **proposed design for v1** (DECISIONS D-008 to D-012, T-016 to T-019). Nothing in this document is implemented yet. Still open for the owner: backup protection (open question 7) and final approval of the conflict-resolution UX (T-017). Where this document recommends something, it is a recommendation, not a decision.
+Status: **decided design for v1** (owner decisions D-008 to D-017; technical decisions T-016 to T-019 in `DECISIONS.md`), to be implemented in Stage 1B. Nothing in this document is implemented yet. Items marked "proposal only" or "possible later" are **not** part of v1 and would need owner approval.
 
 ## Goals
 
@@ -76,9 +76,9 @@ A backup file is one JSON object with a **header** (all top-level fields except 
 }
 ```
 
-### Encrypted file (only if the owner chooses encryption; open question 7)
+### Encrypted file (when the user turns on the optional password, D-014)
 
-The same header, with `encryption` describing how to decrypt, and `payload` replaced by ciphertext:
+The same header, with `encryption` describing how to decrypt, and `payload` replaced by ciphertext. In format version 1 an encrypted file has **exactly one key slot, of type `password`**, and no hint field. The `recoveryKey` slot type is reserved for a possible future format version (not v1).
 
 ```jsonc
 {
@@ -103,9 +103,8 @@ The same header, with `encryption` describing how to decrypt, and `payload` repl
         "wrap": { "cipher": "AES-256-GCM", "iv": "base64 (12 random bytes)" },
         "wrappedKey": "base64 (encrypted 32-byte data key + tag)"
       }
-      // a { "type": "recoveryKey", … } slot exists only if option D is chosen
-    ],
-    "hint": "optional, NOT secret: stored in clear text"
+      // v1: exactly this one password slot; a "recoveryKey" slot is reserved for the future
+    ]
   },
   "payload": { "ciphertext": "base64" },
   "integrity": {
@@ -119,10 +118,10 @@ The same header, with `encryption` describing how to decrypt, and `payload` repl
 How encryption works:
 
 1. Generate a random 256-bit **data key**. Encrypt the canonical bytes of the plaintext payload object (`records`, `tombstones`, `pendingConflicts`, `replacedVersions`, `sourceDeviceSettings`) with AES-256-GCM using the data key, a fresh random 12-byte IV, and the **canonical header** as additional authenticated data (AAD). The header includes the `encryption` object itself, so changing the salt, iteration count, IVs, version, or any header field makes decryption fail instead of silently producing a weaker file.
-2. For each key slot, derive a key-encryption key (PBKDF2-SHA-256 from the UTF-8 bytes of the NFC-normalized password and the slot's salt and iterations, or from the recovery key) and wrap the data key with AES-256-GCM. Writers use 600,000 iterations; readers enforce the bounds in "Input limits" before running PBKDF2.
-3. Decryption tries the slot(s): unwrap the data key, then decrypt and authenticate the payload. A GCM failure means the wrong password or a modified file; nothing is imported.
+2. For the password slot, derive a key-encryption key (PBKDF2-SHA-256 from the UTF-8 bytes of the NFC-normalized password and the slot's salt and iterations) and wrap the data key with AES-256-GCM. Writers use 600,000 iterations; readers enforce the bounds in "Input limits" before running PBKDF2.
+3. Decryption uses the password slot: unwrap the data key, then decrypt and authenticate the payload. A GCM failure means the wrong password or a modified file; nothing is imported.
 
-The key-slot structure lets options B (password slot) and D (password slot + recovery-key slot) use the same format. Everything in the header — creation time, app version, source device ID/name, hint — is **readable without the password**.
+The key-slot structure leaves room for a possible future recovery-key slot (option D below) without redesigning the format; v1 does not write or accept it. Everything in the header (creation time, app version, source device ID and name) is **readable without the password**; the export screen can leave the device name empty in encrypted files to reveal less.
 
 ### Integrity hash — exactly what it covers
 
@@ -152,9 +151,9 @@ The key-slot structure lets options B (password slot) and D (password slot + rec
 - **Append-only history** (execution sessions, output corrections, finalized weekly reviews) uses the same envelope. Its `data` never changes after creation; corrections are new records that reference the original.
 - **Tombstones:** deleting an item on the device keeps a tombstone (ID, deletion time, version vector) instead of forgetting the ID. Tombstones are exported so another device learns about the deletion, but importing never deletes anything by itself (see conflicts).
 
-### Preferences: singleton with a fixed logical ID (proposed)
+### Preferences: singleton with a fixed logical ID (decided, D-017)
 
-Today the app stores one preferences row in IndexedDB under the key `"self"` with five fields (language, theme, calendar display, week start, time zone) and a server revision used only by the frozen sync code. For backups the proposal splits them into two groups:
+Today the app stores one preferences row in IndexedDB under the key `"self"` with five fields (language, theme, calendar display, week start, time zone) and a server revision used only by the frozen sync code. The owner decided (D-017) to split them into two groups:
 
 | Group | Fields | In backup | Why |
 |---|---|---|---|
@@ -165,9 +164,9 @@ Rules:
 
 - **Fixed logical ID:** the shared preferences record always has the same reserved ID on every device, `00000000-0000-4000-8000-000000000001` (a constant defined by format version 1, not random). So the same ID on two devices means the same singleton, and the normal merge rules apply: version vectors, "already here / older / newer in backup / conflict". It can never be added as a second record, and "keep both" is never offered.
 - **Untouched defaults:** a device that never changed its shared preferences has an empty version vector, which every other version contains. Importing into such a device therefore shows "newer in backup", not a conflict, and is applied after the usual confirmation.
-- **Device settings on import:** if the file's `sourceDeviceSettings` differ from this device's, the preview offers one optional action, "Use the display settings of *device name* on this device?". Declining changes nothing; there is no conflict entry.
+- **Device settings on import:** language and theme are **never changed automatically** by an import. If the file's `sourceDeviceSettings` differ from this device's, the preview may offer one optional action, "Use the display settings of *device name* on this device?". Declining changes nothing; there is no conflict entry.
 - **Migration in Stage 1B:** the existing `"self"` row is split: shared fields move into the `preferences` envelope (reserved ID, empty version vector unless the user changed them, which counts as this device's first edit), and language/theme move to device-local settings. The frozen sync code's `serverRevision` is not part of the backup.
-- The grouping of fields (e.g. whether `calendarDisplay` or `language` should be shared) is a product choice. The table above is a proposal and can be changed before Stage 1B is implemented.
+- Moving a field between the two groups later is a product change that needs a new owner decision and, if exported data changes, a new `dataSchemaVersion`.
 
 ### Input limits and validation order (untrusted files)
 
@@ -184,8 +183,8 @@ A backup file may come from anywhere, so it is untrusted input. Limits for forma
 | Text encoding | valid UTF-8 (decoded with a fatal decoder; any invalid byte sequence rejects the file) |
 | JSON nesting depth | ≤ **32** levels (each `{` or `[` opens one level; the top-level object is level 1), enforced by the pre-parse scan |
 | JSON values | ≤ **4,000,000** values in total (objects, arrays, strings, numbers, literals), enforced by the pre-parse scan |
-| `sourceDevice.name` / `hint` | ≤ 80 / ≤ 200 characters |
-| `keySlots` | 1 or 2 entries, at most one of each `type` (`password`, `recoveryKey`) |
+| `sourceDevice.name` | ≤ 80 characters |
+| `keySlots` | exactly 1 entry, of `type` `password` (a `recoveryKey` slot, or any second slot, is refused in format version 1) |
 | `kdf` | `name` exactly `PBKDF2`, `hash` exactly `SHA-256`, `iterations` an integer from **600,000 to 1,000,000** (writers use 600,000), `salt` exactly 16 bytes |
 | Ciphers | `AES-256-GCM` only; every IV exactly 12 bytes; `tagBits` exactly 128; `wrappedKey` exactly 48 bytes (32-byte key + 16-byte tag) |
 | Unknown fields in header or `encryption` | rejected |
@@ -255,7 +254,9 @@ Why this satisfies the requirements:
 - **No duplicates on re-import:** identity is the UUID; identical or older copies of the same ID are skipped. (Separately created items with different UUIDs are not duplicates in this sense and are both kept; see `contentHash`.)
 - **No silent overwrite on differing content:** differing content is always either an explicitly confirmed update or a pending conflict.
 
-## Showing and resolving conflicts (proposed UX — awaiting owner approval, T-017)
+## Showing and resolving conflicts (decided for v1, D-015)
+
+Everything in this section is the final v1 behavior, except items explicitly marked "proposal only".
 
 - After import, a summary screen: "Added 12 · Already here 140 · Needs your decision 3 · Updates waiting for confirmation 5".
 - A **Conflicts** list (also reachable later from Settings → Backup) shows each item side by side: "On this device" and "In backup (from *device name*, exported *date*)". Changed fields are highlighted; dates are shown in the user's calendar display.
@@ -277,11 +278,26 @@ Why this satisfies the requirements:
 - Delivery:
   - Android and iPhone: the system share sheet (Web Share API with files) to save to Files, Drive, etc.; a download as fallback.
   - Windows: a save dialog (File System Access API in Chromium browsers) or a normal download.
-- After export, the app records the time and shows "Last backup: N days ago". A gentle reminder after a user-chosen interval is proposed (no nagging by default). Backups matter more on iPhone because Safari may evict data of web apps not added to the Home Screen.
+- After export, the app records the time and shows "Last backup: N days ago". A gentle reminder after a user-chosen interval is a proposal only (not decided; no nagging by default). Backups matter on every platform because local data can be lost (ARCHITECTURE, "Platform installation, updates, and storage"), and especially on iPhone.
 
-## Protection of the backup file (open decision — options)
+## Protection of the backup file (decided, D-014)
 
 The file contains all personal data in readable form unless it is protected. There is no account or server in v1, so **nobody — not the developer and not the app — can recover a forgotten backup password.**
+
+**v1 behavior (D-014):**
+
+- On every export, the export screen shows a clearly visible **"Protect this file with a password"** option. It is **off by default**.
+- If the user turns it on:
+  - the password is entered **twice** and must match;
+  - the user sees a clear warning before export that **forgetting this password makes this file impossible to restore**, and nobody can recover it;
+  - the app recommends keeping the password in a **password manager**.
+- Encryption: AES-256-GCM, key derived with PBKDF2-SHA-256 (600,000 iterations), as specified in "Encrypted file" above.
+- Implementation safeguard (engineering, not a product option): before reporting success, the app re-opens the newly written file with the entered password, to catch a broken file at export time instead of at restore time.
+- A password **hint** is not part of v1 (a hint would be readable by anyone holding the file).
+- **Recovery key** (option D below): a possible future improvement, **not part of v1**.
+- Each export decides on its own: protecting one file does not change other files or later exports.
+
+**Options that were considered** (kept for reference; v1 uses B):
 
 | Option | What it means | If the password is forgotten | Trade-offs |
 |---|---|---|---|
@@ -291,10 +307,10 @@ The file contains all personal data in readable form unless it is protected. The
 | D. Password plus recovery key | The file key is wrapped twice: by the password and by a randomly generated recovery key shown once (to print or save separately) | Recoverable with the recovery key; lost only if both are lost | Most robust; more steps and more to explain |
 | E. Rely on device/cloud encryption | Like A, but the app recommends storing backups only in encrypted locations | Not applicable | No app complexity; protection outside the app's control |
 
-**Recommendation only — the owner has not decided (open question 7):** start with **B, optional password, off by default but offered clearly at every export**, with these safeguards: enter the password twice; a plain warning that a forgotten password makes the backup unrecoverable; an immediate "verify" step that re-opens the new file with the password before the export is reported as successful; an optional hint (stored in clear text, so it must not reveal the password); and advice to keep the password in a password manager. Plan **D** as an upgrade if backups become the main long-term storage. The encrypted format above (key slots) already accommodates B and D, so this choice does not block implementing unencrypted export first.
+Option D could be added later in a new format version (a `recoveryKey` key slot), with owner approval.
 
 Separate from backups: data inside the app (IndexedDB) is protected only by the device's own lock and storage encryption. App-level encryption at rest is out of scope for v1.
 
 ## How this prepares for future sync (not built now)
 
-The same primitives serve a later sync feature: stable UUIDs, per-device IDs, version vectors, content hashes, tombstones, and a conflict store with side-by-side resolution. A future sync service can exchange exactly these record envelopes; the existing Stage 1 sync code (server revisions) would be adapted to version vectors at that time (DECISIONS T-019).
+The same primitives serve a later sync feature: stable UUIDs, per-device IDs, version vectors, content hashes, tombstones, and a conflict store with side-by-side resolution. A future sync service can exchange exactly these record envelopes; the existing Stage 1 sync code (server revisions), kept frozen and inactive in v1 (D-016), would be reviewed and adapted to version vectors at that time, and may need further changes.

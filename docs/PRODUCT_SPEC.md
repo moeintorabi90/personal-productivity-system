@@ -2,7 +2,7 @@
 
 ## Product summary
 
-A private, offline-first personal productivity app that helps one person set goals, organize projects and tasks, plan time, record actual work and measurable outputs, and learn from weekly results. Once installed, it runs on the user's own devices without internet. Installing it the first time and receiving app updates may need internet, depending on how the app is delivered (DECISIONS open question 8).
+A private, offline-first personal productivity app that helps one person set goals, organize projects and tasks, plan time, record actual work and measurable outputs, and learn from weekly results. Version 1 is an installable web app (PWA): installed from Microsoft Edge on Windows, from a compatible browser on Android, and from Safari on iPhone (DECISIONS D-013). Once installed, it runs on the user's own devices without internet. Installing it the first time and receiving app updates need internet.
 
 **Version 1** keeps each device's data locally and moves or restores data through a manual backup file that is merged on import (DECISIONS D-008 to D-012, `BACKUP_FORMAT.md`). Automatic sync through a private service is a possible later version.
 
@@ -84,19 +84,21 @@ A private, offline-first personal productivity app that helps one person set goa
 
 ### Offline use, backup, and recovery (v1)
 
-- [ ] All workflows work without internet after the app is installed; data is stored only on the device. First installation and app updates may require internet (delivery method: open question 8).
+- [ ] The app installs as a PWA from Edge (Windows), a compatible browser (Android), and Safari (iPhone, Add to Home Screen), with short install instructions where the platform shows no prompt (D-013).
+- [ ] All workflows work without internet after the app is installed; data is stored only on the device. First installation and app updates require internet. Platform limits on installation, updates, and storage are explained to the user where they matter (e.g. iPhone: use only the Home Screen app; data can be lost if site data is cleared).
 - [ ] Local data is tied to the app's origin (scheme, host, and port, not the full URL path). The user is told that a backup is needed before switching to an app served from a different origin, or before clearing browser data.
 - [ ] User can export a single backup file containing all data, without internet (share sheet on phones, save/download on Windows).
 - [ ] User can import a backup on Windows and Android; the format is designed to work for a future iPhone version.
 - [ ] Import merges: new items are added; existing items are never replaced or deleted without the user's explicit choice.
 - [ ] Importing the same file again creates no duplicates and changes nothing.
-- [ ] Same ID with different content on device and in file: both versions are kept and shown side by side until the user chooses. Every item offers "keep this device's" or "use the backup's" version; items with links (projects, tasks, …) keep their ID so links and history stay attached; "keep both" (a copy) only for independent items without links. (Final UX approval pending, T-017.)
+- [ ] Same ID with different content on device and in file: both versions are kept and shown side by side until the user chooses. Every item offers "keep this device's" or "use the backup's" version; items with links (projects, tasks, …) keep their ID so links and history stay attached; "keep both" (a copy) only for independent items without links. Deletions have their own choices; bulk actions need a confirmation stating the number of items (D-015).
 - [ ] Diagnostic data of the frozen sync code (`sync_probe`) is not part of backups.
 - [ ] Unresolved conflicts survive restarts and can be resolved later; a wrong choice can be undone.
 - [ ] Backup files are versioned; newer app versions import older backups; an older app refuses a newer file clearly without changing data.
 - [ ] Corrupted or incomplete files are detected and refused without changing data.
 - [ ] The app shows when the last backup was made.
-- [ ] Backup protection (password/encryption) follows the owner's decision (DECISIONS open question 7); if a password is used, the user is warned before export that a forgotten password cannot be recovered.
+- [ ] Each export offers an optional password (clearly visible, off by default). If enabled: the password is entered twice; the user is warned that forgetting it makes that file impossible to restore; the app recommends a password manager (D-014). No recovery key in v1.
+- [ ] Shared preferences (time zone, week start, calendar display) travel in backups; language and theme stay per device and never change automatically on import; the import preview may offer to apply the source device's display settings (D-017).
 - [ ] Historical execution, output corrections, and finalized reviews are append-only or explicitly audited, also across imports.
 
 ### Reviews and useful analytics

@@ -49,7 +49,7 @@ On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device ident
 
 - **User:** in v1 there is no account; "the owner" is whoever uses the device. (A future sync service would add an owner account.)
 - **Device:** local identity of each installation (UUID and editable name). Used in version vectors and to label backups; never sent anywhere in v1.
-- **UserPreference:** shared, transferable settings (explicit IANA time zone, week start, calendar display, later capacity preferences) as one singleton record with a reserved ID; plus device-local settings (language, theme) that stay on each device (proposed split, `BACKUP_FORMAT.md`).
+- **UserPreference:** shared, transferable settings (explicit IANA time zone, week start, calendar display, later capacity preferences) as one singleton record with a reserved ID; plus device-local settings (language, theme) that stay on each device (decided split, D-017; `BACKUP_FORMAT.md`).
 - **Project / Workstream:** user-created organization. A workstream belongs to one project and is not nestable.
 - **TaskDefinition:** reusable task details and recurrence configuration. It is not evidence that work occurred.
 - **OutputMetric:** named unit and formatting/aggregation rules (e.g. pages, words, applications). Metric definitions have revisions so historical outputs retain their meaning.
@@ -108,7 +108,8 @@ On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device ident
 - Every record has a client-created UUID that is never reused; the same ID on two devices means the same item.
 - Every record carries a version vector (device ID → edit counter) and a content hash (T-016). A local edit increments only this device's counter. The content hash only compares versions of the same ID; records with different UUIDs are never merged as duplicates, even with identical content.
 - Singletons use a reserved constant ID defined by the backup format (shared preferences: `00000000-0000-4000-8000-000000000001`), so every device refers to the same logical record.
-- Preferences are split (proposed): shared preferences (time zone, week start, calendar display, later calculation settings) are one exported record; device settings (language, theme) stay on the device and are never merged (`BACKUP_FORMAT.md`, "Preferences").
+- Preferences are split (D-017): shared preferences (time zone, week start, calendar display, later calculation settings) are one exported record; device settings (language, theme) stay on the device, are never merged, and are never changed automatically by an import (`BACKUP_FORMAT.md`, "Preferences").
+- Conflict resolution follows D-015 (`BACKUP_FORMAT.md`, "Showing and resolving conflicts"): both versions are kept until the user decides; linked records keep their ID; "keep both" only for independent types; replaced versions are archived for undo.
 - Import never deletes and never replaces existing data automatically: new items are added; identical and older copies are skipped; newer-in-backup items need confirmation; edits on both sides, and deletions on either side, become pending conflicts that keep both versions.
 - Importing the same backup again changes nothing and creates no duplicates.
 - Only product record types are exported; diagnostic and sync-machinery data (`sync_probe`, outbox, session, cursor) never are, and a backup containing them is refused.
