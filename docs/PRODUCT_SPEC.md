@@ -2,39 +2,41 @@
 
 ## Product summary
 
-A private, offline-first personal productivity app that helps one person set goals, organize projects and tasks, plan time, record actual work and measurable outputs, and learn from weekly results. It runs on the user's own devices without internet and synchronizes changes through a private service when connectivity returns.
+A private, offline-first personal productivity app that helps one person set goals, organize projects and tasks, plan time, record actual work and measurable outputs, and learn from weekly results. It runs on the user's own devices without internet.
+
+**Version 1** keeps each device's data locally and moves or restores data through a manual backup file that is merged on import (DECISIONS D-008 to D-012, `BACKUP_FORMAT.md`). Automatic sync through a private service is a possible later version.
 
 ## Product principles
 
 1. Planning and actual execution are separate records.
 2. Historical records are preserved. Changes to today's task definition must not rewrite yesterday's work log or a finalized review.
-3. The app remains useful offline; sync is an enhancement to continuity across devices.
+3. The app is fully useful offline. In v1 it needs no internet for data at all; any later sync is an enhancement, never a requirement.
 4. Every chart and metric has a plain definition and traceable source.
 5. A missed plan helps adjust future plans; it must not automatically overload the next day.
 6. English is the default language. Persian is fully supported, including RTL.
-7. Data belongs to the user and must be exportable and recoverable.
+7. Data belongs to the user and must be exportable and recoverable. Importing data never silently replaces or deletes existing data.
 
 ## Intended user and platforms
 
 - One person using their Windows 11 computer and Android phone.
 - The app should be installable on iPhone if the chosen cross-platform approach supports the required offline behavior.
-- The app is not initially a team product. Account access exists to protect and sync this user's devices, not to add collaboration features.
+- The app is not a team product. Version 1 has no accounts: each device holds its data locally, and the user moves data between devices with backup files.
 
 ## Core user journey
 
 1. Capture an idea or task quickly into an inbox.
 2. Organize it under a project, optional workstream, or goal.
 3. Decide what matters today and schedule flexible work around realistic capacity.
-4. Work online or offline; record actual time, completion state, notes, and measurable output.
+4. Work without internet; record actual time, completion state, notes, and measurable output.
 5. Compare planned work with actual work and review the week.
 6. Adjust upcoming plans while keeping past records intact.
-7. Sync devices when online and maintain a recoverable backup/export.
+7. Export a backup regularly; import it on another device (or the same one after a reset) to merge data.
 
 ## Functional requirements checklist
 
 ### Personal setup and preferences
 
-- [ ] First-run setup creates a real account for the owner; no fabricated user or silent identity selection.
+- [ ] First run needs no account (v1); the device gets a local identity (device ID and a user-editable device name) used only to label backups and versions.
 - [ ] English default; selectable Persian with complete translations and RTL layout.
 - [ ] Light, dark, and system theme preference.
 - [ ] Explicit timezone, configurable week start, and calendar display preference.
@@ -80,15 +82,20 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Measured outputs are recorded against a session and metric definition. Planned output is never assumed achieved.
 - [ ] Editing a session never implicitly creates or changes a planned block.
 
-### Offline use, sync, and recovery
+### Offline use, backup, and recovery (v1)
 
-- [ ] Core read/write workflows work without internet after the app is installed and initialized.
-- [ ] Offline changes remain queued locally and sync idempotently after reconnection.
-- [ ] Devices can recover after being offline for a long period without losing accepted history.
-- [ ] Concurrent edits to the same mutable record are detected and surfaced; no silent last-write-wins for consequential conflicts.
-- [ ] Historical execution, output corrections, and finalized reviews are append-only or explicitly audited.
-- [ ] User can see sync state, unresolved conflicts, last successful sync, and retry failures.
-- [ ] User can create and restore a backup and export their data in a documented portable format.
+- [ ] All workflows work without internet after the app is installed; data is stored only on the device.
+- [ ] User can export a single backup file containing all data, without internet (share sheet on phones, save/download on Windows).
+- [ ] User can import a backup on Windows and Android; the format is designed to work for a future iPhone version.
+- [ ] Import merges: new items are added; existing items are never replaced or deleted without the user's explicit choice.
+- [ ] Importing the same file again creates no duplicates and changes nothing.
+- [ ] Same ID with different content on device and in file: both versions are kept and shown side by side; the user chooses (keep this device's / use the backup's / keep both where it makes sense).
+- [ ] Unresolved conflicts survive restarts and can be resolved later; a wrong choice can be undone.
+- [ ] Backup files are versioned; newer app versions import older backups; an older app refuses a newer file clearly without changing data.
+- [ ] Corrupted or incomplete files are detected and refused without changing data.
+- [ ] The app shows when the last backup was made.
+- [ ] Backup protection (password/encryption) follows the owner's decision (DECISIONS open question 7); if a password is used, the user is warned before export that a forgotten password cannot be recovered.
+- [ ] Historical execution, output corrections, and finalized reviews are append-only or explicitly audited, also across imports.
 
 ### Reviews and useful analytics
 
@@ -103,11 +110,12 @@ A private, offline-first personal productivity app that helps one person set goa
 - Mandatory AI features, external calendar integration, email ingestion, or third-party automation.
 - Arbitrary-depth task trees, general workflow engines, streak pressure, points, or meaningless quality scores.
 - Requiring internet for ordinary planning, logging, searching, or reviewing locally available data.
+- **In v1:** automatic sync, any server that stores user data, user accounts, and email or password-reset recovery (DECISIONS D-012). The data structure stays ready for sync later.
 
 ## Quality requirements
 
 - Accessible keyboard navigation, focus, contrast, labels, and controls in English LTR and Persian RTL.
-- Useful loading, offline, sync, empty, success, and error states.
+- Useful loading, empty, success, error, backup, import-preview, and conflict states.
 - Responsive layouts for desktop and phone.
-- Server-side validation and ownership enforcement for every synchronized record.
+- The same validation rules apply to data entered in the app and to data in imported backups.
 - No secrets in source control. No unverified claims about passing tests or supported platform behavior.

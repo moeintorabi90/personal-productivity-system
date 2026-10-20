@@ -1,20 +1,20 @@
 # Personal Productivity System
 
-An offline-first personal planning and reflection app for Windows 11 and Android, with iPhone installability as a design goal and private sync when internet is available.
+An offline personal planning and reflection app for Windows 11 and Android, with iPhone installability as a design goal. Version 1 works entirely without internet: each device keeps its own data, and a versioned backup file (merged on import) moves data between devices.
 
 ## Project status
 
-**Stage 1: foundation and offline proof — implemented, with open acceptance items.** The repository contains an installable web app shell (React, IndexedDB, service worker), a local outbox and sync engine, an Express sync API with owner authentication, and PostgreSQL migrations. Domain features (projects, tasks, calendar, goals…) start in Stage 2. See the Stage 1 test report in [docs/TESTING.md](docs/TESTING.md) and open items in [docs/ROADMAP.md](docs/ROADMAP.md).
+**Stage 1: foundation and offline proof — implemented; next is Stage 1B (offline backup).** The repository contains an installable web app shell (React, IndexedDB, service worker). It also contains a tested sync API, authentication, and PostgreSQL migrations from Stage 1; these are **frozen and not part of v1** (DECISIONS D-012, T-019). See [docs/ROADMAP.md](docs/ROADMAP.md), the backup design in [docs/BACKUP_FORMAT.md](docs/BACKUP_FORMAT.md), and the test report in [docs/TESTING.md](docs/TESTING.md).
 
-**Do not enter real personal data yet:** the private sync hosting, encryption, and recovery decisions are still open.
+**Do not rely on the app for real personal data yet:** backup export/import is not implemented, and the backup protection and app delivery decisions are still open.
 
 ## Quick start (Windows, PowerShell)
 
 ```powershell
 npm.cmd install
-npm.cmd run dev:api   # terminal 1: sync API on http://127.0.0.1:8787 (this computer only)
-npm.cmd run dev:web   # terminal 2: app on http://localhost:5173
-npm.cmd test          # unit, API integration, and two-device sync tests
+npm.cmd run dev:web   # app on http://localhost:5173 (works without the API)
+npm.cmd test          # all automated tests (including the frozen server code)
+# optional, frozen post-v1 code: npm.cmd run dev:api  (http://127.0.0.1:8787)
 ```
 
 Details, database options, and workspace constraints: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
@@ -23,16 +23,19 @@ Details, database options, and workspace constraints: [docs/DEVELOPMENT.md](docs
 
 - English is the default interface language; Persian is selectable and supports RTL.
 - The app is for one person's own devices. It is not a collaboration or multi-user product.
-- Daily use must work offline. Devices synchronize through a private service when connected.
+- Version 1 works without internet; each device stores its own data.
+- Manual backup: export one versioned file; importing merges without replacing, deleting, or duplicating; differing items become visible conflicts the user resolves.
+- No sync, data server, accounts, or email recovery in v1; the structure stays ready for sync later.
 - Windows 11 and Android are target platforms. iPhone installation is a desired capability.
-- Core scope includes goals, projects, tasks, planning, actual-work logs, habits, weekly review, backup, and data export.
+- Core scope includes goals, projects, tasks, planning, actual-work logs, habits, weekly review, and backup.
 
 ## Documents
 
 - [Product specification](docs/PRODUCT_SPEC.md)
 - [Architecture proposal](docs/ARCHITECTURE.md)
 - [Data model and invariants](docs/DATA_MODEL.md)
-- [API and sync contract](docs/API_CONTRACT.md)
+- [Offline backup format, merge, and conflicts](docs/BACKUP_FORMAT.md)
+- [API and sync contract (after v1)](docs/API_CONTRACT.md)
 - [Testing strategy](docs/TESTING.md)
 - [Delivery roadmap](docs/ROADMAP.md)
 - [Decisions and open questions](docs/DECISIONS.md)
@@ -40,4 +43,4 @@ Details, database options, and workspace constraints: [docs/DEVELOPMENT.md](docs
 
 ## Next step
 
-Close the open Stage 1 items: run the suite against a real PostgreSQL server, check installation and offline use on Android and iPhone, and decide hosting, encryption, and account recovery (`docs/DECISIONS.md`). Then begin Stage 2.
+Owner decisions in `docs/DECISIONS.md`: backup protection (open question 7), how the app is delivered (8), and keeping or archiving the frozen server code (9); review of the conflict-resolution proposal (T-017). Then Stage 1B: offline backup. Android/iPhone device checks remain open.

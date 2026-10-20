@@ -2,55 +2,65 @@
 
 Stages are sequential. Each stage ends with its acceptance criteria, focused automated tests, type checks, production build, diff/security review, documentation update, and a recoverable Git checkpoint. Do not move on with unexplained critical failures.
 
+**Version 1 scope (DECISIONS D-008 to D-012):** works without internet; each device keeps its own data; manual backup export/import with merge moves data between devices. No sync, data server, accounts, or email recovery in v1. From Stage 1B on, **every new record type must be included in the backup format** and covered by round-trip and merge tests before its stage is complete.
+
 ## Stage 0 — Requirements and architecture (done)
 
 **Deliverables:** product checklist, architecture and relationship diagrams, data/API invariants, test strategy, staged acceptance criteria, Git/backup strategy, open decisions.
 
 **Acceptance:** docs agree on offline-first scope, one-owner/multi-device model, planned-versus-actual separation, history preservation, and platform targets; no implementation code generated; consequential decisions are identified. Review docs and establish a recoverable documentation checkpoint.
 
-## Stage 1 — Foundation and offline proof
+## Stage 1 — Foundation and offline proof (current)
 
-**Deliverables:** npm-workspace monorepo, installable client shell, local database/outbox, sync API/authentication foundation, PostgreSQL schema/migrations, i18n/theme, offline/sync/error states, Windows setup docs.
+**Deliverables (original plan, before D-012):** npm-workspace monorepo, installable client shell, local database/outbox, sync API/authentication foundation, PostgreSQL schema/migrations, i18n/theme, offline/sync/error states, Windows setup docs.
 
-**Acceptance:** clean setup; app shell opens offline after installation; local sample record survives restart; authenticated owner can sync an idempotent record between two clients; database can migrate from empty; English/Persian direction and themes work at shell level; platform feasibility documented. Private service hosting choice and security model settled before production-like data is used. Migrations and the API suite also pass against a real PostgreSQL server (DECISIONS T-007).
+**Acceptance (original plan, re-scoped below):** clean setup; app shell opens offline after installation; local sample record survives restart; authenticated owner can sync an idempotent record between two clients; database can migrate from empty; English/Persian direction and themes work at shell level; platform feasibility documented. Private service hosting choice and security model settled before production-like data is used. Migrations and the API suite also pass against a real PostgreSQL server (DECISIONS T-007).
 
-**Status (2026-10-20): implemented; acceptance partly open.** Verified by tests (see `TESTING.md`): offline shell after installation (Edge), local record survives a browser restart, idempotent two-client sync with conflicts and tombstones, migration from empty (PGlite in-process and via the `pg` wire protocol), English/Persian direction and themes. Open: run against a native PostgreSQL server; Android and iPhone device checks; hosting choice and security model (DECISIONS open questions 1–4). A single root `package.json` replaces npm workspaces because drive E: is exFAT (DECISIONS T-014).
+**Status (2026-10-20): implemented; acceptance re-scoped for v1.** Verified by tests (see `TESTING.md`): offline shell after installation (Edge), local record survives a browser restart, English/Persian direction and themes; also idempotent two-client sync and migration from empty (PGlite and the `pg` wire protocol). A single root `package.json` replaces npm workspaces because drive E: is exFAT (DECISIONS T-014).
+
+After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offline shell after installation, local record survives restart, English/Persian direction and themes, platform feasibility documented. **Still open for v1:** Android and iPhone device checks; how the app files are delivered (DECISIONS open question 8). The server-related items (two-client sync, PostgreSQL migrations, real PostgreSQL run, hosting and security model) are **moved to the post-v1 Sync stage**; the code stays frozen and tested (T-019).
+
+## Stage 1B — Offline backup and v1 shell adjustments
+
+**Deliverables:** record envelope with version vectors, content hashes, and tombstones in the local store (T-016); backup export (share sheet / save dialog / download); import with validation, preview, atomic merge, import log, and pending-conflict storage (T-017, T-018); conflict resolution screen; backup protection per the owner's decision (open question 7); account/sync screens hidden by a build-time flag (T-019); "last backup" indicator. Covers the record types that exist now (preferences, and the Stage 1 diagnostic note until it is retired).
+
+**Acceptance:** export then import into an empty device reproduces all data; import into a device with data only adds and never replaces or deletes; importing the same file twice creates no duplicates and changes nothing the second time; same ID with different content becomes a visible pending conflict and both versions survive an app restart; an older backup does not undo newer local edits; corrupted, truncated, foreign, or newer-version files are refused without changing data; a stored version-1 sample file is imported by the current app; export on Windows and import on Android (and the reverse) verified manually on real devices; the forgotten-password consequence is shown before an encrypted export, if encryption is chosen.
 
 ## Stage 2 — Organization and quick capture
 
 **Deliverables:** inbox, projects, workstreams, task definitions, archive/search/filter, project detail.
 
-**Acceptance:** CRUD works offline and syncs; server rejects foreign ownership and mismatched project/workstream links; conflict is recoverable; archived records do not erase history.
+**Acceptance:** CRUD works offline and persists locally; local validation rejects mismatched project/workstream links (including in imported backups); new record types are included in backup export/import with merge and conflict tests; archived records do not erase history.
 
 ## Stage 3 — Calendar and planning
 
 **Deliverables:** day/week/month calendar, block editing, recurrence, quick add, search/filter, capacity cues, Today screen.
 
-**Acceptance:** planned blocks persist offline and sync; recurrence/week boundaries/DST pass tests; rescheduling one occurrence has documented scope; planned items remain separate from actual sessions.
+**Acceptance:** planned blocks persist offline and round-trip through backup with merge; recurrence/week boundaries/DST pass tests; rescheduling one occurrence has documented scope; planned items remain separate from actual sessions.
 
 ## Stage 4 — Goals and milestones
 
 **Deliverables:** numeric/time/task-count/milestone goals, attribution UI, progress and pacing.
 
-**Acceptance:** goal progress derives from actual records; attribution limits are enforced server-side; pacing honors active days, timezone, deadline, and explicit weekly objective, with assumptions shown.
+**Acceptance:** goal progress derives from actual records; attribution limits are enforced by the shared domain layer, including for imported data; pacing honors active days, timezone, deadline, and explicit weekly objective, with assumptions shown.
 
 ## Stage 5 — Actual execution and outputs
 
 **Deliverables:** running and backfilled sessions, explicit corrections, output metric definitions and records, planned/actual comparison.
 
-**Acceptance:** all state/chronology rules tested through HTTP handlers and database; unplanned session works; immutable/canonical snapshots survive edits; output correction is auditable; session actions do not mutate planned blocks.
+**Acceptance:** all state/chronology rules tested through the local repository/domain layer; unplanned session works; immutable snapshots survive edits and backup round-trips; output correction is auditable and imported corrections are appended, never merged into originals; session actions do not mutate planned blocks.
 
 ## Stage 6 — Dashboard and analytics
 
 **Deliverables:** documented planned-vs-actual metrics, goal progress, completion, allocation, estimation error, trends.
 
-**Acceptance:** metric dictionary defines source/window/formula; empty/small samples are honest; client and server totals agree on seeded test cases; offline view indicates data freshness.
+**Acceptance:** metric dictionary defines source/window/formula; empty/small samples are honest; totals match documented examples on seeded test cases; totals are identical before and after a backup round-trip.
 
 ## Stage 7 — Weekly review and estimation learning
 
 **Deliverables:** review workflow, immutable summary snapshot, observations/next-week adjustments, estimate suggestions.
 
-**Acceptance:** finalized review remains unchanged after later edits; suggestions use actual history and never auto-change estimates; tests cover timezone and period boundaries.
+**Acceptance:** finalized review remains unchanged after later edits and after importing backups; suggestions use actual history and never auto-change estimates; tests cover timezone and period boundaries.
 
 ## Stage 8 — Habits, daily core, accessibility, polish
 
@@ -60,6 +70,10 @@ Stages are sequential. Each stage ends with its acceptance criteria, focused aut
 
 ## Stage 9 — Final verification and handoff
 
-**Deliverables:** full test/security/migration report, backup/restore rehearsal, deployment and recovery guide, known limitations.
+**Deliverables:** full test/security/upgrade report, cross-device backup/restore rehearsal, app installation and recovery guide for the owner, known limitations.
 
-**Acceptance:** complete tests run; critical criteria verified; clean and upgrade migrations exercised; data export/restore verified; no secrets committed; Git tree and documentation recoverable; limitations stated plainly.
+**Acceptance:** complete tests run; critical criteria verified; local data and backup files from every earlier v1 release upgrade correctly; export/restore verified between Windows and Android (and iPhone if supported); no secrets committed; Git tree and documentation recoverable; limitations stated plainly.
+
+## After v1 — Sync (not scheduled)
+
+Automatic sync through a private service, accounts, and recovery (DECISIONS open questions 1–3). Starts from the frozen Stage 1 server code adapted to the v1 record envelope (T-016, T-019): run the suite against a real PostgreSQL server, choose hosting and security model, and add account recovery before any real data reaches a server.

@@ -2,38 +2,63 @@
 
 ## Goals
 
-Support offline daily use on Windows 11 and Android, keep iPhone installability feasible, synchronize a single owner's devices privately, and preserve trustworthy history. Keep the first implementation understandable and recoverable.
+Support offline daily use on Windows 11 and Android, keep iPhone installability feasible, and preserve trustworthy history. **Version 1** keeps data only on each device and moves it between devices with a merged backup file (DECISIONS D-008 to D-012). Automatic sync between a single owner's devices is a later, optional addition. Keep the implementation understandable and recoverable.
 
-## Proposed shape
+## Version 1 shape
 
 ```mermaid
 flowchart LR
-  subgraph Devices[User devices]
-    Web[Installable web app<br/>React + TypeScript]
-    Local[Local database<br/>IndexedDB]
-    Cache[App shell cache<br/>Service worker]
-    Web <--> Local
-    Web --> Cache
+  subgraph DeviceA[Device A, e.g. Windows]
+    WebA[Installable web app<br/>React + TypeScript]
+    LocalA[(IndexedDB<br/>records, tombstones,<br/>conflicts, import log)]
+    WebA <--> LocalA
   end
-  Web <-->|HTTPS sync API| API[Private sync service<br/>Node + Express + Zod]
-  API <--> DB[(PostgreSQL<br/>Prisma migrations)]
-  API --> Auth[Owner authentication]
+  subgraph DeviceB[Device B, e.g. Android]
+    WebB[Installable web app]
+    LocalB[(IndexedDB)]
+    WebB <--> LocalB
+  end
+  WebA -->|export| File[[Backup file<br/>versioned JSON,<br/>optionally encrypted]]
+  File -->|import + merge| WebB
+  WebB -->|export| File2[[Backup file]]
+  File2 -->|import + merge| WebA
+  Host[Static HTTPS host or native package<br/>app files only, never user data] -.->|install / update app| WebA
+  Host -.-> WebB
 ```
 
-The installable web app/PWA is the leading cross-platform option because it could share one interface across Windows, Android, and iPhone while storing local data. Its offline, installation, background-sync, and notification behavior must be verified on the target browsers/devices before locking it in. If a critical requirement fails on iPhone, document a native-wrapper alternative before Stage 1.
+User data never leaves a device except in a backup file the user exports. The app files themselves must still be delivered once (DECISIONS open question 8): a PWA needs an HTTPS address to install on Android/iPhone, and its local data belongs to that address, so the address must be chosen once and kept stable.
+
+### After v1 (not built now)
+
+```mermaid
+flowchart LR
+  Web[Web app + IndexedDB] <-->|HTTPS sync| API[Private sync service<br/>Node + Express + Zod]
+  API <--> DB[(PostgreSQL)]
+```
+
+The Stage 1 sync API, authentication, PostgreSQL schema, and client sync engine exist and are tested, but are frozen and not part of v1 (T-019). A future sync would exchange the same record envelopes as backups (T-016).
+
+The installable web app/PWA is the leading cross-platform option because it can share one interface across Windows, Android, and iPhone while storing local data. Its offline and installation behavior, and file import/export on each platform, must be verified on real devices. If a critical requirement fails on iPhone, document a native-wrapper alternative.
 
 ## Main components
 
 - **Client app:** React, TypeScript, Vite, accessible UI, semantic CSS tokens, i18n. English default; Persian RTL; theme and date display preferences.
-- **Local persistence:** IndexedDB through a small typed repository layer (Dexie is a candidate). UI reads and writes locally first so ordinary workflows do not wait for network.
-- **Offline assets:** service worker caches the versioned application shell. Updating the app must not erase local records.
-- **Sync client:** durable local outbox with client-generated UUIDs, idempotency keys, per-record revisions, tombstones, retry/backoff, and visible sync status.
-- **Private sync API:** Node.js/Express with Zod validation. Authenticated owner ID comes from server session/token, never from request payload.
-- **Server database:** PostgreSQL with Prisma migrations. Server validates links and ownership, assigns canonical revision/snapshots, and stores change history needed for sync and recovery.
-- **Shared packages:** shared schemas/types and a separate date/time package for timezone-safe local-date, week-boundary, recurrence, and Gregorian/Jalali display behavior.
-- **Deployment:** private HTTPS endpoint with managed PostgreSQL is the initial recommendation for low maintenance. Provider, region, operating cost, and end-to-end encryption decision remain open.
+- **Local persistence:** IndexedDB through a small typed repository layer (Dexie). It is the only data store in v1. Every record uses the envelope of T-016 (UUID, timestamps, version vector, content hash); deletions keep tombstones. The repository layer, not the UI, enforces domain rules (relationships, history immutability), so the same rules apply to typed-in and imported data.
+- **Backup module (v1):** export, validation, versioned upgrade chain, import preview, atomic merge, pending conflicts, replaced-version archive, and import log, as specified in `BACKUP_FORMAT.md`. Optional encryption via Web Crypto (AES-GCM, PBKDF2) if the owner chooses it.
+- **Offline assets:** service worker caches the versioned application shell. Updating the app must not erase local records; local data schema upgrades run in IndexedDB version upgrades and are tested like backup upgrades.
+- **Shared packages:** shared schemas/types (also the backup schemas) and a separate date/time package for timezone-safe local-date, week-boundary, recurrence, and Gregorian/Jalali display behavior.
+- **App delivery (v1):** static HTTPS hosting of the app files only, or a native wrapper (open question 8). No user data on any server.
+- **After v1 only:** sync client (outbox), private sync API (Express/Zod), PostgreSQL. Built in Stage 1, frozen (T-019).
 
-## Local-first and synchronization model
+## Local-first model and backup merge (v1)
+
+1. Every create/edit is saved to the local database and shown immediately. Each local edit increments this device's counter in the record's version vector.
+2. Export writes all records and tombstones into one versioned file.
+3. Import validates the whole file first, then previews: new, already here, older copy, newer in backup, conflict, deleted here/in backup. Only new items are added automatically; everything else that would change existing data needs the user's explicit choice. Applying is one atomic transaction (`BACKUP_FORMAT.md`).
+4. Conflicts keep both versions until resolved; the replaced version is archived for undo.
+5. Historical records are immutable events; corrections are separate records, so merging history is append-only.
+
+## Synchronization model (after v1, reference for the frozen Stage 1 code)
 
 1. Every ordinary create/edit operation is first saved to the local database and shown immediately.
 2. A queued operation is sent when online. Every operation has a stable UUID/idempotency key so retries do not duplicate data.
@@ -45,20 +70,29 @@ The installable web app/PWA is the leading cross-platform option because it coul
 
 ## Data flow boundaries
 
-- The client may calculate provisional progress for responsive UI, but authoritative goal and dashboard calculations use shared, documented domain logic and are checked against server aggregates.
-- Server is authoritative for user identity, ownership, canonical snapshots, sync revisions, correction audit, and conflict resolution.
+- In v1 the device's domain layer is authoritative: goal and dashboard calculations use shared, documented domain logic, and the same validation applies to imported records. (With a future sync service, the server would become authoritative for identity, ownership, and canonical revisions.)
+- Snapshots that must not change (session/block snapshots, finalized reviews) are captured locally at the time of the event and travel unchanged in backups.
 - Calendar blocks represent planned occurrences. Execution sessions represent actual work. Neither is a substitute for the other.
 - All instants are stored as UTC timestamps; date-only concepts use local date keys and explicit timezone context. Jalali is a display/calendar option, not an implicit timezone or arithmetic mode.
 
 ## Security and privacy outline
 
+**Version 1:**
+
+- User data stays on the device; there is no network traffic carrying user data. The static app host (if used) only serves app files.
+- Data at rest in IndexedDB is protected by the device's lock and storage encryption; the app does not add its own encryption in v1.
+- A backup file contains all personal data. Its protection (optional password encryption, recovery key, or none) is an open owner decision; options and the forgotten-password consequence are in `BACKUP_FORMAT.md`.
+- Imported files are untrusted input: size limits, full schema validation, reference checks, and no execution of anything from the file; text from files is rendered as text only.
+- A strict Content-Security-Policy on the app host, and no third-party scripts.
+
+**After v1 (sync service):**
+
 - HTTPS in transit; secure credential/session storage; server-side authorization on every query/mutation.
 - Private service account for the owner and an explicit device enrollment/revocation flow.
 - Secrets stored in environment configuration and excluded from Git.
-- Server database backups and user-controlled export/restore.
 - Encryption-at-rest and whether end-to-end encryption is required are open decisions. Do not promise end-to-end encryption unless the design and recovery model support it.
 
-Known Stage 1 limitations to address before real data or hosting:
+Known limitations of the frozen Stage 1 server code, to address before it is ever used with real data:
 
 - The bearer token is stored in IndexedDB, so any script injected into the page could read it. A strict Content-Security-Policy (set by the hosting layer) and avoiding third-party scripts are required; HttpOnly cookies are an alternative to evaluate with the hosting choice.
 - The failed-login limiter is in memory (one process) and keys on `req.ip`; behind a reverse proxy, `trust proxy` must be configured or all clients share one key.
@@ -77,8 +111,8 @@ Known Stage 1 limitations to address before real data or hosting:
 | Platform | Status |
 |---|---|
 | Windows 11, Microsoft Edge 155 | Verified by automated E2E: offline reload of the installed shell, data surviving a browser restart and an offline reopen, RTL/theme persistence. Install UI itself not exercised by tests. |
-| Android (Chrome) | Not yet tested on a device. Manifest has 192/512 PNG and maskable icons, which Chrome requires for installation. |
-| iPhone (Safari) | Not yet tested on a device. `apple-touch-icon` and standalone meta tags are present. Known platform limits to verify: storage eviction of web apps not added to the Home Screen, no background sync, notification support only for Home Screen web apps. |
+| Android (Chrome) | Not yet tested on a device. Manifest has 192/512 PNG and maskable icons, which Chrome requires for installation. To verify for v1: file export via share sheet/download and import via file picker. |
+| iPhone (Safari) | Not yet tested on a device. `apple-touch-icon` and standalone meta tags are present. Known platform limits to verify: storage eviction of web apps not added to the Home Screen (backups therefore matter more), share sheet export and Files import of `.json`, no background sync, notification support only for Home Screen web apps. |
 
 ## Technology candidates
 

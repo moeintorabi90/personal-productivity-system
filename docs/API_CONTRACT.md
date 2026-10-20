@@ -1,4 +1,6 @@
-# API and Sync Contract
+# API and Sync Contract (after v1)
+
+**Not part of version 1** (DECISIONS D-012): v1 has no server, no accounts, and no sync; data moves between devices through backup files (`BACKUP_FORMAT.md`). This contract documents the frozen Stage 1 server code and the direction for a later sync version (T-019).
 
 This began as the Stage 0 outline. The routes listed under "Implemented in Stage 1" exist and have handler-level integration tests; all other route groups are still proposals. All routes require HTTPS and authenticated owner context except explicit first-run account creation/login. Server derives owner identity from the session/token.
 

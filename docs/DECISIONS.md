@@ -6,20 +6,25 @@
 |---|---|---|
 | D-001 | English is the default interface; Persian is selectable with full RTL support. | Agreed |
 | D-002 | Windows 11 and Android are the primary devices; iPhone installation is desired if feasible. | Agreed |
-| D-003 | Ordinary app workflows must work offline; internet is used to synchronize devices. | Agreed |
-| D-004 | Start with a private sync service. | Agreed in principle; provider/hosting/security details open |
+| D-003 | Ordinary app workflows must work offline; internet is used to synchronize devices. | **Revised by D-008 for v1:** no internet use for data in v1; sync is post-v1 |
+| D-004 | Start with a private sync service. | **Deferred to after v1 by D-010** |
 | D-005 | Initial product is for one person's own devices, without collaboration features. | Agreed |
 | D-006 | Include quick capture, realistic prioritization/capacity, plan-vs-actual, weekly review, backup/export. | Agreed |
 | D-007 | AI features are optional future additions; core product must not depend on AI connectivity. | Recommended and accepted as product direction |
+| D-008 | **Version 1 works entirely without internet.** Each device keeps its own data locally. | Agreed (owner, 2026-10-20) |
+| D-009 | Version 1 includes **manual offline backup**: export one file and restore it on Windows and Android; the format stays usable by a future iPhone version. See `BACKUP_FORMAT.md`. | Agreed (owner, 2026-10-20) |
+| D-010 | Importing a backup **merges** with existing data; it never replaces or deletes it by itself. Re-importing the same file creates no duplicates. Same ID with different content is never silently overwritten or deleted. | Agreed (owner, 2026-10-20); resolution UX proposed in `BACKUP_FORMAT.md` (T-017), awaiting owner review |
+| D-011 | The backup file is **versioned** so later app versions can upgrade and read it. | Agreed (owner, 2026-10-20) |
+| D-012 | **Not in v1:** automatic sync, any data server, user accounts, and email recovery. The structure must keep adding sync later simple, without building its infrastructure now. Transfer between devices in v1 is manual (backup file). | Agreed (owner, 2026-10-20). Supersedes D-004 and the server parts of D-003 for v1. |
 
 ## Proposed technical decisions
 
 | ID | Proposal | Reason | Status |
 |---|---|---|---|
 | T-001 | Evaluate an installable PWA as the first client approach. | One codebase may serve desktop and phones; validate offline/install behavior on iOS before commitment. | Proposed; requires platform proof |
-| T-002 | Keep an IndexedDB local store and sync through an authenticated TypeScript API to PostgreSQL. | Supports offline work with clear server validation and recoverable cross-device sync. | Proposed |
-| T-003 | Detect concurrent edits using revisions and ask the user to resolve conflicts. | Prevents silent loss of changes while staying simpler than general CRDT replication. | Proposed |
-| T-004 | Use managed private hosting for the sync API/database initially, with export/restore and reliable backups. | Less maintenance for a non-specialist owner. | Recommended; provider/cost/region open |
+| T-002 | Keep an IndexedDB local store and sync through an authenticated TypeScript API to PostgreSQL. | Supports offline work with clear server validation and recoverable cross-device sync. | IndexedDB store: adopted for v1. API/PostgreSQL sync: post-v1 (D-012) |
+| T-003 | Detect concurrent edits using revisions and ask the user to resolve conflicts. | Prevents silent loss of changes while staying simpler than general CRDT replication. | Applies to v1 backup import as version vectors (T-016, T-017) |
+| T-004 | Use managed private hosting for the sync API/database initially, with export/restore and reliable backups. | Less maintenance for a non-specialist owner. | Post-v1 (D-012) |
 | T-005 | Do not install Docker Desktop by default on this PC; first evaluate native PostgreSQL on E: or a managed development database. | The device is at Docker's published 8 GB RAM minimum and had about 0.8 GB free during inspection. | Adopted; Docker not installed |
 
 ## Stage 1 technical decisions (2026-10-20)
@@ -37,6 +42,17 @@
 | T-015 | The API listens on `127.0.0.1` by default (`HOST` unset), in every environment. A non-loopback `HOST` is an explicit opt-in and requires `SETUP_TOKEN`; any `SETUP_TOKEN` must be at least 24 characters. In loopback mode, requests with a non-loopback `Host` header are rejected (`HOST_NOT_ALLOWED`) to block DNS rebinding. Hosted deployments set `HOST` (or sit behind a reverse proxy on loopback) and always have `SETUP_TOKEN`. | Codex review found that `listen` without a host bound to all interfaces while development setup could be open (`SETUP_TOKEN` unset), letting any device on the network claim the owner account. | Adopted (2026-10-20) |
 | T-014 | The repository keeps a monorepo folder layout (`apps/web`, `apps/api`, `packages/shared`) but uses **one root `package.json`** instead of npm workspaces. Internal packages are resolved by path aliases: TypeScript `paths`, Vite/Vitest `resolve.alias`, and a small Node resolve hook (`tools/node-aliases.mjs`) for the API runtime. | The project folder is on drive E:, which is **exFAT**; exFAT supports neither symlinks nor junctions, and `npm install` with workspaces failed with `EISDIR … symlink`. Moving the repository to an NTFS drive was not chosen because the owner specified this location. | Adopted. If the repository moves to NTFS, npm workspaces can be restored without code changes. |
 
+## v1 offline-and-backup technical decisions (2026-10-20, proposed)
+
+These follow from D-008 to D-012. They are proposals until implemented and reviewed; details are in `BACKUP_FORMAT.md`.
+
+| ID | Proposal | Reason | Status |
+|---|---|---|---|
+| T-016 | Every user record carries a client UUID, `createdAt`/`updatedAt` (UTC), a **version vector** keyed by device ID, and a **content hash**. Deletions keep **tombstones**. Append-only history records never change after creation. | Lets import tell "same", "older", "newer", and "edited on both sides" apart without a server, so re-import is idempotent and nothing is overwritten silently. The same primitives serve future sync. | Proposed |
+| T-017 | Import is preview → confirm → one atomic local transaction. Only new items are added automatically; newer-in-backup items need confirmation; true conflicts and deletions are stored as pending conflicts with both versions and resolved side by side (keep this device / use backup / keep both). Replaced versions are archived locally for undo. | Safe and understandable; meets "merge, never replace or delete silently". | Proposed; awaiting owner review of the UX |
+| T-018 | Backup container: one UTF-8 JSON file (`.json`) with `format`, integer `formatVersion`, `dataSchemaVersion`, `backupId`, source device, optional encryption envelope, payload, and SHA-256 integrity hash. Readers upgrade older versions step by step and refuse newer ones. | Portable across Windows, Android, and iPhone file pickers; inspectable; upgradeable. | Proposed |
+| T-019 | The Stage 1 sync API, authentication, PostgreSQL schema, and client sync engine **stay in the repository, frozen and tested, but are not part of v1**: no further work on them, and the v1 UI must not show account/sync screens (hidden behind a build-time feature flag, off by default). When sync is planned after v1, it is adapted to T-016 (version vectors instead of server revisions). | Preserves tested work at low cost and keeps the path to sync simple, without building more server infrastructure now. Alternative: move it to an archive branch to shrink the v1 codebase. | Proposed; owner may choose the archive alternative |
+
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 
 | Criterion | Prisma 7.10.1 (latest stable; `latest` tag is 8.0.0-rc.23) | Plain SQL + `pg` 8.23 |
@@ -52,14 +68,17 @@ Conclusion: for Stage 1 on this machine, plain SQL + `pg` is smaller, runs uncha
 
 ## Consequential open decisions
 
-These should be settled before the architecture is treated as final and before Stage 1 creates an account or stores real personal data.
+Questions 1–3 concern the post-v1 sync service (D-012) and no longer block v1. Questions 7 and 8 must be settled for v1.
 
-1. **Sync hosting and jurisdiction:** managed service provider, expected monthly budget, and preferred data region. Recommendation: managed service with a private owner account, transparent backup/restore, and no public sharing.
-2. **Encryption model:** standard HTTPS plus provider encryption-at-rest, or end-to-end encryption. Recommendation for the first release: HTTPS, strong authentication, encrypted provider storage/backups, and user export; investigate end-to-end encryption if the data sensitivity requires it because it complicates password recovery and server-side analytics.
-3. **Account recovery:** email/password, passkey, or another recovery method. Recommendation: standard low-friction owner sign-in with a tested recovery flow; no account sharing.
+1. **(Post-v1) Sync hosting and jurisdiction:** managed service provider, expected monthly budget, and preferred data region. Recommendation: managed service with a private owner account, transparent backup/restore, and no public sharing.
+2. **(Post-v1) Sync encryption model:** standard HTTPS plus provider encryption-at-rest, or end-to-end encryption. Recommendation for the first release: HTTPS, strong authentication, encrypted provider storage/backups, and user export; investigate end-to-end encryption if the data sensitivity requires it because it complicates password recovery and server-side analytics.
+3. **(Post-v1) Account recovery:** email/password, passkey, or another recovery method. Recommendation: standard low-friction owner sign-in with a tested recovery flow; no account sharing.
 4. **iPhone support bar:** installable and foreground offline use may be sufficient, or must background-sync/notify like a native app. Recommendation: require installability and foreground offline use first; decide on background behavior after device validation.
 5. **Default calendar preferences:** initial proposal is English + Gregorian display, selectable Jalali/Both, Saturday week start as a configurable default suited to the user's locale, and explicit timezone selection. User may choose different defaults during first-run setup.
 6. **Capacity and prioritization defaults:** choose default daily capacity and whether essential/important/flexible labels are enough for the first release. Recommendation: user-configurable capacity with simple Must / Should / Could labels and no automatic overload.
+7. **(v1) Backup file protection and forgotten passwords:** options A–E are compared in `BACKUP_FORMAT.md` ("Protection of the backup file"). With no account or server, a forgotten backup password cannot be recovered by anyone. Recommendation, not decided: optional password per export (AES-256-GCM, PBKDF2), off by default but offered at each export, with double entry, an explicit loss warning, an immediate verify step, and an optional hint; a recovery key (option D) as a later upgrade.
+8. **(v1) How the app itself is delivered:** a web app (PWA) must be loaded once from an HTTPS address to be installed on Android and iPhone, and its local data belongs to that exact address (changing the address later means the data is not visible there; a backup would be the migration path). Options: (a) a static HTTPS host that serves only the app files and never receives user data (e.g. GitHub Pages, Cloudflare Pages, Netlify) — recommended, with a stable address chosen once; (b) a native wrapper (e.g. Capacitor) distributed as an Android package/Windows installer, which avoids hosting but adds store/signing work and an iOS build later; (c) local network serving only for testing. This is not a data server and does not conflict with D-012, but it needs an owner choice.
+9. **(v1) Stage 1 server code:** keep frozen in the repository (T-019, recommended) or move to an archive branch.
 
 ## Environment findings (2026-10-20)
 

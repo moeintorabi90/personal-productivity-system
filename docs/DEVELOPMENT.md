@@ -18,20 +18,20 @@
 
 ```powershell
 npm.cmd install
-Copy-Item apps/api/.env.example apps/api/.env   # optional; defaults work without it
-npm.cmd run db:migrate                            # creates/updates the dev database
+npm.cmd run dev:web    # http://localhost:5173 — the v1 app; needs no server
 ```
 
-Start the API and the web app in two terminals:
+Version 1 is offline-only (DECISIONS D-012). The web app works fully without the API; until Stage 1B hides it, the "Account & sync" screen simply reports that the server is unreachable.
+
+**Frozen post-v1 server code (optional, for its own tests or experiments only):**
 
 ```powershell
+Copy-Item apps/api/.env.example apps/api/.env   # optional; defaults work without it
+npm.cmd run db:migrate                            # creates/updates the dev database
 npm.cmd run dev:api    # http://127.0.0.1:8787 (PGlite; or PostgreSQL if DATABASE_URL is set)
-npm.cmd run dev:web    # http://localhost:5173 (proxies /v1 to the API)
 ```
 
-Both servers listen on this computer only (loopback). See "Network access" below before opening them to other devices.
-
-Open http://localhost:5173, then **Account & sync** to create the owner account. Use test values only: real personal data must wait for the hosting and security decisions (DECISIONS open questions 1–3). Without an account the app works fully on the device; nothing is synced.
+Both servers listen on this computer only (loopback). See "Network access" below before opening them to other devices. Use test values only with the API.
 
 To try the installable/offline build: `npm.cmd run build`, then `npm.cmd run preview:web` (http://localhost:4173, service worker active). Stop with Ctrl+C.
 
@@ -78,9 +78,10 @@ docs/           Product, architecture, data/API contracts, decisions, testing
 
 - Before upgrades, create a database backup and verify the restore procedure periodically.
 - Keep source code in Git with small, understandable commits; keep database backups outside the repository and encrypted.
-- Local device data is not a substitute for a backup. Sync replication can copy accidental changes/deletions, so backups need retention and restore points.
+- In v1 the device is the only copy of the user's data until a backup file is exported. Losing the device, clearing browser data, or (on iPhone) storage eviction loses everything since the last backup. Keep several dated backup files, not just the latest.
+- The app's local data belongs to the address it is served from: changing the app's web address later makes existing data invisible there. Choose the address once (DECISIONS open question 8); a backup is the migration path.
 - Exported user data must include definitions, history, metric units, timezone context, and a versioned schema manifest.
-- If sync is unavailable, the app keeps using local data, shows pending changes, and retries with backoff; operation IDs prevent duplicates.
+- Imports are previewed and applied atomically; a failed or refused import leaves data unchanged (`BACKUP_FORMAT.md`).
 - Never edit an applied migration (the runner refuses on checksum mismatch); add a new numbered file.
 - If migration or restore fails, preserve the prior database and logs; do not delete the only working copy.
 

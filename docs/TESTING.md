@@ -6,26 +6,46 @@ Testing requirements are part of delivery. A reported result must name the exact
 
 - **Pure unit tests:** date/time conversion, recurrence, week boundaries, goal progress/pacing, metric aggregation, estimation suggestions, state transitions, and validation.
 - **Client component tests:** React Testing Library for forms, accessible controls, RTL/LTR behavior, offline/sync indicators, and conflict resolution UI.
-- **API integration tests:** real Express handlers with PostgreSQL, including authorization, error responses, transactions, idempotency, and conflicts.
-- **Database integrity tests:** migrations from empty database; constraints, history preservation, tombstones, ownership isolation, and correction audit.
-- **End-to-end tests:** Playwright workflows for first-run setup, project/task creation, planning, offline logging, reconnect/sync, conflict handling, review finalization, and export/restore.
-- **Manual platform checks:** Windows 11 desktop, Android install/offline use, and iPhone install/offline feasibility on supported browsers. Record device/OS/browser versions and limitations.
+- **Local repository/domain tests (v1):** IndexedDB repository through fake-indexeddb: relationship rules, history immutability, version vectors, tombstones, local schema upgrades.
+- **Backup tests (v1):** export/import round-trip, merge classification, idempotent re-import, conflicts, upgrades, corrupted/foreign/newer files, encryption if chosen (see below).
+- **API integration and server database tests (frozen Stage 1 code, after v1):** real Express handlers with PostgreSQL; kept running in `npm test` so the frozen code does not rot, but not a v1 release gate.
+- **End-to-end tests:** Playwright workflows for first run, project/task creation, planning, offline logging, export and import with conflict handling, review finalization.
+- **Manual platform checks:** Windows 11 desktop, Android install/offline use and file export/import, and iPhone install/offline/file feasibility on supported browsers. Record device/OS/browser versions and limitations.
 - **Accessibility/localization checks:** English LTR, Persian RTL, keyboard and screen-reader labeling, theme contrast, and long text/date layouts.
 
-## Minimum acceptance coverage
+## Minimum acceptance coverage (v1)
 
-- Setup, account authentication, preference persistence, and one-owner isolation.
-- Project/workstream/task relationship and ownership rejection at HTTP layer.
-- Offline-first local edits and idempotent reconnect without duplicate records.
-- Concurrent mutable edit conflict surfaced without lost update.
+- First run without account; preference persistence; everything works with the network disabled.
+- Project/workstream/task relationship rules enforced locally, for typed-in and imported data.
+- Backup: see "Backup acceptance tests" below.
+- Concurrent edits (same item changed on two devices, then merged via backup) surfaced as conflicts without lost data.
 - Timezone, DST, week start, recurrence, Gregorian/Jalali display separation.
 - Goal progress and active-day pacing against documented examples.
 - Running/finished session invariants, chronology, unplanned execution, correction audit.
 - Planned/actual separation, server snapshots, actual output recording.
 - Dashboard definitions and calculation consistency.
 - Weekly finalized snapshot stability and estimation suggestion behavior.
-- Export/restore and migration from clean DB and previous app version.
+- Local data upgrade from the previous app version without loss.
 - Essential responsive workflows and theme/language persistence.
+
+## Backup acceptance tests (v1, Stage 1B onward)
+
+Automated (Vitest, two simulated devices with separate fake IndexedDB stores, plus Playwright for the real file flow):
+
+1. **Round-trip:** export from device A, import into empty device B → all records, tombstones, and history identical (by ID and content hash).
+2. **Merge, no loss:** B has its own items; importing A's backup adds A's items and leaves every B item unchanged; nothing is deleted.
+3. **Idempotent:** importing the same file twice → second import reports everything "already here", database unchanged, no duplicate IDs.
+4. **Older copy:** export, edit locally, re-import the old file → local edits kept, no conflict.
+5. **Newer in backup:** item unchanged on B since it came from A, edited on A → listed as an update needing confirmation; not applied without confirmation.
+6. **True conflict:** same item edited on A and B → pending conflict with both versions; survives app restart; each resolution choice (keep this device / use backup / keep both) gives the expected result; undo restores the replaced version.
+7. **Deletions:** deleted on A and still present on B (and the reverse) → pending conflict, never an automatic delete or resurrection.
+8. **History:** append-only records merge by ID; corrections are appended; same ID with different content raises an integrity warning and changes nothing.
+9. **Bad input:** truncated file, wrong `format`, hash mismatch, schema violation, unresolved reference, oversized file → refused with a clear message, database unchanged.
+10. **Versioning:** a committed sample file for every released `formatVersion` imports into the current app; a file with a newer version is refused without changes.
+11. **Encryption (if chosen):** correct password round-trips; wrong password fails without changes; tampered ciphertext fails authentication; the forgotten-password warning is shown before export.
+12. **Preview accuracy:** preview counts equal what is applied.
+
+Manual on real devices (record versions): export on Windows → import on Android, and the reverse; file picker/share sheet behavior; iPhone feasibility of export/import with `.json`.
 
 ## Release gate
 
@@ -64,9 +84,11 @@ Security fix after Codex review (branch `fix/api-loopback-bind`, DECISIONS T-015
 
 A defect found by these tests and fixed: the service worker missed cached JS/CSS offline because the server's `Vary: Origin` header made `caches.match` fail for `crossorigin` requests (now `ignoreVary: true`).
 
+Scope note (D-012, added after this report): the server, authentication, and sync tests above cover the frozen post-v1 code; they keep running but are no longer v1 gates.
+
 Not yet tested (Stage 1):
 
-- **The full suite against a native PostgreSQL server** (`TEST_DATABASE_URL`): no server is available on this PC and Docker is excluded. Only the wire-protocol path against PGlite has run.
+- **(Post-v1, no longer a v1 gate)** The full suite against a native PostgreSQL server (`TEST_DATABASE_URL`): no server is available on this PC and Docker is excluded. Only the wire-protocol path against PGlite has run.
 - **Android and iPhone** installation and offline use on real devices; PWA install prompt on Windows (headless E2E does not exercise installation UI).
 - Screen-reader pass and contrast measurement (semantic labels and focus styles exist; not audited with assistive technology).
 - Concurrent pushes from two devices at the same instant on real PostgreSQL (owner row lock is implemented; PGlite serializes transactions, so the race is not exercised).

@@ -27,7 +27,7 @@ erDiagram
 
 Names in the diagram are conceptual. Tables are defined by plain SQL migrations in `apps/api/migrations` (DECISIONS T-006); later stages add their own migrations.
 
-## Implemented in Stage 1 (`0001_foundation.sql`)
+## Implemented in Stage 1 server (`0001_foundation.sql`) — frozen, not part of v1
 
 | Table | Purpose and key constraints |
 |---|---|
@@ -47,7 +47,8 @@ On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device ident
 
 ## Entities
 
-- **User:** one owner account in the initial product, used for sign-in and isolating synced private data.
+- **User:** in v1 there is no account; "the owner" is whoever uses the device. (A future sync service would add an owner account.)
+- **Device:** local identity of each installation (UUID and editable name). Used in version vectors and to label backups; never sent anywhere in v1.
 - **UserPreference:** language, theme, calendar display, week start, explicit IANA timezone, and capacity preferences.
 - **Project / Workstream:** user-created organization. A workstream belongs to one project and is not nestable.
 - **TaskDefinition:** reusable task details and recurrence configuration. It is not evidence that work occurred.
@@ -58,13 +59,15 @@ On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device ident
 - **OutputRecord:** actual value for a metric and session. Corrections append an audit event rather than replacing the original value.
 - **Habit / HabitOccurrence / HabitCompletion:** user-defined recurring activity, planned local-date occurrence, and separate completion record.
 - **WeeklyReview:** selected local week, computed immutable summary snapshot, source record IDs/revisions, user observations, and next-week adjustments.
-- **SyncDevice / ChangeLog / Tombstone:** enrolled device cursor, accepted revision/change stream, and deletion marker for offline replication.
+- **Tombstone:** deletion marker (record type, ID, deletion time, version vector) kept locally and exported in backups.
+- **PendingConflict / ReplacedVersion / ImportLog (v1, local only):** both versions of an unresolved import conflict; versions replaced by a user's choice (for undo); and the record of each import (backup ID, source device, counts). See `BACKUP_FORMAT.md`.
+- **SyncDevice / ChangeLog (after v1, server):** enrolled device cursor and accepted change stream; implemented in the frozen Stage 1 code.
 
 ## Core invariants
 
 ### Ownership and relationships
 
-- All private records are scoped by the authenticated owner ID; client-supplied owner IDs are ignored/rejected.
+- v1: all records on a device belong to the device's user. (After v1, with a server: all private records are scoped by the authenticated owner ID; client-supplied owner IDs are ignored/rejected.)
 - A workstream's project must match the task's project.
 - A calendar block's task, project, workstream, and snapshots must be mutually consistent at its recorded revision.
 - An execution session must reference a task definition owned by the same user; its optional block must reference the same task or an explicitly permitted linked task.
@@ -89,7 +92,7 @@ On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device ident
 - Running: start exists; end and final state are absent.
 - Finished: end and final state are both present; end is not before start.
 - Finished sessions are never silently reopened. Any correction/reopen operation must be explicit and audited.
-- Historical names/definitions are captured with server-canonical revisions; later edits do not change prior session or block snapshots.
+- Historical names/definitions are captured as snapshots when the event is recorded; later edits (and later imports) do not change prior session or block snapshots.
 - Corrections to actual outputs preserve original value, attribution, actor/device, timestamp, and reason where appropriate.
 - Finalized review snapshots remain stable after preferences, definitions, schedules, or source records change.
 
@@ -100,10 +103,18 @@ On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device ident
 - Output metric values may support multiple goals only through explicit compatible attribution records.
 - Pacing uses target, progress, deadline, timezone, active dates, and explicit weekly objective. Do not union multiple task schedules to invent a goal schedule.
 
-### Sync and concurrency
+### Identity, versions, and merging (v1 backup; also the basis for later sync)
+
+- Every record has a client-created UUID that is never reused; the same ID on two devices means the same item.
+- Every record carries a version vector (device ID → edit counter) and a content hash (T-016). A local edit increments only this device's counter.
+- Import never deletes and never replaces existing data automatically: new items are added; identical and older copies are skipped; newer-in-backup items need confirmation; edits on both sides, and deletions on either side, become pending conflicts that keep both versions.
+- Importing the same backup again changes nothing and creates no duplicates.
+- Concurrent edits to one mutable record produce an explicit conflict; no silent last-write-wins.
+- History events and finalized snapshots are append-only; corrections add records. The same ID with different content in history is an integrity warning, never merged.
+- Tombstones are retained and exported (no expiry in v1) and are not confused with ordinary archive state.
+- Relationship rules are checked for imported records too; a backup whose references cannot be resolved is refused.
+
+### Sync and concurrency (after v1; implemented in the frozen Stage 1 server code)
 
 - Client-created UUIDs plus idempotency keys prevent duplicate creation on retry.
-- Mutable definitions have server revisions and base revision on update.
-- Concurrent edits to one mutable record produce an explicit conflict; no silent last-write-wins for consequential fields.
-- History events and finalized snapshots are append-only; corrections add records.
-- Tombstones survive long enough to reach offline devices and are not confused with ordinary archive state.
+- Mutable definitions have server revisions and base revision on update (to be adapted to version vectors).
