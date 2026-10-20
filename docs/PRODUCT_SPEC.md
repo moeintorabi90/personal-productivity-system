@@ -2,7 +2,7 @@
 
 ## Product summary
 
-A private, offline-first personal productivity app that helps one person set goals, organize projects and tasks, plan time, record actual work and measurable outputs, and learn from weekly results. It runs on the user's own devices without internet.
+A private, offline-first personal productivity app that helps one person set goals, organize projects and tasks, plan time, record actual work and measurable outputs, and learn from weekly results. Once installed, it runs on the user's own devices without internet. Installing it the first time and receiving app updates may need internet, depending on how the app is delivered (DECISIONS open question 8).
 
 **Version 1** keeps each device's data locally and moves or restores data through a manual backup file that is merged on import (DECISIONS D-008 to D-012, `BACKUP_FORMAT.md`). Automatic sync through a private service is a possible later version.
 
@@ -10,7 +10,7 @@ A private, offline-first personal productivity app that helps one person set goa
 
 1. Planning and actual execution are separate records.
 2. Historical records are preserved. Changes to today's task definition must not rewrite yesterday's work log or a finalized review.
-3. The app is fully useful offline. In v1 it needs no internet for data at all; any later sync is an enhancement, never a requirement.
+3. The app is fully useful offline after installation. In v1 user data never needs the internet; only installing and updating the app itself may. Any later sync is an enhancement, never a requirement.
 4. Every chart and metric has a plain definition and traceable source.
 5. A missed plan helps adjust future plans; it must not automatically overload the next day.
 6. English is the default language. Persian is fully supported, including RTL.
@@ -84,12 +84,14 @@ A private, offline-first personal productivity app that helps one person set goa
 
 ### Offline use, backup, and recovery (v1)
 
-- [ ] All workflows work without internet after the app is installed; data is stored only on the device.
+- [ ] All workflows work without internet after the app is installed; data is stored only on the device. First installation and app updates may require internet (delivery method: open question 8).
+- [ ] Local data is tied to the app's origin (scheme, host, and port, not the full URL path). The user is told that a backup is needed before switching to an app served from a different origin, or before clearing browser data.
 - [ ] User can export a single backup file containing all data, without internet (share sheet on phones, save/download on Windows).
 - [ ] User can import a backup on Windows and Android; the format is designed to work for a future iPhone version.
 - [ ] Import merges: new items are added; existing items are never replaced or deleted without the user's explicit choice.
 - [ ] Importing the same file again creates no duplicates and changes nothing.
-- [ ] Same ID with different content on device and in file: both versions are kept and shown side by side; the user chooses (keep this device's / use the backup's / keep both where it makes sense).
+- [ ] Same ID with different content on device and in file: both versions are kept and shown side by side until the user chooses. Every item offers "keep this device's" or "use the backup's" version; items with links (projects, tasks, …) keep their ID so links and history stay attached; "keep both" (a copy) only for independent items without links. (Final UX approval pending, T-017.)
+- [ ] Diagnostic data of the frozen sync code (`sync_probe`) is not part of backups.
 - [ ] Unresolved conflicts survive restarts and can be resolved later; a wrong choice can be undone.
 - [ ] Backup files are versioned; newer app versions import older backups; an older app refuses a newer file clearly without changing data.
 - [ ] Corrupted or incomplete files are detected and refused without changing data.

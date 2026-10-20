@@ -1,6 +1,6 @@
 # Personal Productivity System
 
-An offline personal planning and reflection app for Windows 11 and Android, with iPhone installability as a design goal. Version 1 works entirely without internet: each device keeps its own data, and a versioned backup file (merged on import) moves data between devices.
+An offline personal planning and reflection app for Windows 11 and Android, with iPhone installability as a design goal. Version 1 works without internet once installed (installing and updating the app may need internet): each device keeps its own data, and a versioned backup file (merged on import) moves data between devices.
 
 ## Project status
 

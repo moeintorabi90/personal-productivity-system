@@ -22,11 +22,17 @@ flowchart LR
   File -->|import + merge| WebB
   WebB -->|export| File2[[Backup file]]
   File2 -->|import + merge| WebA
-  Host[Static HTTPS host or native package<br/>app files only, never user data] -.->|install / update app| WebA
+  Host[App delivery: static HTTPS host or native package<br/>serves app code, receives no user data<br/>open question 8] -.->|install / update app| WebA
   Host -.-> WebB
 ```
 
-User data never leaves a device except in a backup file the user exports. The app files themselves must still be delivered once (DECISIONS open question 8): a PWA needs an HTTPS address to install on Android/iPhone, and its local data belongs to that address, so the address must be chosen once and kept stable.
+User data never leaves a device except in a backup file the user exports.
+
+**What still needs internet in v1.** Daily use after installation works offline. Installing the app the first time, and receiving app updates, may need internet: as a PWA, the app files are downloaded from a web address (HTTPS is required for the service worker and for installation on Android and iPhone), and updates are fetched from the same address when the device is online. A native package (option b in DECISIONS open question 8) could instead be installed from a file. How the app is delivered is an open owner decision.
+
+**Local data is tied to the app's origin.** Browsers store IndexedDB and the service-worker cache per **origin**: the combination of scheme, host, and port (e.g. `https://app.example.org:443`). The path does not matter, so `…/index.html` and `…/settings` share data, but `http://` vs `https://`, a different host or subdomain, or a different port is a separate origin with separate, empty storage. Changing the origin later makes existing local data invisible to the new one; a backup export/import is the migration path. The origin should therefore be chosen once and kept stable.
+
+**Trust in whoever serves the app code.** A static host never receives user data from the app, but it delivers the code that runs with full access to that origin's local data. If code served from that origin is malicious or tampered with (a compromised hosting account, a modified build, a hijacked domain), it can technically read, change, or send the local data. Mitigations to weigh with the delivery decision: HTTPS only; strong protection (2FA) of the hosting and domain accounts; reproducible builds from this repository; no third-party scripts and a strict Content-Security-Policy; showing the app version and applying updates visibly; for a native package, code signing. No hosting provider has been chosen, and availability of any provider from Iran has not been evaluated; both remain part of open question 8.
 
 ### After v1 (not built now)
 
@@ -47,7 +53,7 @@ The installable web app/PWA is the leading cross-platform option because it can 
 - **Backup module (v1):** export, validation, versioned upgrade chain, import preview, atomic merge, pending conflicts, replaced-version archive, and import log, as specified in `BACKUP_FORMAT.md`. Optional encryption via Web Crypto (AES-GCM, PBKDF2) if the owner chooses it.
 - **Offline assets:** service worker caches the versioned application shell. Updating the app must not erase local records; local data schema upgrades run in IndexedDB version upgrades and are tested like backup upgrades.
 - **Shared packages:** shared schemas/types (also the backup schemas) and a separate date/time package for timezone-safe local-date, week-boundary, recurrence, and Gregorian/Jalali display behavior.
-- **App delivery (v1):** static HTTPS hosting of the app files only, or a native wrapper (open question 8). No user data on any server.
+- **App delivery (v1):** static HTTPS hosting of the app files, or a native wrapper (open question 8, undecided). No user data on any server; the app code's source must be trusted (see above).
 - **After v1 only:** sync client (outbox), private sync API (Express/Zod), PostgreSQL. Built in Stage 1, frozen (T-019).
 
 ## Local-first model and backup merge (v1)
@@ -79,7 +85,7 @@ The installable web app/PWA is the leading cross-platform option because it can 
 
 **Version 1:**
 
-- User data stays on the device; there is no network traffic carrying user data. The static app host (if used) only serves app files.
+- User data stays on the device; there is no network traffic carrying user data. The app host (if used) only serves app files, but the code it serves can access the origin's local data, so the host, domain, and build pipeline are part of the trust boundary.
 - Data at rest in IndexedDB is protected by the device's lock and storage encryption; the app does not add its own encryption in v1.
 - A backup file contains all personal data. Its protection (optional password encryption, recovery key, or none) is an open owner decision; options and the forgotten-password consequence are in `BACKUP_FORMAT.md`.
 - Imported files are untrusted input: size limits, full schema validation, reference checks, and no execution of anything from the file; text from files is rendered as text only.
@@ -114,6 +120,26 @@ Known limitations of the frozen Stage 1 server code, to address before it is eve
 | Android (Chrome) | Not yet tested on a device. Manifest has 192/512 PNG and maskable icons, which Chrome requires for installation. To verify for v1: file export via share sheet/download and import via file picker. |
 | iPhone (Safari) | Not yet tested on a device. `apple-touch-icon` and standalone meta tags are present. Known platform limits to verify: storage eviction of web apps not added to the Home Screen (backups therefore matter more), share sheet export and Files import of `.json`, no background sync, notification support only for Home Screen web apps. |
 
-## Technology candidates
+## Technology stack
 
-The proposed stack adapts the initial direction: TypeScript monorepo/npm workspaces; React/Vite; Express/Zod; PostgreSQL/Prisma; Vitest/RTL, PostgreSQL integration tests, and Playwright. Docker Compose is optional, not a prerequisite: this PC is at Docker Desktop's published minimum RAM and has little free memory, so first evaluate native PostgreSQL on the larger E: drive or a managed development database. Candidate client libraries include TanStack Query for remote sync state, FullCalendar for planning, Recharts for metrics, and i18next for translation. Verify current versions, licensing, accessibility, offline fit, and platform support during Stage 1 selection.
+### Adopted (current)
+
+| Area | Choice | Decision |
+|---|---|---|
+| Repository | Monorepo folder layout (`apps/web`, `apps/api`, `packages/shared`) with **one root `package.json`** and path aliases; no npm workspaces (exFAT drive) | T-014 |
+| Language/tooling | TypeScript 7, Node.js 24 (built-in type stripping for the API) | Stage 1 |
+| Client | React 19 + Vite 8; Dexie 4 over IndexedDB; typed in-house i18n (no i18next); hand-written service worker (no `vite-plugin-pwa`) | T-008, T-009 |
+| Shared validation | Zod 4 schemas in `packages/shared` | Stage 1 |
+| Tests | Vitest (unit, repository, component with React Testing Library + jsdom), Playwright with the installed Microsoft Edge | T-013 |
+| v1 backup (planned, Stage 1B) | Web Crypto for hashing and optional encryption; JCS canonical JSON | T-016–T-018 |
+| Frozen post-v1 server | Express 5 + Zod; plain SQL with the `pg` driver (no Prisma); PGlite for development/tests | T-006, T-007, T-019 |
+
+Not used: Docker (T-005), Prisma (T-006), npm workspaces (T-014), i18next (T-009), `vite-plugin-pwa` (T-008).
+
+### Candidates for later stages (not yet selected)
+
+FullCalendar or a lighter calendar component for planning (Stage 3), a charting library such as Recharts for metrics (Stage 6), and a Jalali date utility for the date/time package. Verify current versions, licensing, bundle size, accessibility, RTL support, and offline fit when each stage starts. TanStack Query is no longer relevant to v1 (no remote data).
+
+### History (Stage 0 proposal, superseded)
+
+The Stage 0 proposal named a TypeScript monorepo with npm workspaces; React/Vite; Express/Zod; PostgreSQL with Prisma; Vitest/RTL, PostgreSQL integration tests, and Playwright; optional Docker Compose; and TanStack Query, FullCalendar, Recharts, and i18next as client candidates. It was replaced by the decisions above during Stage 1 and by the v1 re-scope (D-012).

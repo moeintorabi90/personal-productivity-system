@@ -22,7 +22,7 @@ Testing requirements are part of delivery. A reported result must name the exact
 - Timezone, DST, week start, recurrence, Gregorian/Jalali display separation.
 - Goal progress and active-day pacing against documented examples.
 - Running/finished session invariants, chronology, unplanned execution, correction audit.
-- Planned/actual separation, server snapshots, actual output recording.
+- Planned/actual separation, historical snapshots captured locally when a session or block is recorded (task/project/workstream names at that time; unchanged by later edits and by imports), actual output recording.
 - Dashboard definitions and calculation consistency.
 - Weekly finalized snapshot stability and estimation suggestion behavior.
 - Local data upgrade from the previous app version without loss.
@@ -37,13 +37,17 @@ Automated (Vitest, two simulated devices with separate fake IndexedDB stores, pl
 3. **Idempotent:** importing the same file twice → second import reports everything "already here", database unchanged, no duplicate IDs.
 4. **Older copy:** export, edit locally, re-import the old file → local edits kept, no conflict.
 5. **Newer in backup:** item unchanged on B since it came from A, edited on A → listed as an update needing confirmation; not applied without confirmation.
-6. **True conflict:** same item edited on A and B → pending conflict with both versions; survives app restart; each resolution choice (keep this device / use backup / keep both) gives the expected result; undo restores the replaced version.
+6. **True conflict:** same item edited on A and B → pending conflict with both versions; survives app restart; each resolution choice gives the expected result; undo restores the replaced version. For an **independent** fixture type, "keep both" adds a copy with a new ID. For a **linked** fixture type (parent with children), "keep both" is not offered; choosing either version keeps the ID and all children stay attached.
 7. **Deletions:** deleted on A and still present on B (and the reverse) → pending conflict, never an automatic delete or resurrection.
 8. **History:** append-only records merge by ID; corrections are appended; same ID with different content raises an integrity warning and changes nothing.
-9. **Bad input:** truncated file, wrong `format`, hash mismatch, schema violation, unresolved reference, oversized file → refused with a clear message, database unchanged.
-10. **Versioning:** a committed sample file for every released `formatVersion` imports into the current app; a file with a newer version is refused without changes.
-11. **Encryption (if chosen):** correct password round-trips; wrong password fails without changes; tampered ciphertext fails authentication; the forgotten-password warning is shown before export.
-12. **Preview accuracy:** preview counts equal what is applied.
+9. **Bad input:** truncated file, wrong `format`, hash mismatch, schema violation, unknown record type, unresolved reference, oversized file → refused with a clear message, database unchanged.
+10. **Scope:** an export never contains `sync_probe` or sync-machinery data, even when the device has diagnostic notes; a file that contains them is refused.
+11. **Versioning:** a committed sample file for every released `formatVersion` imports into the current app; a file with a newer version is refused without changes.
+12. **Integrity hash:** computed over the JCS-canonical document without `integrity`; matches an independent reference implementation on the committed sample files; a damaged encrypted file is reported as damaged before any password prompt.
+13. **Encryption (if chosen):** correct password round-trips; wrong password fails without changes; modified ciphertext, IV, salt, iteration count, or any header field fails authentication; a password typed in a different Unicode form (NFC/NFD) still works; the forgotten-password warning is shown before export.
+14. **Preview accuracy:** preview counts equal what is applied.
+
+Until later stages add real product types, items 1–9 and 14 use test-only fixture record types (one independent, one linked parent/child pair) plus preferences.
 
 Manual on real devices (record versions): export on Windows → import on Android, and the reverse; file picker/share sheet behavior; iPhone feasibility of export/import with `.json`.
 

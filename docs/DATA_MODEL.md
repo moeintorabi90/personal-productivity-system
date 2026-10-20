@@ -36,14 +36,14 @@ Names in the diagram are conceptual. Tables are defined by plain SQL migrations 
 | `sync_device` | Client-generated device IDs, unique per owner (`PRIMARY KEY (user_id, id)`); `revoked_at` |
 | `auth_session` | SHA-256 token hash, expiry, revocation; FK to the owner's device |
 | `user_preference` | Language, theme, calendar display, week start, nullable IANA time zone, `revision`; CHECK constraints mirror the shared Zod schema |
-| `sync_probe` | Stage 1 diagnostic record (T-011); `PRIMARY KEY (user_id, id)`; tombstone via `deleted_at` |
+| `sync_probe` | Stage 1 sync diagnostic record (T-011), not product data and not in v1 backups; `PRIMARY KEY (user_id, id)`; tombstone via `deleted_at` |
 | `sync_operation` | Applied push results by `(user_id, op_id)` with request hash, for idempotent retries |
 | `change_log` | Append-only per-owner change stream (`seq` identity) read by pull; deletions are `deleted = true` rows |
 | `schema_migrations` | Applied migration versions and checksums (created by the runner) |
 
 Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed by cascade.
 
-On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device identity, session, cursor, last sync), `preferences`, `probes`, the durable `outbox`, and unresolved `conflicts`.
+On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device identity, session, cursor, last sync), `preferences`, `probes`, the durable `outbox`, and unresolved `conflicts`. Of these, only `preferences` is product data in the v1 backup; `probes` (`sync_probe`, diagnostic) and the sync tables (`outbox`, session, cursor, sync `conflicts`) belong to the frozen post-v1 sync code and are never exported.
 
 ## Entities
 
@@ -109,6 +109,8 @@ On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device ident
 - Every record carries a version vector (device ID → edit counter) and a content hash (T-016). A local edit increments only this device's counter.
 - Import never deletes and never replaces existing data automatically: new items are added; identical and older copies are skipped; newer-in-backup items need confirmation; edits on both sides, and deletions on either side, become pending conflicts that keep both versions.
 - Importing the same backup again changes nothing and creates no duplicates.
+- Only product record types are exported; diagnostic and sync-machinery data (`sync_probe`, outbox, session, cursor) never are, and a backup containing them is refused.
+- Each record type declares its links. Resolving a conflict on a **linked** record (project, workstream, task, calendar block, session, goal, …) keeps its ID and chooses one version, so links and history stay attached; "keep both" creates a copy only for **independent** record types (no links in either direction).
 - Concurrent edits to one mutable record produce an explicit conflict; no silent last-write-wins.
 - History events and finalized snapshots are append-only; corrections add records. The same ID with different content in history is an integrity warning, never merged.
 - Tombstones are retained and exported (no expiry in v1) and are not confused with ordinary archive state.

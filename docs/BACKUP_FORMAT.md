@@ -1,6 +1,6 @@
 # Offline Backup: File Format, Merge, and Conflicts (Proposal)
 
-Status: **proposed design for v1** (DECISIONS D-008 to D-012, T-016 to T-019). Nothing in this document is implemented yet. Backup protection (encryption and forgotten passwords) is an **open owner decision** (DECISIONS open question 7); options are listed at the end.
+Status: **proposed design for v1** (DECISIONS D-008 to D-012, T-016 to T-019). Nothing in this document is implemented yet. Still open for the owner: backup protection (open question 7) and final approval of the conflict-resolution UX (T-017). Where this document recommends something, it is a recommendation, not a decision.
 
 ## Goals
 
@@ -17,9 +17,29 @@ Status: **proposed design for v1** (DECISIONS D-008 to D-012, T-016 to T-019). N
 - **One JSON file**, UTF-8, named `pps-backup-YYYY-MM-DD-HHmm.json` (local time of export).
   - `.json` rather than a custom extension: iOS and Android file pickers recognise `application/json`, while unknown extensions are often greyed out or mis-typed. The `format` field below, not the extension, identifies the file.
   - Plain JSON is inspectable and recoverable by hand if the app is ever unavailable. Compression may be added in a later format version.
-- Full backups only in v1 (all records of all types). Partial or incremental backups are out of scope.
+- Full backups only in v1 (all product records). Partial or incremental backups are out of scope.
+
+## What a backup contains
+
+**Included (product data):** owner preferences now; each product record type added by later stages (projects, workstreams, tasks, calendar blocks, sessions, outputs, goals, habits, reviews, …) together with its tombstones; pending conflicts and the replaced-versions archive (so undecided choices and undo survive a device move).
+
+**Excluded:**
+
+- `sync_probe` (local table `probes`, shown as "Sync check notes"): a Stage 1 diagnostic record that proves the frozen sync engine (DECISIONS T-011). It is not product data, is never exported, and a file containing it is invalid.
+- Sync machinery of the frozen post-v1 code: session token, outbox, pull cursor, sync status.
+- Device-local settings that only make sense on one device, if any are added later (each record type declares whether it is exported).
+
+Format version 1 lists its allowed record types explicitly. An importer refuses a file with an unknown record type rather than ignoring it silently.
+
+## Canonical serialization
+
+Wherever this document says "canonical", it means the **JSON Canonicalization Scheme (JCS, RFC 8785)**: object keys sorted, no insignificant whitespace, standard number and string encoding, then UTF-8 bytes. Hashes are lower-case hex SHA-256 of those bytes. Text values are stored as entered (no Unicode normalization of user content); passwords are normalized to Unicode NFC before key derivation, so the same Persian or English password typed on different keyboards gives the same key.
 
 ## Top-level structure (format version 1)
+
+A backup file is one JSON object with a **header** (all top-level fields except `payload` and `integrity`), a **payload**, and an **integrity** block.
+
+### Unencrypted file (`encryption` is `null`)
 
 ```jsonc
 {
@@ -29,19 +49,80 @@ Status: **proposed design for v1** (DECISIONS D-008 to D-012, T-016 to T-019). N
   "createdAt": "2026-10-20T18:30:00.000Z",
   "app": { "version": "0.2.0", "dataSchemaVersion": 1 },
   "sourceDevice": { "id": "uuid", "name": "Windows laptop" },
-  "encryption": null,                // or an envelope description (see "Protection")
-  "payload": {                       // encrypted as a whole when encryption is used
+  "encryption": null,
+  "payload": {
     "records": {
-      "preferences": [ /* … */ ],
+      "preferences": [ /* record envelopes */ ],
       "projects":    [ /* added by later stages */ ]
     },
     "tombstones": [
-      { "type": "projects", "id": "uuid", "deletedAt": "…", "version": { "deviceA": 4 } }
-    ]
+      { "type": "projects", "id": "uuid", "deletedAt": "…", "version": { "<deviceId>": 4 } }
+    ],
+    "pendingConflicts": [ /* both versions of each undecided item */ ],
+    "replacedVersions": [ /* versions replaced by earlier choices, for undo */ ]
   },
-  "integrity": { "algorithm": "SHA-256", "payloadHash": "hex" }
+  "integrity": {
+    "algorithm": "SHA-256",
+    "canonicalization": "JCS-RFC8785",
+    "hash": "hex"
+  }
 }
 ```
+
+### Encrypted file (only if the owner chooses encryption; open question 7)
+
+The same header, with `encryption` describing how to decrypt, and `payload` replaced by ciphertext:
+
+```jsonc
+{
+  "format": "pps-backup",
+  "formatVersion": 1,
+  "backupId": "uuid",
+  "createdAt": "…",
+  "app": { "version": "0.2.0", "dataSchemaVersion": 1 },
+  "sourceDevice": { "id": "uuid", "name": "" },     // name may be left empty to reveal less
+  "encryption": {
+    "scheme": "pps-enc-1",
+    "content": {
+      "cipher": "AES-256-GCM",
+      "iv": "base64 (12 random bytes)",
+      "tagBits": 128,
+      "aad": "header-jcs"           // additional authenticated data, see below
+    },
+    "keySlots": [
+      {
+        "type": "password",
+        "kdf": { "name": "PBKDF2", "hash": "SHA-256", "iterations": 600000, "salt": "base64 (16 random bytes)" },
+        "wrap": { "cipher": "AES-256-GCM", "iv": "base64 (12 random bytes)" },
+        "wrappedKey": "base64 (encrypted 32-byte data key + tag)"
+      }
+      // a { "type": "recoveryKey", … } slot exists only if option D is chosen
+    ],
+    "hint": "optional, NOT secret: stored in clear text"
+  },
+  "payload": { "ciphertext": "base64" },
+  "integrity": {
+    "algorithm": "SHA-256",
+    "canonicalization": "JCS-RFC8785",
+    "hash": "hex"
+  }
+}
+```
+
+How encryption works:
+
+1. Generate a random 256-bit **data key**. Encrypt the canonical bytes of the plaintext payload object (`records`, `tombstones`, `pendingConflicts`, `replacedVersions`) with AES-256-GCM using the data key, a fresh random 12-byte IV, and the **canonical header** as additional authenticated data (AAD). The header includes the `encryption` object itself, so changing the salt, iteration count, IVs, version, or any header field makes decryption fail instead of silently producing a weaker file.
+2. For each key slot, derive a key-encryption key (PBKDF2-SHA-256 from the NFC-normalized password and the slot's salt and iterations, or from the recovery key) and wrap the data key with AES-256-GCM.
+3. Decryption tries the slot(s): unwrap the data key, then decrypt and authenticate the payload. A GCM failure means the wrong password or a modified file; nothing is imported.
+
+The key-slot structure lets options B (password slot) and D (password slot + recovery-key slot) use the same format. Everything in the header — creation time, app version, source device ID/name, hint — is **readable without the password**.
+
+### Integrity hash — exactly what it covers
+
+- `integrity.hash` = SHA-256 over the canonical serialization of the **whole document with the `integrity` member removed**: header and `payload`. In an encrypted file, `payload` is `{ "ciphertext": … }`, so the hash covers the ciphertext, not the plaintext.
+- Purpose: detect accidental damage (truncated download, edited file) **before** asking for a password, so the app can say "this file is damaged" instead of the misleading "wrong password". It is not a signature: anyone who edits a file can recompute it.
+- Authenticity: only an encrypted file is protected against deliberate tampering (by the GCM tag over header and payload). An unencrypted file has no protection against deliberate changes; import validation still applies.
+- Per-record `contentHash` values (below) are computed over the canonical `data` of each record and are used for merging, not for file integrity.
 
 ### Record envelope (every record type)
 
@@ -58,14 +139,14 @@ Status: **proposed design for v1** (DECISIONS D-008 to D-012, T-016 to T-019). N
 
 - **IDs** are UUIDs created on the device that created the record. The same ID on two devices always means "the same item".
 - **Version vector:** every device has a stable device ID (already implemented). Each local edit increments that device's counter in the record's `version`. Comparing two vectors tells whether one version already contains the other (see merge rules). It stays small because one person has only a few devices.
-- **contentHash** is computed over a canonical (sorted-key) serialization of `data`, so identical content is recognised even if it was written independently.
+- **contentHash** is SHA-256 over the canonical serialization of `data`, so identical content is recognised even if it was written independently.
+- **Links:** a record type declares its references to other records (e.g. a task's `projectId`). Record types are **independent** if they have no links in either direction (nothing they reference and nothing that references them), and **linked** otherwise. This matters for conflict resolution below.
 - **Append-only history** (execution sessions, output corrections, finalized weekly reviews) uses the same envelope. Its `data` never changes after creation; corrections are new records that reference the original.
 - **Tombstones:** deleting an item on the device keeps a tombstone (ID, deletion time, version vector) instead of forgetting the ID. Tombstones are exported so another device learns about the deletion, but importing never deletes anything by itself (see conflicts).
 
-### Integrity
+### Validation
 
-- `integrity.payloadHash` covers the canonical payload. It detects truncated or corrupted files (for example a partial download). It does **not** prove who made the file; only authenticated encryption (AES-GCM) does that.
-- The whole file is validated against the format schema **before** any data is touched. Every reference inside the file must resolve to a record in the file or on the device (e.g. a task's project).
+- The whole file (after decryption, if encrypted) is validated against the format schema **before** any data is touched. Every reference inside the file must resolve to a record in the file or on the device (e.g. a task's project).
 
 ## Versioning and upgrades
 
@@ -77,7 +158,7 @@ Status: **proposed design for v1** (DECISIONS D-008 to D-012, T-016 to T-019). N
 ## Import flow
 
 1. **Choose file** (file picker; works on Windows, Android, and iPhone).
-2. **Read and check:** format, version, integrity hash, schema, references. If encrypted, ask for the password (see Protection). On any failure: stop, explain, change nothing.
+2. **Read and check:** format, version, integrity hash; if encrypted, ask for the password and decrypt; then schema, allowed record types, references. On any failure: stop, explain, change nothing.
 3. **Preview** (nothing written yet). Each item in the file is classified:
 
 | Category | Rule | Default action |
@@ -99,15 +180,17 @@ Why this satisfies the requirements:
 - **No duplicates on re-import:** identity is the UUID; identical or older copies are skipped.
 - **No silent overwrite on differing content:** differing content is always either an explicitly confirmed update or a pending conflict.
 
-## Showing and resolving conflicts (proposed UX)
+## Showing and resolving conflicts (proposed UX — awaiting owner approval, T-017)
 
 - After import, a summary screen: "Added 12 · Already here 140 · Needs your decision 3 · Updates waiting for confirmation 5".
 - A **Conflicts** list (also reachable later from Settings → Backup) shows each item side by side: "On this device" and "In backup (from *device name*, exported *date*)". Changed fields are highlighted; dates are shown in the user's calendar display.
 - Choices per item:
-  - **Keep this device's version** (backup version is discarded from the pending list);
-  - **Use the backup's version**;
-  - **Keep both** (the backup version is added as a new item with a new ID and a "(copy)" marker) — offered for user content such as notes, tasks, and projects, not for singletons such as preferences or for append-only history;
+  - **Keep this device's version** (the backup version moves to the replaced-versions archive);
+  - **Use the backup's version** (this device's version moves to the replaced-versions archive);
+  - **Keep both** — **only for independent record types** (no links in either direction, see "Links"): the backup version is added as a new item with a new ID and a "(copy)" marker. Not offered for linked records (projects, workstreams, tasks, calendar blocks, sessions, goals, …), singletons such as preferences, or append-only history;
   - for deletions: **Restore** or **Keep deleted** / **Delete here** or **Keep**.
+- **Linked records (projects, tasks, …):** the user chooses one of the two versions. Both versions are preserved, unchanged and visible, until the user decides; the choice keeps the record's ID, so everything that links to it (tasks under a project, sessions under a task, snapshots in history) stays attached to the same item. The unchosen version goes to the replaced-versions archive. Copying a linked item is not offered in v1 because it would make it unclear which copy the existing links, history, and goal attributions belong to.
+- **Possible later option (proposal only, not in v1 scope):** "copy without links" for linked items — create a copy with a new ID that keeps only its outgoing links to records that exist on both sides (e.g. a task copy still belongs to the same project) and receives no incoming links (no tasks, sessions, or history move to the copy), clearly marked as a detached copy. It would need per-type rules and tests, and owner approval.
 - Bulk actions ("keep this device's version for all") require a confirmation that states how many items are affected.
 - **Nothing is lost while undecided:** pending conflicts keep both versions locally until resolved and survive app restarts. The version that is replaced by a choice is kept in a local "replaced versions" archive (included in later backups) so a wrong choice can be undone.
 - Append-only history with the same ID but different content should never happen; it is shown as an integrity warning with both versions, and nothing is changed automatically.
@@ -133,7 +216,7 @@ The file contains all personal data in readable form unless it is protected. The
 | D. Password plus recovery key | The file key is wrapped twice: by the password and by a randomly generated recovery key shown once (to print or save separately) | Recoverable with the recovery key; lost only if both are lost | Most robust; more steps and more to explain |
 | E. Rely on device/cloud encryption | Like A, but the app recommends storing backups only in encrypted locations | Not applicable | No app complexity; protection outside the app's control |
 
-**Recommendation (for the owner to decide):** start with **B, optional password, off by default but offered clearly at every export**, with these safeguards: enter the password twice; a plain warning that a forgotten password makes the backup unrecoverable; an immediate "verify" step that re-opens the new file with the password before the export is reported as successful; an optional non-secret hint stored in the file; and advice to keep the password in a password manager. Plan **D** as an upgrade if backups become the main long-term storage. The file format already reserves the `encryption` envelope (algorithm, KDF, iterations, salt, IV, optional hint, optional wrapped recovery key), so this choice does not block implementing unencrypted export first.
+**Recommendation only — the owner has not decided (open question 7):** start with **B, optional password, off by default but offered clearly at every export**, with these safeguards: enter the password twice; a plain warning that a forgotten password makes the backup unrecoverable; an immediate "verify" step that re-opens the new file with the password before the export is reported as successful; an optional hint (stored in clear text, so it must not reveal the password); and advice to keep the password in a password manager. Plan **D** as an upgrade if backups become the main long-term storage. The encrypted format above (key slots) already accommodates B and D, so this choice does not block implementing unencrypted export first.
 
 Separate from backups: data inside the app (IndexedDB) is protected only by the device's own lock and storage encryption. App-level encryption at rest is out of scope for v1.
 
