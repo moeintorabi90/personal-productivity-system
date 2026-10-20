@@ -66,7 +66,7 @@ The statements below describe documented or commonly observed browser behavior. 
 
 - Install only via Safari → Share → **Add to Home Screen**; iOS shows no automatic install prompt, so the app should show a short instruction.
 - The Home Screen app has **its own storage, separate from Safari tabs**: data entered in a Safari tab is not visible in the installed app and vice versa. Users should use only the installed app.
-- WebKit may delete script-writable storage (IndexedDB) of web content that has not been used for a period, and may evict data under storage pressure. Home Screen web apps are treated separately from Safari browsing, but **long-term retention is not guaranteed** **(verify the current behavior on the target iOS version)**. Regular backups are essential on iPhone.
+- **Storage retention:** in Safari, WebKit deletes script-writable storage (including IndexedDB) of websites the user has not interacted with during seven days of browser use. According to WebKit, this seven-day deletion **does not apply to web apps added to the Home Screen**. That does **not** make the data permanent: it is still deleted when the user removes the Home Screen app or clears website data, and it may still be evicted when the device is under storage pressure. **Long-term retention is not guaranteed** **(verify the current behavior on a real device with the target iOS version)**. Regular backups are essential on iPhone.
 - Deleting the Home Screen app deletes its data.
 - Updates are fetched when the app is opened online; iOS may keep a suspended app on its old code until it is fully closed and reopened.
 - No background sync (not needed in v1). Notifications are only possible for Home Screen apps on newer iOS versions and are not part of v1.
