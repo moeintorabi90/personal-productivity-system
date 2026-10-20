@@ -181,27 +181,45 @@ A backup file may come from anywhere, so it is untrusted input. Limits for forma
 | One record envelope (canonical size) | ≤ **256 KiB** |
 | Text fields | per record-type schema (e.g. names ≤ 200 characters, notes ≤ 20,000 characters) |
 | Version vector | ≤ **32** device entries per record |
-| JSON nesting depth | ≤ **32** levels |
+| Text encoding | valid UTF-8 (decoded with a fatal decoder; any invalid byte sequence rejects the file) |
+| JSON nesting depth | ≤ **32** levels (each `{` or `[` opens one level; the top-level object is level 1), enforced by the pre-parse scan |
+| JSON values | ≤ **4,000,000** values in total (objects, arrays, strings, numbers, literals), enforced by the pre-parse scan |
 | `sourceDevice.name` / `hint` | ≤ 80 / ≤ 200 characters |
 | `keySlots` | 1 or 2 entries, at most one of each `type` (`password`, `recoveryKey`) |
-| `kdf` | `name` exactly `PBKDF2`, `hash` exactly `SHA-256`, `iterations` an integer from **100,000 to 1,000,000** (writers use 600,000), `salt` exactly 16 bytes |
+| `kdf` | `name` exactly `PBKDF2`, `hash` exactly `SHA-256`, `iterations` an integer from **600,000 to 1,000,000** (writers use 600,000), `salt` exactly 16 bytes |
 | Ciphers | `AES-256-GCM` only; every IV exactly 12 bytes; `tagBits` exactly 128; `wrappedKey` exactly 48 bytes (32-byte key + 16-byte tag) |
 | Unknown fields in header or `encryption` | rejected |
 
-Because the ciphertext is base64 text inside a file of at most 32 MiB, an encrypted backup in practice holds at most about 24 MiB of plaintext. A JSON parse failure of any kind (including running out of stack on absurd nesting) counts as an invalid file.
+Because the ciphertext is base64 text inside a file of at most 32 MiB, an encrypted backup in practice holds at most about 24 MiB of plaintext.
 
-The iteration cap stops a crafted file from freezing a phone with an enormous PBKDF2 cost; the floor catches files written with too little protection. Raising the writer's iteration count above 1,000,000 later requires a new app version that accepts it (older apps would refuse such files with a clear message).
+**PBKDF2 bounds.** The minimum equals the writer's value, 600,000 iterations (the OWASP recommendation for PBKDF2-HMAC-SHA-256 at the time of writing). No encrypted backup has been released, so there are no older files with fewer iterations to stay compatible with, and accepting fewer would only let a weakened file be imported without notice. The cap of 1,000,000 stops a crafted file from freezing a phone with an enormous PBKDF2 cost. A later app version may raise the writer's count; it must then accept the new range, and older apps would refuse such files with a clear "update the app" message. Lowering the minimum would need a documented compatibility reason.
+
+### Pre-parse scan (before `JSON.parse`)
+
+`JSON.parse` builds the whole object tree at once and has no depth or size options, so it runs only after a **structural pre-scan** of the decoded text has passed. The scan is one linear pass with constant memory: it builds no objects and does not recurse. It tracks whether it is inside a string (handling `\` escapes), counts nesting with a single integer, and counts values. It rejects the file as soon as:
+
+- nesting exceeds 32 levels;
+- a closing `}` or `]` does not match the open bracket (the scan keeps a fixed 32-entry stack of open-bracket types, enough because deeper nesting is already rejected);
+- a string is unterminated, contains a raw control character, or has an invalid escape;
+- the value count exceeds 4,000,000;
+- there is anything after the top-level value except whitespace, or the input ends inside a value.
+
+The scan is not a full JSON validator. `JSON.parse` still decides exact grammar (number formats, comma and colon placement), but by then size, depth, and value count are bounded, so parsing cannot recurse deeply or build an unexpectedly large structure. The decrypted plaintext of an encrypted file goes through the same scan before it is parsed.
+
+An implementation may instead use a streaming JSON parser with built-in depth and value limits, if it enforces the same limits before building the corresponding structures and passes the same acceptance tests.
 
 **Validation order** — each step runs only if the previous one passed, so no expensive work happens on an unchecked file:
 
 1. Check `File.size` against the limit, before reading.
-2. Read the text and parse JSON; check nesting depth.
-3. Validate the **header** strictly: `format`, `formatVersion` (refuse newer), field types, and, if encrypted, every `encryption` parameter against the table above (including iteration bounds and byte lengths). This happens **before any password prompt and before any PBKDF2 run**.
-4. Verify the integrity hash (linear in file size, bounded by step 1).
-5. If encrypted: ask for the password; run PBKDF2 once per user attempt (no automatic retries); unwrap the data key; check the plaintext length limit; decrypt and authenticate.
-6. Validate the payload: entry counts, envelope sizes, record-type schemas, allowed record types, version vectors.
-7. Check references: every reference must resolve to a record in the file or on the device (e.g. a task's project).
-8. Build the preview. Nothing has been written to the database before the user confirms.
+2. Read the bytes and decode them as UTF-8 with a fatal decoder; invalid UTF-8 rejects the file.
+3. Run the **pre-parse scan** (depth, bracket matching, strings, value count, trailing content). No object is built in steps 1–3.
+4. `JSON.parse`; any exception counts as an invalid file.
+5. Validate the **header** strictly: `format`, `formatVersion` (refuse newer), field types, and, if encrypted, every `encryption` parameter against the table above (including iteration bounds and byte lengths). This happens **before any password prompt and before any PBKDF2 run**.
+6. Verify the integrity hash (linear in file size, bounded by step 1).
+7. If encrypted: ask for the password; run PBKDF2 once per user attempt (no automatic retries); unwrap the data key; check the ciphertext/plaintext length limit; decrypt and authenticate; then decode the plaintext as UTF-8, run the pre-parse scan on it, and only then `JSON.parse` it.
+8. Validate the payload: entry counts, envelope sizes, record-type schemas, allowed record types, version vectors.
+9. Check references: every reference must resolve to a record in the file or on the device (e.g. a task's project).
+10. Build the preview. Nothing has been written to the database before the user confirms.
 
 Export enforces the same limits: if a device's data would exceed them, export stops with an explanation instead of writing a file that this app version could not import. (Not expected for one person's data in v1; a later format version could add compression or splitting.)
 
@@ -215,7 +233,7 @@ Export enforces the same limits: if a device's data would exceed them, export st
 ## Import flow
 
 1. **Choose file** (file picker; works on Windows, Android, and iPhone).
-2. **Read and check** in the order given in "Input limits and validation order": size, JSON, header and encryption parameters, integrity hash; if encrypted, then password and decryption; then payload schema, allowed record types, references. On any failure: stop, explain, change nothing.
+2. **Read and check** in the order given in "Input limits and validation order": size, UTF-8 decoding, pre-parse scan, JSON parsing, header and encryption parameters, integrity hash; if encrypted, then password and decryption; then payload schema, allowed record types, references. On any failure: stop, explain, change nothing.
 3. **Preview** (nothing written yet). Each item in the file is classified:
 
 | Category | Rule | Default action |
@@ -268,7 +286,7 @@ The file contains all personal data in readable form unless it is protected. The
 | Option | What it means | If the password is forgotten | Trade-offs |
 |---|---|---|---|
 | A. No app-level encryption | Plain JSON; protection relies on where the user stores the file (device lock, cloud account) | Not applicable | Simplest and most recoverable; anyone who gets the file can read it |
-| B. Optional password per export | User may set a password when exporting. AES-256-GCM, key derived with PBKDF2-SHA-256 (Web Crypto, built into all target browsers; 600,000 iterations, readers accept 100,000–1,000,000) and a random salt | That backup is **permanently unreadable** | Good protection when used; real risk of permanent loss for an infrequently used password |
+| B. Optional password per export | User may set a password when exporting. AES-256-GCM, key derived with PBKDF2-SHA-256 (Web Crypto, built into all target browsers; 600,000 iterations, readers accept 600,000–1,000,000) and a random salt | That backup is **permanently unreadable** | Good protection when used; real risk of permanent loss for an infrequently used password |
 | C. Mandatory password | Every export is encrypted (as B) | Every such backup is lost | Strongest default protection; highest loss risk for a non-specialist owner |
 | D. Password plus recovery key | The file key is wrapped twice: by the password and by a randomly generated recovery key shown once (to print or save separately) | Recoverable with the recovery key; lost only if both are lost | Most robust; more steps and more to explain |
 | E. Rely on device/cloud encryption | Like A, but the app recommends storing backups only in encrypted locations | Not applicable | No app complexity; protection outside the app's control |
