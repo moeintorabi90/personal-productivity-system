@@ -20,6 +20,7 @@
 | T-002 | Keep an IndexedDB local store and sync through an authenticated TypeScript API to PostgreSQL. | Supports offline work with clear server validation and recoverable cross-device sync. | Proposed |
 | T-003 | Detect concurrent edits using revisions and ask the user to resolve conflicts. | Prevents silent loss of changes while staying simpler than general CRDT replication. | Proposed |
 | T-004 | Use managed private hosting for the sync API/database initially, with export/restore and reliable backups. | Less maintenance for a non-specialist owner. | Recommended; provider/cost/region open |
+| T-005 | Do not install Docker Desktop by default on this PC; first evaluate native PostgreSQL on E: or a managed development database. | The device is at Docker's published 8 GB RAM minimum and had about 0.8 GB free during inspection. | Recommended |
 
 ## Consequential open decisions
 
@@ -36,5 +37,6 @@ These should be settled before the architecture is treated as final and before S
 
 - Workspace folder was empty and not a Git repository.
 - Git 2.53.0, Node.js 24.20.0, npm 11.19.0, and VS Code are available.
-- Docker is not currently available on PATH. The proposed local PostgreSQL development flow may need Docker Desktop installation or a documented alternative before Stage 1.
+- About 7.8 GB of visible RAM was detected, with about 0.8 GB free at inspection time. Disk free space: C: about 16.5 GB; E: about 72.5 GB.
+- Docker is unavailable and WSL reports no installed Linux distribution. Docker's [current Windows requirements](https://docs.docker.com/desktop/setup/install/windows-install/) call for 8 GB system RAM and WSL 2; do not install it by default on this machine.
 - No Git author name/email is configured in this workspace. The Stage 0 documentation checkpoint used a one-time, non-personal author label (`Stage 0 Documentation <stage0@localhost>`); configure the owner's preferred Git identity before the next commit.

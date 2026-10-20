@@ -4,14 +4,14 @@ This is a planning document for future implementation. The commands below are in
 
 ## Current workspace status
 
-The workspace is currently an empty folder with Node.js/npm, Git, and VS Code available. Docker is not available on PATH. No application code or database exists yet.
+The workspace now contains Stage 0 documents and a Git checkpoint, but no application code or database. Node.js/npm, Git, and VS Code are available. Docker is not available on PATH. Hardware inspection found about 7.8 GB visible RAM, about 0.8 GB free at the time of inspection, 16.5 GB free on C:, and 72.5 GB free on E:. Avoid installing Docker Desktop unless a later requirement justifies it and resource usage is rechecked.
 
 ## Planned first-run workflow
 
-1. Install the selected Node.js LTS release and Docker Desktop if Stage 1 retains Docker-based PostgreSQL.
+1. Use the installed Node.js/npm and select a database development method that fits this PC. First evaluate a native PostgreSQL install on E: with its service stopped when not needed; Docker Desktop is not the default because available RAM is tight.
 2. Open the project folder in VS Code.
 3. Copy `.env.example` to a local `.env` and enter only local development settings; never commit `.env`.
-4. Start PostgreSQL using the documented local command.
+4. Start the chosen PostgreSQL development database using the documented local command.
 5. Run workspace dependency installation and database migrations.
 6. Start the web/API development processes and complete first-run owner setup.
 
