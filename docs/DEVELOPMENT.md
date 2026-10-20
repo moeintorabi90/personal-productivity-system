@@ -77,7 +77,23 @@ docs/           Product, architecture, data/API contracts, decisions, testing
 ## Git and backup strategy
 
 - Commit by stage with small, understandable checkpoints. The repository-level Git identity is configured in `.git/config`.
-- Use short-lived feature branches or isolated worktrees for parallel review; only one agent should be the primary writer on a given change set.
-- Claude Code is the primary implementation agent; Codex reviews or handles separate, explicitly scoped work. The human owner accepts product decisions and reviews consequential changes.
+- Use short-lived feature branches or isolated worktrees for parallel review.
+
+## Roles and collaboration
+
+| Role | Responsibility |
+|---|---|
+| Owner (human) | Product owner and final decision-maker. Accepts product decisions and reviews consequential changes. |
+| Claude Code | Lead software engineer; primary writer of main repository changes. |
+| ChatGPT | Helps the owner with product definition, requirements, and decisions. Its outcomes enter the project only as owner-approved updates to `docs/`. |
+| Codex | Independent review, or separate, explicitly scoped tasks. |
+| Gemini | Only when needed, for a second opinion (e.g. user experience or Persian localization). |
+
+Rules that prevent conflicts:
+
+- **One primary writer per change.** Each change set has exactly one tool writing files; others review or advise. A separately scoped task for Codex uses its own branch or worktree and touches files no one else is changing.
+- **The repository is the source of truth.** Everyone follows this repository's `docs/` and Git history. Advice from any tool counts only once it is recorded here (decisions in `docs/DECISIONS.md`).
+- Before starting, check `git status` and the latest commits; do not overwrite or revert another writer's uncommitted work.
+- Reviews report findings; the primary writer of that change applies fixes.
 - Never commit credentials, `.env`, database files, exports, generated build output, or user data.
 - No remote repository has been selected; do not push or publish without the owner's decision.
