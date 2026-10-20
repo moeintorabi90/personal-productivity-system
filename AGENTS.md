@@ -19,7 +19,6 @@ This file is for any AI tool working in this repository (Codex, Claude Code, Gem
 5. **Report only tests you actually ran**, with the exact command and the observed result.
 6. **No real personal data, no secrets in Git** (`.env`, database files, exports). Do not push or publish without the owner's decision.
 7. **Do not install Docker Desktop** or other system software without checking resource needs and asking the owner (about 7.8 GB RAM, little free).
-8. **Install location:** when the owner approves installing large software, install it under `E:\Installed Apps`. That drive is exFAT: first check that the software supports exFAT (no symlinks, no NTFS-only features; e.g. PGlite data and WSL/Docker disk images may fail there). If it does not, report this to the owner instead of silently installing on C:.
 
 ## Workspace facts
 
