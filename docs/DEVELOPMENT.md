@@ -6,6 +6,7 @@
 - **PGlite cannot store data on exFAT** (`ErrnoError 28`). Its default data folder is `%LOCALAPPDATA%\PersonalProductivitySystem\pglite-dev` on C: (NTFS), outside the repository.
 - **Git is not on PATH** in this environment. A Git 2.53 binary exists inside the Codex runtime (`%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\git\cmd\git.exe`). Because exFAT does not record file ownership, Git reports "dubious ownership"; pass `-c safe.directory="E:/Moein/My AI Projects/Personal Productivity System"` per command, or add that exception once to your global Git config. Installing Git for Windows is the cleaner long-term fix.
 - About 7.8 GB RAM with little free memory: Docker Desktop is not used (DECISIONS T-005). Vitest runs one test file at a time.
+- **Install location for large software (owner instruction):** `E:\Installed Apps`, after the owner approves the installation. Because E: is exFAT, confirm the software supports exFAT first; if it does not, ask the owner rather than installing elsewhere. The install location does not change memory limits.
 - `node_modules` is about 170 MB after `npm install`. No system packages, services, or browsers were installed; end-to-end tests use the installed Microsoft Edge.
 
 ## Prerequisites
