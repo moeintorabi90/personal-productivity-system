@@ -58,6 +58,28 @@ The installable web app/PWA is the leading cross-platform option because it coul
 - Server database backups and user-controlled export/restore.
 - Encryption-at-rest and whether end-to-end encryption is required are open decisions. Do not promise end-to-end encryption unless the design and recovery model support it.
 
+Known Stage 1 limitations to address before real data or hosting:
+
+- The bearer token is stored in IndexedDB, so any script injected into the page could read it. A strict Content-Security-Policy (set by the hosting layer) and avoiding third-party scripts are required; HttpOnly cookies are an alternative to evaluate with the hosting choice.
+- The failed-login limiter is in memory (one process) and keys on `req.ip`; behind a reverse proxy, `trust proxy` must be configured or all clients share one key.
+- No CORS headers are sent: the web app and API are expected to share an origin (Vite proxies `/v1` in development).
+- `SETUP_TOKEN` is optional in development (the server warns); production refuses to start without it.
+- No account recovery flow exists yet (open decision 3).
+
+## Stage 1 implementation notes
+
+- **Client:** React 19 + Vite 8, Dexie 4 over IndexedDB, typed in-house i18n (T-009), CSS tokens for light/dark/system themes and logical properties for RTL. A hand-written service worker precaches the versioned shell and never caches `/v1` API responses (T-008). Before sign-in the app works fully on the device and queues nothing for preferences; diagnostic notes queue and sync after sign-in.
+- **Sync API:** Express 5 + Zod 4 on Node 24, run as TypeScript through Node's type stripping. Data access is plain SQL behind a two-method `Db` interface implemented by PGlite (dev/test) and `pg` (PostgreSQL) (T-006, T-007).
+- **Repository layout:** one root `package.json` with path aliases because the drive is exFAT (T-014).
+
+### Platform feasibility (Stage 1 findings)
+
+| Platform | Status |
+|---|---|
+| Windows 11, Microsoft Edge 155 | Verified by automated E2E: offline reload of the installed shell, data surviving a browser restart and an offline reopen, RTL/theme persistence. Install UI itself not exercised by tests. |
+| Android (Chrome) | Not yet tested on a device. Manifest has 192/512 PNG and maskable icons, which Chrome requires for installation. |
+| iPhone (Safari) | Not yet tested on a device. `apple-touch-icon` and standalone meta tags are present. Known platform limits to verify: storage eviction of web apps not added to the Home Screen, no background sync, notification support only for Home Screen web apps. |
+
 ## Technology candidates
 
 The proposed stack adapts the initial direction: TypeScript monorepo/npm workspaces; React/Vite; Express/Zod; PostgreSQL/Prisma; Vitest/RTL, PostgreSQL integration tests, and Playwright. Docker Compose is optional, not a prerequisite: this PC is at Docker Desktop's published minimum RAM and has little free memory, so first evaluate native PostgreSQL on the larger E: drive or a managed development database. Candidate client libraries include TanStack Query for remote sync state, FullCalendar for planning, Recharts for metrics, and i18next for translation. Verify current versions, licensing, accessibility, offline fit, and platform support during Stage 1 selection.

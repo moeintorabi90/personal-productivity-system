@@ -4,7 +4,20 @@ An offline-first personal planning and reflection app for Windows 11 and Android
 
 ## Project status
 
-**Stage 0: product and architecture definition.** The documents in `docs/` describe the proposed product, data rules, API, test strategy, and staged delivery. Application code has not started.
+**Stage 1: foundation and offline proof — implemented, with open acceptance items.** The repository contains an installable web app shell (React, IndexedDB, service worker), a local outbox and sync engine, an Express sync API with owner authentication, and PostgreSQL migrations. Domain features (projects, tasks, calendar, goals…) start in Stage 2. See the Stage 1 test report in [docs/TESTING.md](docs/TESTING.md) and open items in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+**Do not enter real personal data yet:** the private sync hosting, encryption, and recovery decisions are still open.
+
+## Quick start (Windows, PowerShell)
+
+```powershell
+npm.cmd install
+npm.cmd run dev:api   # terminal 1: sync API on http://localhost:8787
+npm.cmd run dev:web   # terminal 2: app on http://localhost:5173
+npm.cmd test          # unit, API integration, and two-device sync tests
+```
+
+Details, database options, and workspace constraints: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Product decisions so far
 
@@ -14,7 +27,7 @@ An offline-first personal planning and reflection app for Windows 11 and Android
 - Windows 11 and Android are target platforms. iPhone installation is a desired capability.
 - Core scope includes goals, projects, tasks, planning, actual-work logs, habits, weekly review, backup, and data export.
 
-## Stage 0 documents
+## Documents
 
 - [Product specification](docs/PRODUCT_SPEC.md)
 - [Architecture proposal](docs/ARCHITECTURE.md)
@@ -27,4 +40,4 @@ An offline-first personal planning and reflection app for Windows 11 and Android
 
 ## Next step
 
-Resolve the consequential open decisions in `docs/DECISIONS.md`, then begin Stage 1. Do not treat the architecture proposal as a record of a working implementation.
+Close the open Stage 1 items: run the suite against a real PostgreSQL server, check installation and offline use on Android and iPhone, and decide hosting, encryption, and account recovery (`docs/DECISIONS.md`). Then begin Stage 2.

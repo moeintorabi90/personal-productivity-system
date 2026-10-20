@@ -25,7 +25,25 @@ erDiagram
   USER ||--o{ SYNC_DEVICE : enrolls
 ```
 
-Names in the diagram are conceptual; exact Prisma models and relational constraints are settled in Stage 1.
+Names in the diagram are conceptual. Tables are defined by plain SQL migrations in `apps/api/migrations` (DECISIONS T-006); later stages add their own migrations.
+
+## Implemented in Stage 1 (`0001_foundation.sql`)
+
+| Table | Purpose and key constraints |
+|---|---|
+| `app_user` | Owner account; unique `lower(email)`; scrypt password hash |
+| `app_installation` | Singleton row (`CHECK (singleton)`) naming the one owner, which makes setup race-free |
+| `sync_device` | Client-generated device IDs, unique per owner (`PRIMARY KEY (user_id, id)`); `revoked_at` |
+| `auth_session` | SHA-256 token hash, expiry, revocation; FK to the owner's device |
+| `user_preference` | Language, theme, calendar display, week start, nullable IANA time zone, `revision`; CHECK constraints mirror the shared Zod schema |
+| `sync_probe` | Stage 1 diagnostic record (T-011); `PRIMARY KEY (user_id, id)`; tombstone via `deleted_at` |
+| `sync_operation` | Applied push results by `(user_id, op_id)` with request hash, for idempotent retries |
+| `change_log` | Append-only per-owner change stream (`seq` identity) read by pull; deletions are `deleted = true` rows |
+| `schema_migrations` | Applied migration versions and checksums (created by the runner) |
+
+Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed by cascade.
+
+On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device identity, session, cursor, last sync), `preferences`, `probes`, the durable `outbox`, and unresolved `conflicts`.
 
 ## Entities
 

@@ -27,3 +27,6 @@ exports/
 Thumbs.db
 .vscode/
 !.vscode/extensions.json
+
+# Personal Claude Code settings (shared launch.json is committed)
+.claude/settings.local.json

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Private, offline-first personal planning and reflection." />
+    <meta name="theme-color" content="#2f6b57" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Productivity" />
+    <title>Personal Productivity</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <!-- Applies the last-used theme/direction before the app loads, to avoid a flash. -->
+    <script src="./boot.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>This app needs JavaScript.</noscript>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

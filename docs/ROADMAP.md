@@ -2,7 +2,7 @@
 
 Stages are sequential. Each stage ends with its acceptance criteria, focused automated tests, type checks, production build, diff/security review, documentation update, and a recoverable Git checkpoint. Do not move on with unexplained critical failures.
 
-## Stage 0 — Requirements and architecture (current)
+## Stage 0 — Requirements and architecture (done)
 
 **Deliverables:** product checklist, architecture and relationship diagrams, data/API invariants, test strategy, staged acceptance criteria, Git/backup strategy, open decisions.
 
@@ -12,7 +12,9 @@ Stages are sequential. Each stage ends with its acceptance criteria, focused aut
 
 **Deliverables:** npm-workspace monorepo, installable client shell, local database/outbox, sync API/authentication foundation, PostgreSQL schema/migrations, i18n/theme, offline/sync/error states, Windows setup docs.
 
-**Acceptance:** clean setup; app shell opens offline after installation; local sample record survives restart; authenticated owner can sync an idempotent record between two clients; database can migrate from empty; English/Persian direction and themes work at shell level; platform feasibility documented. Private service hosting choice and security model settled before production-like data is used.
+**Acceptance:** clean setup; app shell opens offline after installation; local sample record survives restart; authenticated owner can sync an idempotent record between two clients; database can migrate from empty; English/Persian direction and themes work at shell level; platform feasibility documented. Private service hosting choice and security model settled before production-like data is used. Migrations and the API suite also pass against a real PostgreSQL server (DECISIONS T-007).
+
+**Status (2026-10-20): implemented; acceptance partly open.** Verified by tests (see `TESTING.md`): offline shell after installation (Edge), local record survives a browser restart, idempotent two-client sync with conflicts and tombstones, migration from empty (PGlite in-process and via the `pg` wire protocol), English/Persian direction and themes. Open: run against a native PostgreSQL server; Android and iPhone device checks; hosting choice and security model (DECISIONS open questions 1–4). A single root `package.json` replaces npm workspaces because drive E: is exFAT (DECISIONS T-014).
 
 ## Stage 2 — Organization and quick capture
 
