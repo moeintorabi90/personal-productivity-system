@@ -25,9 +25,11 @@ npm.cmd run db:migrate                            # creates/updates the dev data
 Start the API and the web app in two terminals:
 
 ```powershell
-npm.cmd run dev:api    # http://localhost:8787 (PGlite; or PostgreSQL if DATABASE_URL is set)
+npm.cmd run dev:api    # http://127.0.0.1:8787 (PGlite; or PostgreSQL if DATABASE_URL is set)
 npm.cmd run dev:web    # http://localhost:5173 (proxies /v1 to the API)
 ```
+
+Both servers listen on this computer only (loopback). See "Network access" below before opening them to other devices.
 
 Open http://localhost:5173, then **Account & sync** to create the owner account. Use test values only: real personal data must wait for the hosting and security decisions (DECISIONS open questions 1–3). Without an account the app works fully on the device; nothing is synced.
 
@@ -46,6 +48,14 @@ To try the installable/offline build: `npm.cmd run build`, then `npm.cmd run pre
 | `npm test` | Unit, API integration, database, and two-device sync tests (Vitest) |
 | `npm run test:e2e` | Build, then Playwright tests in Edge (offline shell, restart persistence, RTL/theme) |
 | `npm run icons` | Regenerate PNG icons from the SVG geometry |
+
+## Network access (safe by default)
+
+- The API binds to `127.0.0.1` unless `HOST` is set (DECISIONS T-015). Other devices on the network cannot connect, so the open first-run setup (when `SETUP_TOKEN` is unset) is reachable only from this computer.
+- In loopback mode the API also rejects requests whose `Host` header is not `localhost`, `127.0.0.1`, or `::1` (`403 HOST_NOT_ALLOWED`). This blocks DNS-rebinding attacks from web pages in the browser.
+- The Vite dev and preview servers also listen on `localhost` only (Vite's default) and proxy `/v1` to `http://127.0.0.1:8787` (override with `PPS_API_URL`).
+- **To test from another device (e.g. your phone on the same Wi-Fi):** in `apps/api/.env` set `HOST=0.0.0.0` and a random `SETUP_TOKEN` of at least 24 characters; the API refuses to start otherwise. Enter that token in the setup form. The web app must also be reachable (`npm.cmd run dev:web -- --host`), and Windows Firewall may ask for permission. Traffic is plain HTTP: use only on a trusted network with test data, and remove `HOST` afterwards. Phones also need HTTPS for service workers on non-localhost origins, so full offline/install testing on a phone needs an HTTPS setup (not part of Stage 1).
+- Once setup is complete, `/v1/setup` is closed permanently; everything else requires a device session.
 
 ## Database options
 

@@ -12,6 +12,7 @@ export const ERROR_CODES = [
   "IDEMPOTENCY_KEY_REUSED",
   "RATE_LIMITED",
   "PAYLOAD_TOO_LARGE",
+  "HOST_NOT_ALLOWED",
   "INTERNAL",
 ] as const;
 

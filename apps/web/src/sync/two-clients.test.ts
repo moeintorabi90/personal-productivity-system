@@ -31,6 +31,8 @@ beforeEach(async () => {
   db = await createPgliteDb();
   await migrate(db);
   const app = createApp(db, {
+    host: "127.0.0.1",
+    exposed: false,
     port: 0,
     production: false,
     databaseUrl: null,

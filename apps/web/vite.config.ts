@@ -8,7 +8,8 @@ import { aliases } from "../../aliases.ts";
 
 const WEB_ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = path.join(WEB_ROOT, "public");
-const API_TARGET = process.env.PPS_API_URL ?? "http://localhost:8787";
+// 127.0.0.1, not "localhost": the API binds IPv4 loopback only, and "localhost" may resolve to ::1.
+const API_TARGET = process.env.PPS_API_URL ?? "http://127.0.0.1:8787";
 
 function listFiles(dir: string, prefix = ""): string[] {
   return readdirSync(dir).flatMap((name) => {

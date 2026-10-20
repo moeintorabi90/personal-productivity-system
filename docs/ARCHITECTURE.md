@@ -63,7 +63,7 @@ Known Stage 1 limitations to address before real data or hosting:
 - The bearer token is stored in IndexedDB, so any script injected into the page could read it. A strict Content-Security-Policy (set by the hosting layer) and avoiding third-party scripts are required; HttpOnly cookies are an alternative to evaluate with the hosting choice.
 - The failed-login limiter is in memory (one process) and keys on `req.ip`; behind a reverse proxy, `trust proxy` must be configured or all clients share one key.
 - No CORS headers are sent: the web app and API are expected to share an origin (Vite proxies `/v1` in development).
-- `SETUP_TOKEN` is optional in development (the server warns); production refuses to start without it.
+- `SETUP_TOKEN` is optional only while the API listens on loopback (the default, T-015); production and any non-loopback `HOST` refuse to start without it. Without a token, any program on the same computer can still complete first-run setup until it is done.
 - No account recovery flow exists yet (open decision 3).
 
 ## Stage 1 implementation notes

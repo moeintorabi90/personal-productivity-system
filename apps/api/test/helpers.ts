@@ -32,6 +32,8 @@ export async function createTestDb(): Promise<Db> {
 
 export function testConfig(overrides: Partial<Config> = {}): Config {
   return {
+    host: "127.0.0.1",
+    exposed: false,
     port: 0,
     production: false,
     databaseUrl: null,

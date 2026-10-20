@@ -33,6 +33,6 @@ npm.cmd install
 npm.cmd run typecheck
 npm.cmd test          # Vitest: unit, API integration, two-device sync, components
 npm.cmd run test:e2e  # build + Playwright in installed Edge
-npm.cmd run dev:api   # sync API, http://localhost:8787
+npm.cmd run dev:api   # sync API, http://127.0.0.1:8787 (loopback only; HOST needs SETUP_TOKEN)
 npm.cmd run dev:web   # web app, http://localhost:5173
 ```

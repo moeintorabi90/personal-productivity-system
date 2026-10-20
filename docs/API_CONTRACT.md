@@ -28,6 +28,8 @@ Schemas live in `packages/shared/src`. Errors are `{ "error": { "code", "message
 | `POST /v1/sync/push` | bearer | `{ operations: [...] }` (1–100), kinds `preferences.update`, `sync_probe.create|update|delete`. Response `{ results }` in input order, each `applied` (with `revision`, `record`, `replayed`), `conflict` (`current`, `submitted`) or `rejected` (`error`). |
 | `GET /v1/sync/pull?cursor=&limit=` | bearer | `{ changes, nextCursor, hasMore }`; changes carry `recordType`, `recordId`, `revision`, `deleted`, `data`, `changedAt`, `deviceId` |
 
+When the server listens on loopback (default), every route answers `403 HOST_NOT_ALLOWED` if the `Host` header is not `localhost`, `127.0.0.1`, or `::1` (DECISIONS T-015).
+
 Sessions are opaque bearer tokens (stored server-side only as SHA-256 hashes), bound to a device, valid 365 days unless revoked. `sync_probe` is a Stage 1 diagnostic record type (DECISIONS T-011).
 
 ## Initial route groups (proposal)

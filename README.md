@@ -12,7 +12,7 @@ An offline-first personal planning and reflection app for Windows 11 and Android
 
 ```powershell
 npm.cmd install
-npm.cmd run dev:api   # terminal 1: sync API on http://localhost:8787
+npm.cmd run dev:api   # terminal 1: sync API on http://127.0.0.1:8787 (this computer only)
 npm.cmd run dev:web   # terminal 2: app on http://localhost:5173
 npm.cmd test          # unit, API integration, and two-device sync tests
 ```
