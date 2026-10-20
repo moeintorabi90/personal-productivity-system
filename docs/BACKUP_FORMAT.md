@@ -21,19 +21,25 @@ Status: **proposed design for v1** (DECISIONS D-008 to D-012, T-016 to T-019). N
 
 ## What a backup contains
 
-**Included (product data):** owner preferences now; each product record type added by later stages (projects, workstreams, tasks, calendar blocks, sessions, outputs, goals, habits, reviews, …) together with its tombstones; pending conflicts and the replaced-versions archive (so undecided choices and undo survive a device move).
+**Included (product data):** shared preferences now (time zone, week start, calendar display; device-only settings such as language and theme are carried only as information, see "Preferences"); each product record type added by later stages (projects, workstreams, tasks, calendar blocks, sessions, outputs, goals, habits, reviews, …) together with its tombstones; pending conflicts and the replaced-versions archive (so undecided choices and undo survive a device move).
 
 **Excluded:**
 
 - `sync_probe` (local table `probes`, shown as "Sync check notes"): a Stage 1 diagnostic record that proves the frozen sync engine (DECISIONS T-011). It is not product data, is never exported, and a file containing it is invalid.
 - Sync machinery of the frozen post-v1 code: session token, outbox, pull cursor, sync status.
-- Device-local settings that only make sense on one device, if any are added later (each record type declares whether it is exported).
+- Device-local settings (language and theme now; others later) as mergeable data. Only the exporting device's values travel, as informational `sourceDeviceSettings`. Each record type and setting declares whether it is exported.
 
 Format version 1 lists its allowed record types explicitly. An importer refuses a file with an unknown record type rather than ignoring it silently.
 
 ## Canonical serialization
 
-Wherever this document says "canonical", it means the **JSON Canonicalization Scheme (JCS, RFC 8785)**: object keys sorted, no insignificant whitespace, standard number and string encoding, then UTF-8 bytes. Hashes are lower-case hex SHA-256 of those bytes. Text values are stored as entered (no Unicode normalization of user content); passwords are normalized to Unicode NFC before key derivation, so the same Persian or English password typed on different keyboards gives the same key.
+Wherever this document says "canonical", it means the **JSON Canonicalization Scheme (JCS, RFC 8785)**: object keys sorted, no insignificant whitespace, standard number and string encoding, then UTF-8 bytes. Hashes are lower-case hex SHA-256 of those bytes. Text values are stored as entered (no Unicode normalization of user content).
+
+### Password text normalization (limited guarantee)
+
+Passwords are converted to Unicode **NFC** before key derivation. NFC only makes **canonically equivalent** sequences identical: the same character encoded precomposed or as a base letter plus combining marks (e.g. `آ` as U+0622 or as U+0627 U+0653) gives the same bytes. It does **not** make different characters equal. Persian and Arabic keyboard layouts can produce different characters for what looks like the same letter: Arabic Yeh `ي` (U+064A) vs Persian Yeh `ی` (U+06CC), Arabic Kaf `ك` (U+0643) vs Keheh `ک` (U+06A9), Persian vs Arabic-Indic vs ASCII digits, and zero-width non-joiner (U+200C) vs space or nothing. NFC leaves these different, and the app does **not** fold them together, so a password must be typed with the same characters it was created with. The forgotten-password warning, the double entry, and the immediate verify step (see Protection) are the safeguards.
+
+Possible later aid, proposal only: show a notice when a new password contains characters that commonly differ between keyboard layouts (Arabic Yeh/Kaf, non-ASCII digits, ZWNJ). Folding these characters into one form would change the key derivation contract and is not proposed for format version 1.
 
 ## Top-level structure (format version 1)
 
@@ -59,7 +65,8 @@ A backup file is one JSON object with a **header** (all top-level fields except 
       { "type": "projects", "id": "uuid", "deletedAt": "…", "version": { "<deviceId>": 4 } }
     ],
     "pendingConflicts": [ /* both versions of each undecided item */ ],
-    "replacedVersions": [ /* versions replaced by earlier choices, for undo */ ]
+    "replacedVersions": [ /* versions replaced by earlier choices, for undo */ ],
+    "sourceDeviceSettings": { "language": "fa", "theme": "dark" }  // informational, never merged
   },
   "integrity": {
     "algorithm": "SHA-256",
@@ -111,8 +118,8 @@ The same header, with `encryption` describing how to decrypt, and `payload` repl
 
 How encryption works:
 
-1. Generate a random 256-bit **data key**. Encrypt the canonical bytes of the plaintext payload object (`records`, `tombstones`, `pendingConflicts`, `replacedVersions`) with AES-256-GCM using the data key, a fresh random 12-byte IV, and the **canonical header** as additional authenticated data (AAD). The header includes the `encryption` object itself, so changing the salt, iteration count, IVs, version, or any header field makes decryption fail instead of silently producing a weaker file.
-2. For each key slot, derive a key-encryption key (PBKDF2-SHA-256 from the NFC-normalized password and the slot's salt and iterations, or from the recovery key) and wrap the data key with AES-256-GCM.
+1. Generate a random 256-bit **data key**. Encrypt the canonical bytes of the plaintext payload object (`records`, `tombstones`, `pendingConflicts`, `replacedVersions`, `sourceDeviceSettings`) with AES-256-GCM using the data key, a fresh random 12-byte IV, and the **canonical header** as additional authenticated data (AAD). The header includes the `encryption` object itself, so changing the salt, iteration count, IVs, version, or any header field makes decryption fail instead of silently producing a weaker file.
+2. For each key slot, derive a key-encryption key (PBKDF2-SHA-256 from the UTF-8 bytes of the NFC-normalized password and the slot's salt and iterations, or from the recovery key) and wrap the data key with AES-256-GCM. Writers use 600,000 iterations; readers enforce the bounds in "Input limits" before running PBKDF2.
 3. Decryption tries the slot(s): unwrap the data key, then decrypt and authenticate the payload. A GCM failure means the wrong password or a modified file; nothing is imported.
 
 The key-slot structure lets options B (password slot) and D (password slot + recovery-key slot) use the same format. Everything in the header — creation time, app version, source device ID/name, hint — is **readable without the password**.
@@ -122,7 +129,7 @@ The key-slot structure lets options B (password slot) and D (password slot + rec
 - `integrity.hash` = SHA-256 over the canonical serialization of the **whole document with the `integrity` member removed**: header and `payload`. In an encrypted file, `payload` is `{ "ciphertext": … }`, so the hash covers the ciphertext, not the plaintext.
 - Purpose: detect accidental damage (truncated download, edited file) **before** asking for a password, so the app can say "this file is damaged" instead of the misleading "wrong password". It is not a signature: anyone who edits a file can recompute it.
 - Authenticity: only an encrypted file is protected against deliberate tampering (by the GCM tag over header and payload). An unencrypted file has no protection against deliberate changes; import validation still applies.
-- Per-record `contentHash` values (below) are computed over the canonical `data` of each record and are used for merging, not for file integrity.
+- Per-record `contentHash` values (below) are computed over the canonical `data` of each record and are used only to compare versions of the same ID, not for file integrity.
 
 ### Record envelope (every record type)
 
@@ -137,16 +144,66 @@ The key-slot structure lets options B (password slot) and D (password slot + rec
 }
 ```
 
-- **IDs** are UUIDs created on the device that created the record. The same ID on two devices always means "the same item".
+- **IDs** are random UUIDs created on the device that created the record. The same ID on two devices always means "the same item". Exception: singleton records (currently only shared preferences) use a reserved constant ID defined by the format (see "Preferences").
 - **Version vector:** every device has a stable device ID (already implemented). Each local edit increments that device's counter in the record's `version`. Comparing two vectors tells whether one version already contains the other (see merge rules). It stays small because one person has only a few devices.
-- **contentHash** is SHA-256 over the canonical serialization of `data`, so identical content is recognised even if it was written independently.
+- **contentHash** is SHA-256 over the canonical serialization of `data`. It is used **only to compare two versions of the same ID** (device vs file): equal hashes mean "already here" even if the two devices reached the same content independently. It is **never used across different IDs**: two records with different UUIDs are different items even if their content is identical (for example, the same task typed on two devices before any backup), and import keeps both. Identity is the UUID, nothing else.
+- Possible later aid, proposal only: an import preview note such as "N new items look identical to items already here", letting the user review them. It would never merge or delete anything automatically, and would need owner approval.
 - **Links:** a record type declares its references to other records (e.g. a task's `projectId`). Record types are **independent** if they have no links in either direction (nothing they reference and nothing that references them), and **linked** otherwise. This matters for conflict resolution below.
 - **Append-only history** (execution sessions, output corrections, finalized weekly reviews) uses the same envelope. Its `data` never changes after creation; corrections are new records that reference the original.
 - **Tombstones:** deleting an item on the device keeps a tombstone (ID, deletion time, version vector) instead of forgetting the ID. Tombstones are exported so another device learns about the deletion, but importing never deletes anything by itself (see conflicts).
 
-### Validation
+### Preferences: singleton with a fixed logical ID (proposed)
 
-- The whole file (after decryption, if encrypted) is validated against the format schema **before** any data is touched. Every reference inside the file must resolve to a record in the file or on the device (e.g. a task's project).
+Today the app stores one preferences row in IndexedDB under the key `"self"` with five fields (language, theme, calendar display, week start, time zone) and a server revision used only by the frozen sync code. For backups the proposal splits them into two groups:
+
+| Group | Fields | In backup | Why |
+|---|---|---|---|
+| **Shared preferences** (transferable) | `timeZone`, `weekStart`, `calendarDisplay`; later stages add calculation-relevant settings here (e.g. capacity defaults) | Yes, as one record of type `preferences` | Time zone and week start change how days, weeks, recurrence, and reviews are computed; all devices should agree. Calendar display is grouped here so dates look the same everywhere. |
+| **Device settings** (device-local) | `language`, `theme`; later device-only items (e.g. reminders on this device) | Not merged. The exporting device's values are written as informational `sourceDeviceSettings` inside the payload. | A phone and a laptop may reasonably differ (e.g. dark theme on the phone only). |
+
+Rules:
+
+- **Fixed logical ID:** the shared preferences record always has the same reserved ID on every device, `00000000-0000-4000-8000-000000000001` (a constant defined by format version 1, not random). So the same ID on two devices means the same singleton, and the normal merge rules apply: version vectors, "already here / older / newer in backup / conflict". It can never be added as a second record, and "keep both" is never offered.
+- **Untouched defaults:** a device that never changed its shared preferences has an empty version vector, which every other version contains. Importing into such a device therefore shows "newer in backup", not a conflict, and is applied after the usual confirmation.
+- **Device settings on import:** if the file's `sourceDeviceSettings` differ from this device's, the preview offers one optional action, "Use the display settings of *device name* on this device?". Declining changes nothing; there is no conflict entry.
+- **Migration in Stage 1B:** the existing `"self"` row is split: shared fields move into the `preferences` envelope (reserved ID, empty version vector unless the user changed them, which counts as this device's first edit), and language/theme move to device-local settings. The frozen sync code's `serverRevision` is not part of the backup.
+- The grouping of fields (e.g. whether `calendarDisplay` or `language` should be shared) is a product choice. The table above is a proposal and can be changed before Stage 1B is implemented.
+
+### Input limits and validation order (untrusted files)
+
+A backup file may come from anywhere, so it is untrusted input. Limits for format version 1:
+
+| Item | Limit |
+|---|---|
+| File size (`File.size`) | ≤ **32 MiB**, checked before reading any bytes |
+| Decrypted payload (encrypted files) | ≤ **32 MiB** of plaintext bytes; the ciphertext length is also checked against this before decrypting |
+| Records + tombstones + pending conflicts + replaced versions, all types together | ≤ **200,000** entries |
+| One record envelope (canonical size) | ≤ **256 KiB** |
+| Text fields | per record-type schema (e.g. names ≤ 200 characters, notes ≤ 20,000 characters) |
+| Version vector | ≤ **32** device entries per record |
+| JSON nesting depth | ≤ **32** levels |
+| `sourceDevice.name` / `hint` | ≤ 80 / ≤ 200 characters |
+| `keySlots` | 1 or 2 entries, at most one of each `type` (`password`, `recoveryKey`) |
+| `kdf` | `name` exactly `PBKDF2`, `hash` exactly `SHA-256`, `iterations` an integer from **100,000 to 1,000,000** (writers use 600,000), `salt` exactly 16 bytes |
+| Ciphers | `AES-256-GCM` only; every IV exactly 12 bytes; `tagBits` exactly 128; `wrappedKey` exactly 48 bytes (32-byte key + 16-byte tag) |
+| Unknown fields in header or `encryption` | rejected |
+
+Because the ciphertext is base64 text inside a file of at most 32 MiB, an encrypted backup in practice holds at most about 24 MiB of plaintext. A JSON parse failure of any kind (including running out of stack on absurd nesting) counts as an invalid file.
+
+The iteration cap stops a crafted file from freezing a phone with an enormous PBKDF2 cost; the floor catches files written with too little protection. Raising the writer's iteration count above 1,000,000 later requires a new app version that accepts it (older apps would refuse such files with a clear message).
+
+**Validation order** — each step runs only if the previous one passed, so no expensive work happens on an unchecked file:
+
+1. Check `File.size` against the limit, before reading.
+2. Read the text and parse JSON; check nesting depth.
+3. Validate the **header** strictly: `format`, `formatVersion` (refuse newer), field types, and, if encrypted, every `encryption` parameter against the table above (including iteration bounds and byte lengths). This happens **before any password prompt and before any PBKDF2 run**.
+4. Verify the integrity hash (linear in file size, bounded by step 1).
+5. If encrypted: ask for the password; run PBKDF2 once per user attempt (no automatic retries); unwrap the data key; check the plaintext length limit; decrypt and authenticate.
+6. Validate the payload: entry counts, envelope sizes, record-type schemas, allowed record types, version vectors.
+7. Check references: every reference must resolve to a record in the file or on the device (e.g. a task's project).
+8. Build the preview. Nothing has been written to the database before the user confirms.
+
+Export enforces the same limits: if a device's data would exceed them, export stops with an explanation instead of writing a file that this app version could not import. (Not expected for one person's data in v1; a later format version could add compression or splitting.)
 
 ## Versioning and upgrades
 
@@ -158,7 +215,7 @@ The key-slot structure lets options B (password slot) and D (password slot + rec
 ## Import flow
 
 1. **Choose file** (file picker; works on Windows, Android, and iPhone).
-2. **Read and check:** format, version, integrity hash; if encrypted, ask for the password and decrypt; then schema, allowed record types, references. On any failure: stop, explain, change nothing.
+2. **Read and check** in the order given in "Input limits and validation order": size, JSON, header and encryption parameters, integrity hash; if encrypted, then password and decryption; then payload schema, allowed record types, references. On any failure: stop, explain, change nothing.
 3. **Preview** (nothing written yet). Each item in the file is classified:
 
 | Category | Rule | Default action |
@@ -177,7 +234,7 @@ The key-slot structure lets options B (password slot) and D (password slot + rec
 Why this satisfies the requirements:
 
 - **No replacement or deletion by import:** only "New" items are written automatically. Updates and deletions need an explicit user choice.
-- **No duplicates on re-import:** identity is the UUID; identical or older copies are skipped.
+- **No duplicates on re-import:** identity is the UUID; identical or older copies of the same ID are skipped. (Separately created items with different UUIDs are not duplicates in this sense and are both kept; see `contentHash`.)
 - **No silent overwrite on differing content:** differing content is always either an explicitly confirmed update or a pending conflict.
 
 ## Showing and resolving conflicts (proposed UX — awaiting owner approval, T-017)
@@ -194,7 +251,7 @@ Why this satisfies the requirements:
 - Bulk actions ("keep this device's version for all") require a confirmation that states how many items are affected.
 - **Nothing is lost while undecided:** pending conflicts keep both versions locally until resolved and survive app restarts. The version that is replaced by a choice is kept in a local "replaced versions" archive (included in later backups) so a wrong choice can be undone.
 - Append-only history with the same ID but different content should never happen; it is shown as an integrity warning with both versions, and nothing is changed automatically.
-- Preferences: language and theme differences are offered as "apply backup preferences?" instead of being merged field by field.
+- Preferences: shared preferences (time zone, week start, calendar display) follow the normal rules for one singleton record (choose a version; no "keep both"). Device settings (language, theme) are never conflicts; the preview only offers "use the display settings of *device name*?" (see "Preferences").
 
 ## Export flow
 
@@ -211,7 +268,7 @@ The file contains all personal data in readable form unless it is protected. The
 | Option | What it means | If the password is forgotten | Trade-offs |
 |---|---|---|---|
 | A. No app-level encryption | Plain JSON; protection relies on where the user stores the file (device lock, cloud account) | Not applicable | Simplest and most recoverable; anyone who gets the file can read it |
-| B. Optional password per export | User may set a password when exporting. AES-256-GCM, key derived with PBKDF2-SHA-256 (Web Crypto, built into all target browsers; ≥ 600,000 iterations) and a random salt | That backup is **permanently unreadable** | Good protection when used; real risk of permanent loss for an infrequently used password |
+| B. Optional password per export | User may set a password when exporting. AES-256-GCM, key derived with PBKDF2-SHA-256 (Web Crypto, built into all target browsers; 600,000 iterations, readers accept 100,000–1,000,000) and a random salt | That backup is **permanently unreadable** | Good protection when used; real risk of permanent loss for an infrequently used password |
 | C. Mandatory password | Every export is encrypted (as B) | Every such backup is lost | Strongest default protection; highest loss risk for a non-specialist owner |
 | D. Password plus recovery key | The file key is wrapped twice: by the password and by a randomly generated recovery key shown once (to print or save separately) | Recoverable with the recovery key; lost only if both are lost | Most robust; more steps and more to explain |
 | E. Rely on device/cloud encryption | Like A, but the app recommends storing backups only in encrypted locations | Not applicable | No app complexity; protection outside the app's control |
