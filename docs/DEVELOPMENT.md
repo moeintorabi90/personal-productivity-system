@@ -95,5 +95,6 @@ Rules that prevent conflicts:
 - **The repository is the source of truth.** Everyone follows this repository's `docs/` and Git history. Advice from any tool counts only once it is recorded here (decisions in `docs/DECISIONS.md`).
 - Before starting, check `git status` and the latest commits; do not overwrite or revert another writer's uncommitted work.
 - Reviews report findings; the primary writer of that change applies fixes.
+- A short summary for AI tools lives in the root `AGENTS.md` (read automatically by Codex); keep it consistent with this section.
 - Never commit credentials, `.env`, database files, exports, generated build output, or user data.
 - No remote repository has been selected; do not push or publish without the owner's decision.
