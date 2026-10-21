@@ -1,12 +1,15 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { type FormEvent, useId, useState } from "react";
-import { useServices, useT } from "../app-context.tsx";
+import { useLastBackupAt, useServices, useT } from "../app-context.tsx";
 import { addProbe, deleteProbe } from "../local/repository.ts";
 import { useOfflineReadiness } from "../pwa.ts";
 import { ConflictsPanel } from "./ConflictsPanel.tsx";
+import { InstallGuide } from "./InstallGuide.tsx";
 
-export function HomeView() {
+export function HomeView({ onOpenBackup }: { onOpenBackup?: () => void }) {
   const t = useT();
+  const { syncEnabled } = useServices();
+  const lastBackupAt = useLastBackupAt();
   const readiness = useOfflineReadiness();
   const readinessText =
     readiness === "ready"
@@ -23,9 +26,25 @@ export function HomeView() {
         <p className={`notice ${readiness === "ready" ? "notice-ok" : "notice-info"}`} data-testid="offline-readiness">
           {readinessText}
         </p>
+        {lastBackupAt === null ? (
+          <p className="notice notice-warn">
+            {t("home.backupReminder")}{" "}
+            {onOpenBackup ? (
+              <button type="button" className="link-button" onClick={onOpenBackup}>
+                {t("nav.backup")}
+              </button>
+            ) : null}
+          </p>
+        ) : null}
       </section>
-      <ConflictsPanel />
-      <ProbePanel />
+      <InstallGuide />
+      {/* Frozen post-v1 sync diagnostics: only with the build flag on (D-016). */}
+      {syncEnabled ? (
+        <>
+          <ConflictsPanel />
+          <ProbePanel />
+        </>
+      ) : null}
     </>
   );
 }

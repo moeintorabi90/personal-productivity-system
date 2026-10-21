@@ -63,6 +63,37 @@ Manual on real devices (record versions): export on Windows → import on Androi
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.
 
+## Stage 1B test report (2026-10-21)
+
+Branch `feat/stage-1b-offline-backup`. Environment as in the Stage 1 report (Windows 11, Node.js 24.20.0, TypeScript 7.0.2, Vitest 5.0.5, Playwright 1.64, Microsoft Edge 155.0.4283.62 headless). Tests run one file at a time (memory limit of this PC).
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | Passed (shared, API, web; exit 0) |
+| `npm test` | **130 passed, 0 failed** in 16 files (includes the frozen Stage 1 server/sync tests, still passing) |
+| `npm run test:e2e` (build + Edge) | **4 passed, 0 failed**; build precaches 11 files |
+| Production bundle check | Test fixtures and `fake-indexeddb` are not in `apps/web/dist/assets` |
+| Manual check in the browser pane (dev server) | Backup screen texts and password warning present; no console errors; no request to `/v1` |
+
+New and changed automated tests:
+
+- `apps/web/src/backup/primitives.test.ts` (13): JCS against RFC 8785 rules (key order, numbers, escaping); synchronous SHA-256 equals Node's on 9 lengths; base64; version-vector order/merge; pre-parse scan: 32 levels accepted / 33 rejected, 8,000,000 `[` rejected at position 32, mismatched brackets, unterminated string, control character, invalid escape, trailing content, brackets inside strings not counted, exactly 4,000,000 values accepted / one more rejected.
+- `apps/web/src/backup/merge.test.ts` (16): backup items 1–7 (round-trip, merge without loss, idempotent re-import, older copy, newer in backup only after confirmation with archive, conflicts surviving restart, keep both for independent type, use backup / keep device with undo, linked parent without "keep both" and children still attached, deletions both ways as conflicts, old backup does not resurrect a deleted item, deleting a linked parent refused), 8 (history integrity warning, corrections appended), 14 (preview counts equal applied), 15 (UUID identity), 17 (bulk action count), an apply failure leaving the database unchanged, and carried pending conflicts without duplicates.
+- `apps/web/src/backup/validation.test.ts` (18): item 9 (truncated, foreign, damaged, schema violations, wrong content hash, unknown type, unresolved reference, unknown header fields, newer format/data versions, invalid JSON number → all refused, database unchanged); 9a (32 MiB + 1 byte refused without reading; exactly 32 MiB accepted; 200,001 entries refused before per-entry checks, 200,000 passes the count; envelope over 256 KiB refused on export and import; 33-device version vector refused); 9c (JSON.parse never called for nine malformed/deep/oversized inputs; same inside an encrypted payload); 10 (no `sync_probe` or outbox data in exports even when present; a file containing them refused); 12 (integrity hash equals an independent Node-crypto computation; damaged encrypted file reported before any PBKDF2).
+- `apps/web/src/backup/encryption.test.ts` (6): 13 (default export unencrypted; one password slot, 600,000 iterations, no hint, no plaintext; right/wrong password, database unchanged on failure; NFC-equivalent `آ` works, Arabic Yeh is a different password; modified ciphertext, IV, salt, iterations, creation time, or device name fail authentication even with a recomputed integrity hash); 9b (13 malformed or out-of-bounds parameter sets refused before the password prompt, PBKDF2 spy never called; 600,000 and 1,000,000 accepted).
+- `apps/web/src/backup/preferences.test.ts` (10): 16 (reserved ID; untouched defaults → newer in backup; both edited → conflict without "keep both"; language/theme only via the optional display-settings choice); migration of the legacy row (values kept, version vector rule, legacy row untouched, defaults without a row); 11 (committed format-version-1 sample with fabricated data imports; newer format refused).
+- `apps/web/src/App.test.tsx` (10, jsdom): v1 navigation without sync screens, engine never started, no `fetch` at all; frozen screens only with the flag on; Persian RTL as a device setting; theme; time zone as a shared preference; offline state; export password off by default, double entry, warning and password-manager advice, verified encrypted export, last-backup indicator; import preview with updates and display settings unchecked by default, re-import message, confirmed update with undo entry; refused file message and nothing changed; conflict shown side by side and resolved (item 18 and the UI parts of 13, 16, 17).
+- `apps/web/e2e/offline.spec.ts` (4, Edge): offline shell (sync UI absent, offline settings edit, no request to `/v1` or other origins); data survives a browser restart reopened offline; Persian RTL and dark theme persist; **real file flow**: export a download in one profile while offline, import it into a fresh profile while offline, confirm the update, re-import shows "already imported" and no duplicates, no network use.
+
+Defect found by these tests and fixed: a refused import (unresolved reference) still created the default preferences record, because preview wrote it before validation. Preview now writes nothing; the default is created only inside the import transaction.
+
+Not tested in Stage 1B (remaining manual items):
+
+- **Windows → Android and Android → Windows** backup export/import on real devices, and **iPhone** (Safari Home Screen app) export/import feasibility: no Android or iPhone device is available to the implementer, and installing on a phone needs the hosting origin that is still undecided (DECISIONS open question 8).
+- Share-sheet export ("Share or save…") on phones: only shown where the browser supports sharing files; not available in headless Edge.
+- PWA install UI on Windows (headless E2E does not exercise it).
+- A decrypted payload over 32 MiB: unreachable through a valid file (see BACKUP_FORMAT "Implementation notes"); the check stays as defense in depth.
+
 ## Stage 1 test report (2026-10-20)
 
 Environment: Windows 11 Enterprise, Node.js 24.20.0, npm 11.19.0, TypeScript 7.0.2, Vitest 5.0.5, Playwright 1.64, Microsoft Edge 155.0.4283.62 (headless), PGlite 0.5.
@@ -89,8 +120,8 @@ Automated coverage by file:
 - `apps/api/test/network.test.ts` (4): server binds to `127.0.0.1` by default; a non-loopback `Host` header (DNS rebinding) gets `403 HOST_NOT_ALLOWED` and cannot run setup, while `localhost`, `127.0.0.1`, `[::1]` work; exposed mode accepts other host names but setup still requires the token; Host-header parsing.
 - `apps/web/src/local/repository.test.ts` (6): device identity; no queueing while signed out; coalescing of edits; create+delete never sent; update→delete keeps base revision; no merging into an in-flight operation.
 - `apps/web/src/sync/two-clients.test.ts` (5): two simulated devices (real sync engine + IndexedDB via fake-indexeddb) against the real API and database: offline write stays local; lost push response then retry → exactly one server record; edits and tombstones flow both ways; coalesced offline edits; preference conflict resolved both ways; edit-vs-delete conflict keeps the edit as a new note; revoked session stops sync and keeps local data.
-- `apps/web/src/App.test.tsx` (5, jsdom): English LTR default with accessible navigation; Persian switches `dir="rtl"`/`lang="fa"` and persists; theme applied to the document; time zone never imposed and invalid names rejected; offline indicator and local writes while offline.
-- `apps/web/e2e/offline.spec.ts` (3, Edge): installed shell reloads and works offline (with a local write); a note survives closing the browser and reopening it **offline** with a persistent profile; Persian RTL layout (navigation starts at the right edge) and dark theme persist after reload.
+- `apps/web/src/App.test.tsx` (5, jsdom; replaced in Stage 1B): English LTR default with accessible navigation; Persian switches `dir="rtl"`/`lang="fa"` and persists; theme applied to the document; time zone never imposed and invalid names rejected; offline indicator and local writes while offline.
+- `apps/web/e2e/offline.spec.ts` (3, Edge; replaced in Stage 1B): installed shell reloads and works offline (with a local write); a note survives closing the browser and reopening it **offline** with a persistent profile; Persian RTL layout (navigation starts at the right edge) and dark theme persist after reload.
 
 Security fix after Codex review (branch `fix/api-loopback-bind`, DECISIONS T-015), re-verified: `npm run typecheck` passed; `npm test` **62 passed, 0 failed** in 11 files; `npm run test:e2e` 3 passed. Manual runtime check: with `HOST` unset, only `127.0.0.1:<port>` was listening and the PC's LAN address could not connect (`Test-NetConnection` false); `HOST=0.0.0.0` without `SETUP_TOKEN` exited with an explanatory error; the Vite dev proxy reached the API (`/v1/setup/status` → 200).
 

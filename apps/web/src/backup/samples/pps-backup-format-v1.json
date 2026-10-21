@@ -1,0 +1,47 @@
+{
+  "format": "pps-backup",
+  "formatVersion": 1,
+  "backupId": "11111111-1111-4111-8111-111111111111",
+  "createdAt": "2026-10-21T08:00:00.000Z",
+  "app": {
+    "version": "0.2.0",
+    "dataSchemaVersion": 1
+  },
+  "sourceDevice": {
+    "id": "a468b276-93b6-4bd2-a126-f8e01c90054d",
+    "name": "Sample device"
+  },
+  "encryption": null,
+  "payload": {
+    "records": {
+      "preferences": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "createdAt": "2026-10-21T07:10:21.858Z",
+          "updatedAt": "2026-10-21T07:10:21.949Z",
+          "version": {
+            "a468b276-93b6-4bd2-a126-f8e01c90054d": 1
+          },
+          "contentHash": "49eec08d73b129986a32debb48830a3c17372d6bdeda3dc47437506adb1cc845",
+          "data": {
+            "timeZone": "Europe/London",
+            "weekStart": 1,
+            "calendarDisplay": "both"
+          }
+        }
+      ]
+    },
+    "tombstones": [],
+    "pendingConflicts": [],
+    "replacedVersions": [],
+    "sourceDeviceSettings": {
+      "language": "en",
+      "theme": "system"
+    }
+  },
+  "integrity": {
+    "algorithm": "SHA-256",
+    "canonicalization": "JCS-RFC8785",
+    "hash": "3ae1e6c1f99b09329e649afbcb8c10011a4d2405cb3ed7fa222860ad2291ce0b"
+  }
+}

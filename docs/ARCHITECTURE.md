@@ -151,6 +151,13 @@ Known limitations of the frozen Stage 1 server code, to address before it is eve
 - **Sync API:** Express 5 + Zod 4 on Node 24, run as TypeScript through Node's type stripping. Data access is plain SQL behind a two-method `Db` interface implemented by PGlite (dev/test) and `pg` (PostgreSQL) (T-006, T-007).
 - **Repository layout:** one root `package.json` with path aliases because the drive is exFAT (T-014).
 
+## Stage 1B implementation notes
+
+- **Backup module** (`apps/web/src/backup/`): `limits.ts` (format-version-1 limits), `scan.ts` (constant-memory pre-parse scan), `jcs.ts`, `sha256.ts` (synchronous, for content hashes inside IndexedDB transactions; Web Crypto for file integrity), `format.ts` (strict header/encryption/payload schemas), `read.ts` (validation order steps 1–8), `crypto.ts` (PBKDF2/AES-GCM via Web Crypto), `merge.ts` (preview and one-transaction apply), `conflicts.ts` (resolutions, bulk, undo), `export.ts` (export with re-open verification), `deliver.ts` (download / share sheet), `registry.ts` (record types allowed in product backups: `preferences` only for now).
+- **Local data:** IndexedDB schema version 2 with `records`, `tombstones`, `pendingConflicts`, `replacedVersions`, `importLog` (DATA_MODEL); `local/records.ts` for local edits (version-vector bump, tombstones), `local/settings.ts` for shared preferences.
+- **UI:** Backup screen (export with optional password, import with preview, conflicts, undo), last-backup indicator in the header, install guide on Home.
+- **Frozen sync code (D-016):** hidden and never started unless the development build flag `VITE_ENABLE_FROZEN_SYNC=true` is set; the code itself was not changed.
+
 ### Platform feasibility (Stage 1 findings)
 
 | Platform | Status |
@@ -170,7 +177,7 @@ Known limitations of the frozen Stage 1 server code, to address before it is eve
 | Client | React 19 + Vite 8; Dexie 4 over IndexedDB; typed in-house i18n (no i18next); hand-written service worker (no `vite-plugin-pwa`) | T-008, T-009 |
 | Shared validation | Zod 4 schemas in `packages/shared` | Stage 1 |
 | Tests | Vitest (unit, repository, component with React Testing Library + jsdom), Playwright with the installed Microsoft Edge | T-013 |
-| v1 backup (planned, Stage 1B) | Web Crypto for hashing and optional encryption; JCS canonical JSON | T-016–T-018 |
+| v1 backup (Stage 1B) | Web Crypto (PBKDF2, AES-GCM, SHA-256 for file integrity), in-house synchronous SHA-256 for content hashes, JCS canonical JSON, constant-memory pre-parse scan | T-016–T-018 |
 | Frozen post-v1 server (inactive in v1) | Express 5 + Zod; plain SQL with the `pg` driver (no Prisma); PGlite for development/tests | T-006, T-007, T-019, D-016 |
 | App delivery | Installable PWA (Edge on Windows, compatible browser on Android, Safari on iPhone); hosting provider open | D-013 |
 

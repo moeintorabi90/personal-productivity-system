@@ -1,0 +1,355 @@
+import type { DeviceSettings, ImportLogRow, LocalDb, PendingConflictRow, ReplacedVersionRow, VersionEntry } from "../local/db.ts";
+import { getDeviceSettings, toEnvelope } from "../local/records.ts";
+import { ensureSharedPreferences } from "../local/settings.ts";
+import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
+import { BackupError } from "./errors.ts";
+import type { BackupHeader, BackupPayload } from "./format.ts";
+import type { Registry } from "./registry.ts";
+import { compareVersions, isContainedIn } from "./versions.ts";
+
+/** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
+export type ItemCategory =
+  | "new"
+  | "newTombstone"
+  | "alreadyHere"
+  | "olderCopy"
+  | "newerInBackup"
+  | "conflict"
+  | "deletedHere"
+  | "deletedInBackup"
+  | "history"
+  | "alreadyPending";
+
+export interface PreviewItem {
+  type: string;
+  id: string;
+  category: ItemCategory;
+  incoming: VersionEntry;
+  local: VersionEntry | null;
+}
+
+export type PreviewCounts = Record<ItemCategory | "carriedConflicts" | "carriedReplaced", number>;
+
+export interface ImportPreview {
+  header: BackupHeader;
+  items: PreviewItem[];
+  counts: PreviewCounts;
+  /** When this exact backup was imported before, if ever. */
+  previouslyImportedAt: string | null;
+  sourceDeviceSettings: DeviceSettings;
+  displaySettingsDiffer: boolean;
+}
+
+export interface ImportChoices {
+  /** Apply the "newer in backup" items (D-015: only after the user confirms). */
+  applyUpdates: boolean;
+  /** Use the source device's language/theme on this device (D-017: optional, off by default). */
+  applyDisplaySettings: boolean;
+}
+
+export interface ImportResult {
+  counts: PreviewCounts;
+  appliedUpdates: number;
+  skippedUpdates: number;
+  importId: string;
+}
+
+const CONFLICT_CATEGORIES: ReadonlySet<ItemCategory> = new Set(["conflict", "deletedHere", "deletedInBackup", "history"]);
+
+function emptyCounts(): PreviewCounts {
+  return {
+    new: 0,
+    newTombstone: 0,
+    alreadyHere: 0,
+    olderCopy: 0,
+    newerInBackup: 0,
+    conflict: 0,
+    deletedHere: 0,
+    deletedInBackup: 0,
+    history: 0,
+    alreadyPending: 0,
+    carriedConflicts: 0,
+    carriedReplaced: 0,
+  };
+}
+
+export function entryVersion(entry: VersionEntry) {
+  return entry.deleted ? entry.tombstone.version : entry.envelope.version;
+}
+
+function sameEntry(a: VersionEntry, b: VersionEntry): boolean {
+  if (a.deleted !== b.deleted) return false;
+  if (compareVersions(entryVersion(a), entryVersion(b)) !== "equal") return false;
+  return a.deleted || (b as { envelope: Envelope }).envelope.contentHash === a.envelope.contentHash;
+}
+
+interface LocalState {
+  record: Envelope | null;
+  tombstone: Tombstone | null;
+  pending: PendingConflictRow[];
+}
+
+async function loadLocal(db: LocalDb, keys: [string, string][]): Promise<Map<string, LocalState>> {
+  const [records, tombstones, pending] = await Promise.all([
+    db.records.bulkGet(keys),
+    db.tombstones.bulkGet(keys),
+    db.pendingConflicts.toArray(),
+  ]);
+  const pendingByKey = new Map<string, PendingConflictRow[]>();
+  for (const row of pending) {
+    const key = `${row.type}/${row.id}`;
+    pendingByKey.set(key, [...(pendingByKey.get(key) ?? []), row]);
+  }
+  const out = new Map<string, LocalState>();
+  keys.forEach(([type, id], i) => {
+    const row = records[i];
+    out.set(`${type}/${id}`, {
+      record: row ? toEnvelope(row) : null,
+      tombstone: tombstones[i] ?? null,
+      pending: pendingByKey.get(`${type}/${id}`) ?? [],
+    });
+  });
+  return out;
+}
+
+/** Classifies one incoming record version against this device's state. */
+function classifyRecord(incoming: Envelope, local: LocalState, appendOnly: boolean): ItemCategory {
+  const entry: VersionEntry = { deleted: false, envelope: incoming };
+  if (local.pending.some((p) => sameEntry(p.incoming, entry))) return "alreadyPending";
+  if (local.record) {
+    if (local.record.contentHash === incoming.contentHash) return "alreadyHere";
+    const order = compareVersions(incoming.version, local.record.version);
+    if (order === "before") return "olderCopy";
+    if (appendOnly) return "history"; // history data never changes: a difference is an integrity issue
+    if (order === "after") return "newerInBackup";
+    return "conflict"; // concurrent, or equal versions with different content
+  }
+  if (local.tombstone) {
+    // The deletion here already saw this version: the backup holds an older copy.
+    return isContainedIn(incoming.version, local.tombstone.version) ? "olderCopy" : "deletedHere";
+  }
+  return "new";
+}
+
+/** Classifies one incoming tombstone against this device's state. */
+function classifyTombstone(incoming: Tombstone, local: LocalState): ItemCategory {
+  const entry: VersionEntry = { deleted: true, tombstone: incoming };
+  if (local.pending.some((p) => sameEntry(p.incoming, entry))) return "alreadyPending";
+  if (local.tombstone) return "alreadyHere";
+  if (local.record) {
+    // Edited here after (or including) the version that was deleted elsewhere: older news.
+    return isContainedIn(incoming.version, local.record.version) ? "olderCopy" : "deletedInBackup";
+  }
+  return "newTombstone";
+}
+
+function localEntry(local: LocalState): VersionEntry | null {
+  if (local.record) return { deleted: false, envelope: local.record };
+  if (local.tombstone) return { deleted: true, tombstone: local.tombstone };
+  return null;
+}
+
+/** Step 9: every link must resolve to a record in the file or on this device. */
+async function checkReferences(db: LocalDb, payload: BackupPayload, registry: Registry): Promise<void> {
+  const inFile = new Set<string>();
+  for (const [type, list] of Object.entries(payload.records)) for (const e of list) inFile.add(`${type}/${e.id}`);
+  for (const [type, list] of Object.entries(payload.records)) {
+    const def = registry.get(type)!;
+    for (const link of def.links) {
+      for (const envelope of list) {
+        const target = envelope.data[link.field];
+        if (target === null || target === undefined) continue;
+        if (typeof target !== "string") throw new BackupError("UNRESOLVED_REFERENCE", `${type}.${link.field}`);
+        if (inFile.has(`${link.target}/${target}`)) continue;
+        if (await db.records.get([link.target, target])) continue;
+        throw new BackupError("UNRESOLVED_REFERENCE", `${type}/${envelope.id} → ${link.target}/${target}`);
+      }
+    }
+  }
+}
+
+async function classifyAll(db: LocalDb, payload: BackupPayload, registry: Registry): Promise<PreviewItem[]> {
+  const keys: [string, string][] = [];
+  for (const [type, list] of Object.entries(payload.records)) for (const e of list) keys.push([type, e.id]);
+  for (const t of payload.tombstones) keys.push([t.type, t.id]);
+  const local = await loadLocal(db, keys);
+  // A singleton that was never stored compares as its untouched default (empty version vector),
+  // so an imported version is "newer in backup", not "new". Nothing is written here.
+  for (const [type, id] of keys) {
+    const def = registry.get(type)!;
+    const state = local.get(`${type}/${id}`)!;
+    if (def.singletonId && def.singletonDefault && !state.record && !state.tombstone) {
+      state.record = makeEnvelope(id, { ...def.singletonDefault }, {}, nowIso());
+    }
+  }
+
+  const items: PreviewItem[] = [];
+  for (const [type, list] of Object.entries(payload.records)) {
+    const appendOnly = !!registry.get(type)!.appendOnly;
+    for (const envelope of list) {
+      const state = local.get(`${type}/${envelope.id}`)!;
+      items.push({
+        type,
+        id: envelope.id,
+        category: classifyRecord(envelope, state, appendOnly),
+        incoming: { deleted: false, envelope },
+        local: localEntry(state),
+      });
+    }
+  }
+  for (const tombstone of payload.tombstones) {
+    const state = local.get(`${tombstone.type}/${tombstone.id}`)!;
+    items.push({
+      type: tombstone.type,
+      id: tombstone.id,
+      category: classifyTombstone(tombstone, state),
+      incoming: { deleted: true, tombstone },
+      local: localEntry(state),
+    });
+  }
+  return items;
+}
+
+async function carriedCounts(db: LocalDb, payload: BackupPayload): Promise<{ conflicts: PendingConflictRow[]; replaced: ReplacedVersionRow[] }> {
+  const conflicts: PendingConflictRow[] = [];
+  const existingConflicts = await db.pendingConflicts.bulkGet(payload.pendingConflicts.map((c) => c.conflictId));
+  for (const [i, carried] of payload.pendingConflicts.entries()) {
+    if (existingConflicts[i]) continue;
+    // Moot if this device already has that version (or a later one).
+    const current = (await db.records.get([carried.type, carried.id])) ?? (await db.tombstones.get([carried.type, carried.id]));
+    if (current && isContainedIn(entryVersion(carried.incoming), current.version)) continue;
+    const samePending = (await db.pendingConflicts.where("[type+id]").equals([carried.type, carried.id]).toArray()).some((p) =>
+      sameEntry(p.incoming, carried.incoming),
+    );
+    if (!samePending) conflicts.push(carried);
+  }
+  const existingReplaced = await db.replacedVersions.bulkGet(payload.replacedVersions.map((r) => r.replacedId));
+  const replaced = payload.replacedVersions.filter((_, i) => !existingReplaced[i]);
+  return { conflicts, replaced };
+}
+
+function countItems(items: PreviewItem[], carried: { conflicts: unknown[]; replaced: unknown[] }): PreviewCounts {
+  const counts = emptyCounts();
+  for (const item of items) counts[item.category] += 1;
+  counts.carriedConflicts = carried.conflicts.length;
+  counts.carriedReplaced = carried.replaced.length;
+  return counts;
+}
+
+/**
+ * Steps 9–10: reference check and classification. Read-only: nothing is written.
+ */
+export async function previewImport(
+  db: LocalDb,
+  opened: { header: BackupHeader; payload: BackupPayload },
+  registry: Registry,
+): Promise<ImportPreview> {
+  await checkReferences(db, opened.payload, registry);
+  return db.transaction("r", [db.records, db.tombstones, db.pendingConflicts, db.replacedVersions, db.importLog, db.meta], async () => {
+    const items = await classifyAll(db, opened.payload, registry);
+    const carried = await carriedCounts(db, opened.payload);
+    const previous = await db.importLog.where("backupId").equals(opened.header.backupId).sortBy("importedAt");
+    const device = await getDeviceSettings(db);
+    const source = opened.payload.sourceDeviceSettings;
+    return {
+      header: opened.header,
+      items,
+      counts: countItems(items, carried),
+      previouslyImportedAt: previous.at(-1)?.importedAt ?? null,
+      sourceDeviceSettings: source,
+      displaySettingsDiffer: source.language !== device.language || source.theme !== device.theme,
+    };
+  });
+}
+
+/**
+ * Applies an import in ONE IndexedDB transaction (all or nothing). The classification is
+ * recomputed inside the transaction, so a change made after the preview cannot be overwritten.
+ * Only "new" items are written without a choice; updates need `applyUpdates`; conflicts and
+ * deletions are stored as pending conflicts with both versions (D-015).
+ */
+export async function applyImport(
+  db: LocalDb,
+  opened: { header: BackupHeader; payload: BackupPayload },
+  registry: Registry,
+  choices: ImportChoices,
+): Promise<ImportResult> {
+  await checkReferences(db, opened.payload, registry);
+  const tables = [db.records, db.tombstones, db.pendingConflicts, db.replacedVersions, db.importLog, db.meta];
+  return db.transaction("rw", tables, async () => {
+    // Inside the import transaction: written only if the whole import succeeds.
+    await ensureSharedPreferences(db);
+    const items = await classifyAll(db, opened.payload, registry);
+    const carried = await carriedCounts(db, opened.payload);
+    const header = opened.header;
+    const source = {
+      backupId: header.backupId,
+      deviceId: header.sourceDevice.id,
+      deviceName: header.sourceDevice.name,
+      exportedAt: header.createdAt,
+    };
+    const at = nowIso();
+    let appliedUpdates = 0;
+    let skippedUpdates = 0;
+
+    for (const item of items) {
+      const incoming = item.incoming;
+      switch (item.category) {
+        case "new":
+          if (!incoming.deleted) await db.records.put({ type: item.type, ...incoming.envelope });
+          break;
+        case "newTombstone":
+          if (incoming.deleted) await db.tombstones.put(incoming.tombstone);
+          break;
+        case "newerInBackup":
+          if (!choices.applyUpdates || incoming.deleted) {
+            skippedUpdates++;
+            break;
+          }
+          if (item.local) {
+            await db.replacedVersions.put({
+              replacedId: crypto.randomUUID(),
+              type: item.type,
+              id: item.id,
+              entry: item.local,
+              replacedAt: at,
+              reason: "updatedFromBackup",
+            });
+          }
+          await db.records.put({ type: item.type, ...incoming.envelope });
+          appliedUpdates++;
+          break;
+        default:
+          if (CONFLICT_CATEGORIES.has(item.category)) {
+            await db.pendingConflicts.put({
+              conflictId: crypto.randomUUID(),
+              kind: item.category === "conflict" ? "edit" : (item.category as PendingConflictRow["kind"]),
+              type: item.type,
+              id: item.id,
+              local: item.local,
+              incoming,
+              source,
+              detectedAt: at,
+            });
+          }
+      }
+    }
+    for (const conflict of carried.conflicts) await db.pendingConflicts.put(conflict);
+    for (const replaced of carried.replaced) await db.replacedVersions.put(replaced);
+    if (choices.applyDisplaySettings) {
+      await db.meta.put({ key: "deviceSettings", value: { ...opened.payload.sourceDeviceSettings } });
+    }
+    const counts = countItems(items, carried);
+    const importId = crypto.randomUUID();
+    const log: ImportLogRow = {
+      importId,
+      backupId: header.backupId,
+      fileCreatedAt: header.createdAt,
+      sourceDevice: { ...header.sourceDevice },
+      importedAt: at,
+      counts: { ...counts, appliedUpdates, skippedUpdates },
+    };
+    await db.importLog.put(log);
+    return { counts, appliedUpdates, skippedUpdates, importId };
+  });
+}

@@ -1,22 +1,26 @@
 import { useState } from "react";
-import { usePreferences, useDocumentPreferences, useT } from "./app-context.tsx";
+import { usePreferences, useDocumentPreferences, useServices, useT } from "./app-context.tsx";
 import { AccountView } from "./components/AccountView.tsx";
+import { BackupView } from "./components/BackupView.tsx";
 import { HomeView } from "./components/HomeView.tsx";
 import { SettingsView } from "./components/SettingsView.tsx";
 import { ConnectivityNotice, StatusBar } from "./components/StatusBar.tsx";
 
-type View = "home" | "settings" | "account";
+type View = "home" | "settings" | "backup" | "account";
 
 export function App() {
   const prefs = usePreferences();
   useDocumentPreferences(prefs);
   const t = useT();
+  const { syncEnabled } = useServices();
   const [view, setView] = useState<View>("home");
 
   const navItems: { id: View; label: string }[] = [
     { id: "home", label: t("nav.home") },
     { id: "settings", label: t("nav.settings") },
-    { id: "account", label: t("nav.account") },
+    { id: "backup", label: t("nav.backup") },
+    // Frozen post-v1 sync screens: only in builds with the flag on (D-016).
+    ...(syncEnabled ? [{ id: "account" as const, label: t("nav.account") }] : []),
   ];
 
   return (
@@ -43,7 +47,15 @@ export function App() {
       </nav>
       <main id="main" className="app-main" tabIndex={-1}>
         <ConnectivityNotice />
-        {view === "home" ? <HomeView /> : view === "settings" ? <SettingsView /> : <AccountView />}
+        {view === "home" ? (
+          <HomeView onOpenBackup={() => setView("backup")} />
+        ) : view === "settings" ? (
+          <SettingsView />
+        ) : view === "backup" ? (
+          <BackupView />
+        ) : syncEnabled ? (
+          <AccountView />
+        ) : null}
       </main>
     </div>
   );

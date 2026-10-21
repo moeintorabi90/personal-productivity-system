@@ -363,7 +363,80 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-block: 0.5rem;
+}
+.checkbox-field input[type="checkbox"] {
+  min-height: auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+}
+
+.count-list,
+.install-list {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.conflict-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-block: 0.5rem;
+}
+.conflict-columns h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.field-list {
+  margin: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+.field-list > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 6px;
+}
+.field-list dt {
+  font-weight: 600;
+}
+.field-list dt::after {
+  content: ":";
+}
+.field-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.field-list .changed {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: inherit;
+  text-decoration: underline;
+  padding: 0;
+  min-height: auto;
+  font: inherit;
+  cursor: pointer;
+}
+
 @media (max-width: 560px) {
+  .conflict-columns {
+    grid-template-columns: 1fr;
+  }
   .shell {
     padding: 0.75rem;
   }

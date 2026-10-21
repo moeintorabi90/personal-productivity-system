@@ -8,7 +8,8 @@ import {
 import { useId, useMemo, useState } from "react";
 import { usePreferences, useServices, useT } from "../app-context.tsx";
 import { formatDateTime } from "../i18n/index.ts";
-import { updatePreferences } from "../local/repository.ts";
+import { updateDeviceSettings } from "../local/records.ts";
+import { updateSharedPreferences } from "../local/settings.ts";
 
 function deviceTimeZone(): string | null {
   try {
@@ -30,16 +31,20 @@ function allTimeZones(): string[] {
 export function SettingsView() {
   const t = useT();
   const prefs = usePreferences();
-  const { db, engine } = useServices();
+  const { db } = useServices();
   const ids = { language: useId(), theme: useId(), calendar: useId(), week: useId(), zone: useId(), zones: useId() };
   const [zoneDraft, setZoneDraft] = useState<string | null>(null);
   const zones = useMemo(allTimeZones, []);
   const suggested = deviceTimeZone();
   const sampleDate = useMemo(() => new Date().toISOString(), []);
 
+  /** Language and theme stay on this device; the other settings are shared via backups (D-017). */
   async function save(patch: PreferencePatch) {
-    await updatePreferences(db, patch);
-    engine.requestSync();
+    const { language, theme, ...shared } = patch;
+    if (language !== undefined || theme !== undefined) {
+      await updateDeviceSettings(db, { ...(language ? { language } : {}), ...(theme ? { theme } : {}) });
+    }
+    if (Object.keys(shared).length) await updateSharedPreferences(db, shared);
   }
 
   const zoneValue = zoneDraft ?? prefs.timeZone ?? "";

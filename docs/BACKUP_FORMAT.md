@@ -1,6 +1,6 @@
 # Offline Backup: File Format, Merge, and Conflicts
 
-Status: **decided design for v1** (owner decisions D-008 to D-017; technical decisions T-016 to T-019 in `DECISIONS.md`), to be implemented in Stage 1B. Nothing in this document is implemented yet. Items marked "proposal only" or "possible later" are **not** part of v1 and would need owner approval.
+Status: **decided design for v1** (owner decisions D-008 to D-017; technical decisions T-016 to T-019 in `DECISIONS.md`), **implemented in Stage 1B** (`apps/web/src/backup/`). Implementation choices that refine details are listed in "Implementation notes (Stage 1B)" near the end. Items marked "proposal only" or "possible later" are **not** part of v1 and would need owner approval.
 
 ## Goals
 
@@ -242,8 +242,8 @@ Export enforces the same limits: if a device's data would exceed them, export st
 | **Older copy** | File version is contained in the device version (the device has the same item with later edits) | Skip (no change) |
 | **Newer in backup** | Device version is contained in the file version (the item changed elsewhere after this device last had it; this device has not edited it since) | Listed for confirmation; not applied until the user confirms |
 | **Conflict** | Neither version contains the other (edited on both sides), or same ID with different content and no usable version information | Kept as a pending conflict; the user decides |
-| **Deleted here** | File has an item that this device deleted (local tombstone) | Kept as a pending conflict ("restore or keep deleted") |
-| **Deleted in backup** | File has a tombstone for an item that exists here | Kept as a pending conflict ("delete here or keep") |
+| **Deleted here** | File has an item that this device deleted (local tombstone), and the deletion has not already seen that version (otherwise: older copy) | Kept as a pending conflict ("restore or keep deleted") |
+| **Deleted in backup** | File has a tombstone for an item that exists here, and this device's version is not newer than that deletion (otherwise: older copy) | Kept as a pending conflict ("delete here or keep") |
 
 4. **Apply** (one local database transaction, all or nothing): add new items, apply confirmed updates, and store pending conflicts with **both** versions. The device's own versions of conflicting items stay exactly as they were.
 5. **Record** an import log entry: `backupId`, file creation time, source device, counts per category, time of import. Re-importing the same `backupId` is allowed and shows "already imported on …"; because of the rules above, it changes nothing new.
@@ -310,6 +310,24 @@ The file contains all personal data in readable form unless it is protected. The
 Option D could be added later in a new format version (a `recoveryKey` key slot), with owner approval.
 
 Separate from backups: data inside the app (IndexedDB) is protected only by the device's own lock and storage encryption. App-level encryption at rest is out of scope for v1.
+
+## Implementation notes (Stage 1B)
+
+These are how the implementation applies the rules above where the text left a detail open. None changes an owner decision.
+
+- **Deletions are versions.** A tombstone carries a version vector like any edit. So a backup item whose version is already contained in a local tombstone is an **older copy** (it was deleted here after that state) and is skipped instead of raising "Deleted here" again; likewise a backup tombstone whose version is contained in the local record's version is an older copy. Only deletions that this device has not seen, or that crossed an edit made here, become "Deleted here" / "Deleted in backup" conflicts.
+- **Every resolution records the decision.** Whatever the user chooses, the resulting record or tombstone gets a version that contains both versions (merged and bumped for this device). Importing the same backup again therefore classifies the item as an older copy and does not ask again.
+- **"Keep both" copy marker** (`copyOf`) is stored only on the device; the format-version-1 envelope has no field for it, so it is not exported.
+- **Backup tombstones for IDs this device never had** are stored as tombstones ("newTombstone"). This deletes nothing; it only prevents an older backup from adding the item back as "new" later.
+- **Unconfirmed "newer in backup" items** are not stored; the user can import the same file again later and confirm them.
+- **Carried pending conflicts and replaced versions** from another device are added once (by ID) and skipped when this device already has that version or a later one.
+- **Deleting a record that other records link to is refused** (restrict, never cascade), for "Delete it here too" and for undo. With only preferences as a product type in Stage 1B, this is exercised with the linked test fixtures.
+- **Preview writes nothing.** A singleton that was never stored is compared as its untouched default; the default is written only inside the import transaction.
+- **Migration** copies the legacy `"self"` row; the row itself is left unchanged for the frozen sync code (D-016), and v1 never reads it again.
+- **Export delivery:** a normal download on every platform, plus a "Share or save…" button where the browser supports sharing files (typically Android and iPhone). The File System Access save dialog is not used; the spec allows "a save dialog … or a normal download".
+- **Device name** is editable on the Backup screen and written into the header (≤ 80 characters).
+- **Limits that cannot be reached through a valid file:** a decrypted payload over 32 MiB cannot occur, because base64 ciphertext inside a file of at most 32 MiB holds at most about 24 MiB. The check stays in place as defense in depth.
+- **Sample file:** `apps/web/src/backup/samples/pps-backup-format-v1.json` (fabricated data only) is imported by the tests; regenerate it only for a new format version (`PPS_WRITE_SAMPLE=1`).
 
 ## How this prepares for future sync (not built now)
 

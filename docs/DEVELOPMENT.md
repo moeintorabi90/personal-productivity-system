@@ -21,7 +21,7 @@ npm.cmd install
 npm.cmd run dev:web    # http://localhost:5173 — the v1 app; needs no server
 ```
 
-Version 1 is offline-only (DECISIONS D-012). The web app works fully without the API; until Stage 1B hides it, the "Account & sync" screen simply reports that the server is unreachable.
+Version 1 is offline-only (DECISIONS D-012). The web app needs no API. The frozen account/sync screens, "Sync check notes", and the sync engine are hidden and never started unless a development build sets `VITE_ENABLE_FROZEN_SYNC=true` (e.g. in a local `apps/web/.env.local`, git-ignored); never enable it for real data (D-016).
 
 **Frozen post-v1 server code (optional, for its own tests or experiments only):**
 
@@ -45,8 +45,9 @@ To try the installable/offline build: `npm.cmd run build`, then `npm.cmd run pre
 | `npm run build` | Production web build to `apps/web/dist`, including `sw.js` |
 | `npm run preview:web` | Serve the production build on port 4173 |
 | `npm run typecheck` | TypeScript 7 checks for shared, API, and web |
-| `npm test` | Unit, API integration, database, and two-device sync tests (Vitest) |
-| `npm run test:e2e` | Build, then Playwright tests in Edge (offline shell, restart persistence, RTL/theme) |
+| `npm test` | Unit, backup (merge, validation, encryption, preferences), component, and the frozen API/sync tests (Vitest) |
+| `npm run test:e2e` | Build, then Playwright tests in Edge (offline shell, restart persistence, RTL/theme, backup file export/import) |
+| `PPS_WRITE_SAMPLE=1 npx vitest run apps/web/src/backup/preferences.test.ts` | Regenerates the format-version-1 sample file; only when introducing a new format version (commit the old sample first) |
 | `npm run icons` | Regenerate PNG icons from the SVG geometry |
 
 ## Network access (safe by default)

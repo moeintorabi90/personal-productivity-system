@@ -4,9 +4,9 @@ An offline personal planning and reflection app for Windows 11 and Android, with
 
 ## Project status
 
-**Stage 1: foundation and offline proof — implemented; next is Stage 1B (offline backup).** The repository contains an installable web app shell (React, IndexedDB, service worker). It also contains a tested sync API, authentication, and PostgreSQL migrations from Stage 1; these stay in the repository but are **frozen and inactive in v1** (DECISIONS D-012, D-016). See [docs/ROADMAP.md](docs/ROADMAP.md), the backup design in [docs/BACKUP_FORMAT.md](docs/BACKUP_FORMAT.md), and the test report in [docs/TESTING.md](docs/TESTING.md).
+**Stage 1B: offline backup — implemented (automated acceptance passed; manual phone checks open).** The app is an installable web app shell (React, IndexedDB, service worker) with shared preferences, device display settings, and a Backup screen: versioned export with optional password, import with preview and atomic merge, conflict resolution, and undo. The repository also contains a tested sync API, authentication, and PostgreSQL migrations from Stage 1; these stay in the repository but are **frozen and inactive in v1** (DECISIONS D-012, D-016). See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/BACKUP_FORMAT.md](docs/BACKUP_FORMAT.md), and the test reports in [docs/TESTING.md](docs/TESTING.md).
 
-**Do not rely on the app for real personal data yet:** backup export/import is not implemented, and no hosting for installing the PWA on phones has been chosen.
+**Do not rely on the app for real personal data yet:** product features start in Stage 2, backups have not been checked on real Android/iPhone devices, and no hosting for installing the PWA on phones has been chosen.
 
 ## Quick start (Windows, PowerShell)
 
@@ -44,4 +44,4 @@ Details, database options, and workspace constraints: [docs/DEVELOPMENT.md](docs
 
 ## Next step
 
-Stage 1B: offline backup, following the owner decisions D-013 to D-017 in `docs/DECISIONS.md` (PWA delivery, optional backup password, conflict flow, frozen server code, preferences split). Still open: the hosting provider and stable origin for the PWA (open question 8), and installation/offline checks on real Android and iPhone devices.
+Close Stage 1B's manual checks (backup export/import between Windows and Android, iPhone feasibility), which need real devices and a hosting origin for the PWA (open question 8). Then Stage 2.

@@ -43,7 +43,17 @@ Names in the diagram are conceptual. Tables are defined by plain SQL migrations 
 
 Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed by cascade.
 
-On the device, IndexedDB (`apps/web/src/local/db.ts`) holds `meta` (device identity, session, cursor, last sync), `preferences`, `probes`, the durable `outbox`, and unresolved `conflicts`. Of these, only `preferences` is product data in the v1 backup; `probes` (`sync_probe`, diagnostic) and the sync tables (`outbox`, session, cursor, sync `conflicts`) belong to the frozen post-v1 sync code and are never exported.
+## On the device (IndexedDB, `apps/web/src/local/db.ts`, schema version 2 since Stage 1B)
+
+| Table | Contents | In backups |
+|---|---|---|
+| `records` | Product records as envelopes, primary key `[type+id]` (shared preferences under its reserved ID; later stages' types) | Yes |
+| `tombstones` | Deletion markers `[type+id]` with version vector | Yes |
+| `pendingConflicts` | Undecided import conflicts with both versions (D-015) | Yes |
+| `replacedVersions` | Versions replaced by a choice or a confirmed update (undo) | Yes |
+| `importLog` | One row per import: backup ID, source device, counts | No |
+| `meta` | Device identity (ID, name), `deviceSettings` (language, theme; D-017), `lastBackupAt`; frozen sync: session, cursor, last sync | Device settings only as informational `sourceDeviceSettings` |
+| `preferences` (legacy `"self"` row), `probes` (`sync_probe`), `outbox`, `conflicts` | Frozen post-v1 sync code (D-016). The v2 migration copies `"self"` into shared preferences and device settings and leaves it unchanged; v1 never reads it again | Never |
 
 ## Entities
 
