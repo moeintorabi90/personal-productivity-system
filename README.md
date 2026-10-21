@@ -4,9 +4,13 @@ An offline personal planning and reflection app for Windows 11 and Android, with
 
 ## Project status
 
-**Stage 1B: offline backup — implemented (automated acceptance passed; manual phone checks open).** The app is an installable web app shell (React, IndexedDB, service worker) with shared preferences, device display settings, and a Backup screen: versioned export with optional password, import with preview and atomic merge, conflict resolution, and undo. The repository also contains a tested sync API, authentication, and PostgreSQL migrations from Stage 1; these stay in the repository but are **frozen and inactive in v1** (DECISIONS D-012, D-016). See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/BACKUP_FORMAT.md](docs/BACKUP_FORMAT.md), and the test reports in [docs/TESTING.md](docs/TESTING.md).
+**Stage 2: organization and quick capture — implemented on branch `feat/stage-2-organization` (automated acceptance reported as passing; manual device checks open).** It adds a quick-capture inbox, projects, optional workstreams, and task definitions (create, edit, archive, search, filter) and a project detail view with tasks grouped by workstream, all offline and included in backups. Stage 2 has **not been merged into `main` or deployed** yet. Still open: the manual offline and backup-transfer checks on the owner's Windows laptop and Android phone; they have not been done.
 
-**Do not rely on the app for real personal data yet:** product features start in Stage 2, backups have not been checked on real Android/iPhone devices, and no hosting for installing the PWA on phones has been chosen.
+**Earlier stages:** Stage 1B (offline backup) is on `main`: an installable web app (React, IndexedDB, service worker) with shared preferences, device display settings, and a Backup screen — versioned export with optional password, import with preview and atomic merge, conflict resolution, and undo. The repository also contains a tested sync API, authentication, and PostgreSQL migrations from Stage 1; these stay in the repository but are **frozen and inactive in v1** (DECISIONS D-012, D-016). See [docs/ROADMAP.md](docs/ROADMAP.md), [docs/BACKUP_FORMAT.md](docs/BACKUP_FORMAT.md), and the test reports in [docs/TESTING.md](docs/TESTING.md).
+
+**Hosting:** the app is hosted on GitHub Pages (DECISIONS D-018) at <https://moeintorabi90.github.io/personal-productivity-system/>, deployed from `main`. The deployed app is the current `main` branch (Stage 1B), not Stage 2. The owner has installed it on a Windows laptop and an Android phone; offline use and backup transfer on those devices are not yet verified.
+
+**Do not rely on the app for real personal data yet:** backups have not been checked between real Windows and Android devices, iPhone has not been tested, and Stage 2 is not yet merged or deployed.
 
 ## Quick start (Windows, PowerShell)
 
@@ -28,6 +32,7 @@ Details, database options, and workspace constraints: [docs/DEVELOPMENT.md](docs
 - No sync, data server, accounts, or email recovery in v1; the structure stays ready for sync later.
 - Windows 11 and Android are target platforms; iPhone is supported through Safari. v1 is an installable PWA (Edge on Windows, a compatible browser on Android, Safari on iPhone); daily use is offline, while installing and updating need internet.
 - Optional password protection for each backup file (off by default); a forgotten password cannot be recovered.
+- The PWA is hosted on GitHub Pages, built and deployed from `main` by GitHub Actions; only static app files are published.
 - Core scope includes goals, projects, tasks, planning, actual-work logs, habits, weekly review, and backup.
 
 ## Documents
@@ -44,4 +49,4 @@ Details, database options, and workspace constraints: [docs/DEVELOPMENT.md](docs
 
 ## Next step
 
-Close Stage 1B's manual checks (backup export/import between Windows and Android, iPhone feasibility), which need real devices and a hosting origin for the PWA (open question 8). Then Stage 2.
+Review Stage 2 (branch `feat/stage-2-organization`) and decide on merging it into `main`, which deploys it to GitHub Pages. Then, on the owner's Windows laptop and Android phone: check offline use, and move data both ways with a backup file (Stage 1B and Stage 2 manual checks). iPhone feasibility remains open. Stage 3 (calendar and planning) follows.
