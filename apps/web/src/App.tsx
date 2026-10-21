@@ -3,10 +3,12 @@ import { usePreferences, useDocumentPreferences, useServices, useT } from "./app
 import { AccountView } from "./components/AccountView.tsx";
 import { BackupView } from "./components/BackupView.tsx";
 import { HomeView } from "./components/HomeView.tsx";
+import { InboxView } from "./components/InboxView.tsx";
+import { ProjectsView } from "./components/ProjectsView.tsx";
 import { SettingsView } from "./components/SettingsView.tsx";
 import { ConnectivityNotice, StatusBar } from "./components/StatusBar.tsx";
 
-type View = "home" | "settings" | "backup" | "account";
+type View = "home" | "inbox" | "projects" | "settings" | "backup" | "account";
 
 export function App() {
   const prefs = usePreferences();
@@ -17,6 +19,8 @@ export function App() {
 
   const navItems: { id: View; label: string }[] = [
     { id: "home", label: t("nav.home") },
+    { id: "inbox", label: t("nav.inbox") },
+    { id: "projects", label: t("nav.projects") },
     { id: "settings", label: t("nav.settings") },
     { id: "backup", label: t("nav.backup") },
     // Frozen post-v1 sync screens: only in builds with the flag on (D-016).
@@ -49,6 +53,10 @@ export function App() {
         <ConnectivityNotice />
         {view === "home" ? (
           <HomeView onOpenBackup={() => setView("backup")} />
+        ) : view === "inbox" ? (
+          <InboxView />
+        ) : view === "projects" ? (
+          <ProjectsView />
         ) : view === "settings" ? (
           <SettingsView />
         ) : view === "backup" ? (

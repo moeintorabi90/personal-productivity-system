@@ -16,7 +16,7 @@ export type Resolution =
   | "keepHere"; // deleted in backup: keep it on this device
 
 export class ResolutionError extends Error {
-  readonly code: "NOT_ALLOWED" | "HAS_LINKED_ITEMS" | "BROKEN_LINK" | "NOT_FOUND" | "STALE";
+  readonly code: "NOT_ALLOWED" | "HAS_LINKED_ITEMS" | "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "NOT_FOUND" | "STALE";
   constructor(code: ResolutionError["code"], message: string) {
     super(message);
     this.name = "ResolutionError";
@@ -126,13 +126,19 @@ async function assertNoLinkedItems(db: LocalDb, registry: Registry, type: string
  * the resolution transaction, so a change after the preview cannot leave a broken link).
  */
 export async function assertLinksLive(db: LocalDb, registry: Registry, type: string, data: Record<string, unknown>): Promise<void> {
+  const live = new Map<string, Record<string, unknown>>();
   for (const link of registry.get(type)?.links ?? []) {
     const target = data[link.field];
     if (target === null || target === undefined) continue;
-    if (typeof target !== "string" || !(await db.records.get([link.target, target]))) {
+    const row = typeof target === "string" ? await db.records.get([link.target, target]) : undefined;
+    if (!row) {
       throw new ResolutionError("BROKEN_LINK", `${type}.${link.field} → ${link.target}/${String(target)} is not on this device`);
     }
+    live.set(`${link.target}/${target}`, row.data);
   }
+  // The version must also satisfy its relationship rule against the live targets.
+  const problem = registry.get(type)?.rule?.(data, (targetType, id) => live.get(`${targetType}/${id}`));
+  if (problem) throw new ResolutionError("INVALID_RELATIONSHIP", `${type}: ${problem}`);
 }
 
 async function writeRecord(db: LocalDb, type: string, id: string, data: Record<string, unknown>, createdAt: string, version: VersionVector) {

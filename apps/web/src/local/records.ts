@@ -17,10 +17,22 @@ export function toEnvelope(row: RecordRow): Envelope {
   return envelope;
 }
 
+/** A local write that would break a relationship rule (DATA_MODEL "Ownership and relationships"). */
+export class RecordRuleError extends Error {
+  readonly code: "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "IMMUTABLE_FIELD";
+  constructor(code: RecordRuleError["code"], message: string) {
+    super(message);
+    this.name = "RecordRuleError";
+    this.code = code;
+  }
+}
+
 /**
  * Creates or updates a record of a registered type with a local edit: validates `data`, bumps
  * this device's version counter, and recomputes the content hash. An edit that does not change
- * the content is a no-op. A record that was deleted here is not silently recreated.
+ * the content is a no-op. A record that was deleted here is not silently recreated. The same
+ * relationship rules as for imported data apply: every link must point to a live record, the
+ * type's rule must hold, and immutable fields keep their value.
  */
 export async function putRecord(
   db: LocalDb,
@@ -36,6 +48,21 @@ export async function putRecord(
     const device = await deviceIdentity(db);
     const current = await db.records.get([type, id]);
     if (await db.tombstones.get([type, id])) throw new Error("Record was deleted on this device");
+    const live = new Map<string, Record<string, unknown>>();
+    for (const link of def.links) {
+      const target = parsed[link.field];
+      if (target === null || target === undefined) continue;
+      const row = await db.records.get([link.target, target as string]);
+      if (!row) throw new RecordRuleError("BROKEN_LINK", `${type}.${link.field} → ${link.target}/${String(target)} does not exist`);
+      live.set(`${link.target}/${target}`, row.data);
+    }
+    const problem = def.rule?.(parsed, (targetType, targetId) => live.get(`${targetType}/${targetId}`));
+    if (problem) throw new RecordRuleError("INVALID_RELATIONSHIP", `${type}: ${problem}`);
+    for (const field of current ? (def.immutableFields ?? []) : []) {
+      if (JSON.stringify(parsed[field]) !== JSON.stringify(current!.data[field])) {
+        throw new RecordRuleError("IMMUTABLE_FIELD", `${type}.${field} cannot change`);
+      }
+    }
     if (current) {
       if (def.appendOnly) throw new Error("Append-only records cannot be edited");
       const next = makeEnvelope(id, parsed, current.version, current.createdAt, nowIso());

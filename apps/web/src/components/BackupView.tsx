@@ -1,3 +1,4 @@
+import type { PreferenceFields } from "@pps/shared";
 import { useLiveQuery } from "dexie-react-hooks";
 import { type ChangeEvent, useId, useState } from "react";
 import { useLastBackupAt, usePreferences, useServices, useT } from "../app-context.tsx";
@@ -20,6 +21,7 @@ import { formatDateTime, type MessageKey, type Translate } from "../i18n/index.t
 import type { DeviceIdentity, VersionEntry } from "../local/db.ts";
 import { getMeta } from "../local/db.ts";
 import { renameDevice } from "../local/repository.ts";
+import { useOrganization } from "./organization-ui.tsx";
 import { lastBackupText } from "./StatusBar.tsx";
 
 const registry = PRODUCT_REGISTRY;
@@ -31,6 +33,9 @@ function errorMessage(t: Translate, error: unknown): string {
   }
   if (error instanceof ResolutionError && error.code === "BROKEN_LINK") {
     return t("backup.resolve.error", { reason: t("backup.resolve.brokenLink") });
+  }
+  if (error instanceof ResolutionError && error.code === "INVALID_RELATIONSHIP") {
+    return t("backup.resolve.error", { reason: t("backup.resolve.invalidRelationship") });
   }
   if (error instanceof ResolutionError && error.code === "STALE") return t("backup.resolve.stale");
   return t("backup.error.generic");
@@ -411,29 +416,58 @@ const RESOLUTION_LABELS: Record<Resolution, MessageKey> = {
   keepHere: "backup.resolve.keepHere",
 };
 
+const TYPE_LABELS: Record<string, MessageKey> = {
+  preferences: "backup.type.preferences",
+  projects: "backup.type.projects",
+  workstreams: "backup.type.workstreams",
+  taskDefinitions: "backup.type.taskDefinitions",
+};
+
 function typeLabel(t: Translate, type: string): string {
-  return type === "preferences" ? t("backup.type.preferences") : type;
+  return TYPE_LABELS[type] ? t(TYPE_LABELS[type]) : type;
 }
 
-const PREFERENCE_LABELS: Record<string, MessageKey> = {
+const FIELD_LABELS: Record<string, MessageKey> = {
   timeZone: "settings.timeZone",
   weekStart: "settings.weekStart",
   calendarDisplay: "settings.calendar",
+  name: "projects.name",
+  description: "projects.description",
+  title: "org.task.title",
+  notes: "org.task.notes",
+  projectId: "org.task.project",
+  workstreamId: "org.task.workstream",
+  nextAction: "org.task.nextAction",
+  estimateMinutes: "org.task.estimate",
+  archivedAt: "org.field.archivedAt",
 };
 
-function formatValue(t: Translate, type: string, field: string, value: unknown): string {
+function formatValue(t: Translate, type: string, field: string, value: unknown, names: Map<string, string>, prefs: PreferenceFields): string {
   if (type === "preferences") {
     if (field === "timeZone") return value ? String(value) : t("settings.timeZoneNotSet");
     if (field === "weekStart") return t(`weekday.${value}` as MessageKey);
     if (field === "calendarDisplay") return t(`settings.calendar.${value}` as MessageKey);
   }
+  if (field === "projectId" || field === "workstreamId") {
+    // Links show the item's name on this device; an item not here shows as unknown (never a guess).
+    if (value === null) return field === "projectId" ? t("org.task.noProject") : t("org.task.noWorkstream");
+    return names.get(String(value)) ?? t("org.unknownItem");
+  }
+  if (field === "archivedAt") return value ? formatDateTime(String(value), prefs) : t("org.notArchived");
+  if (value === null) return "—";
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 function EntryView({ type, entry, other, missingLabel }: { type: string; entry: VersionEntry | null; other: VersionEntry | null; missingLabel: string }) {
   const t = useT();
+  const prefs = usePreferences();
+  const org = useOrganization();
   if (!entry) return <span className="muted">{missingLabel}</span>;
   if (entry.deleted) return <span className="muted">{t("backup.conflicts.deleted")}</span>;
+  const names = new Map<string, string>([
+    ...(org?.projects.map((p) => [p.id, p.data.name] as const) ?? []),
+    ...(org?.workstreams.map((w) => [w.id, w.data.name] as const) ?? []),
+  ]);
   const otherData = other && !other.deleted ? other.envelope.data : {};
   return (
     <dl className="field-list">
@@ -441,8 +475,8 @@ function EntryView({ type, entry, other, missingLabel }: { type: string; entry: 
         const changed = JSON.stringify(value) !== JSON.stringify(otherData[field]);
         return (
           <div key={field} className={changed ? "changed" : undefined}>
-            <dt>{type === "preferences" && PREFERENCE_LABELS[field] ? t(PREFERENCE_LABELS[field]) : field}</dt>
-            <dd>{formatValue(t, type, field, value)}</dd>
+            <dt>{FIELD_LABELS[field] ? t(FIELD_LABELS[field]) : field}</dt>
+            <dd>{formatValue(t, type, field, value, names, prefs)}</dd>
           </div>
         );
       })}

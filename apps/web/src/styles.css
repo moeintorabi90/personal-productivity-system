@@ -277,7 +277,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: var(--text);
   background: var(--surface);
@@ -420,6 +421,56 @@ button:disabled {
 .field-list .changed {
   background: var(--warn-bg);
   color: var(--warn-text);
+}
+
+/* Stage 2: inbox and projects */
+textarea {
+  resize: vertical;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1rem;
+  margin-block-start: 1rem;
+}
+.filters .field {
+  margin-block-end: 0.5rem;
+  flex: 1 1 12rem;
+}
+.item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-muted);
+  border-radius: 8px;
+}
+.item-main {
+  flex: 1 1 14rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.item-main .hint {
+  margin: 0;
+}
+.item-title {
+  font-weight: 600;
+}
+.editor {
+  flex: 1 1 100%;
+}
+.preserve-lines {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 .link-button {

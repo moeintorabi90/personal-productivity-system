@@ -7,6 +7,7 @@ import { BackupError } from "./errors.ts";
 import { canonicalBytes } from "./jcs.ts";
 import {
   BACKUP_FORMAT,
+  DATA_SCHEMA_VERSION,
   FORMAT_VERSION,
   IV_BYTES,
   KDF_ITERATIONS_MAX,
@@ -18,7 +19,7 @@ import {
   SALT_BYTES,
   WRAPPED_KEY_BYTES,
 } from "./limits.ts";
-import { EXCLUDED_RECORD_TYPES, type Registry } from "./registry.ts";
+import { EXCLUDED_RECORD_TYPES, type Registry, registryForDataSchemaVersion } from "./registry.ts";
 
 /* ---------------- header ---------------- */
 
@@ -256,8 +257,14 @@ function validateEntry(raw: z.infer<typeof entryShape>, type: string, id: string
 /**
  * Validates the (decrypted) payload: entry count first, then shapes, record types, schemas,
  * sizes, content hashes, and uniqueness. Throws BackupError; never touches the database.
+ *
+ * Upgrades (docs/BACKUP_FORMAT.md, "Versioning and upgrades"): dataSchemaVersion 1 → 2 only adds
+ * record types, so a version-1 payload is already a valid version-2 payload. The payload is
+ * checked against the types of ITS version: a version-1 file containing a version-2 type is
+ * refused as an unknown record type.
  */
-export function validatePayload(raw: unknown, registry: Registry): BackupPayload {
+export function validatePayload(raw: unknown, fullRegistry: Registry, dataSchemaVersion = DATA_SCHEMA_VERSION): BackupPayload {
+  const registry = registryForDataSchemaVersion(fullRegistry, dataSchemaVersion);
   const shaped = payloadShape.safeParse(raw);
   if (!shaped.success) {
     const records = (raw as { records?: unknown } | null)?.records;

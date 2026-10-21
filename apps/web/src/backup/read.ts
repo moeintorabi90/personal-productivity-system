@@ -84,7 +84,8 @@ export async function checkBackupFile(file: BlobLike): Promise<CheckedBackup> {
     const issue = header.error.issues[0];
     throw new BackupError("INVALID_HEADER", `${issue?.path.join(".")}: ${issue?.message}`);
   }
-  if (header.data.app.dataSchemaVersion !== DATA_SCHEMA_VERSION) throw new BackupError("INVALID_HEADER", "dataSchemaVersion");
+  // Every version from 1 to the current one is read (older ones are upgraded in validatePayload).
+  if (header.data.app.dataSchemaVersion > DATA_SCHEMA_VERSION) throw new BackupError("NEWER_VERSION");
   const encryption = header.data.encryption;
   if (encryption) {
     checkEncryptionLengths(encryption);
@@ -120,7 +121,7 @@ export async function openCheckedBackup(checked: CheckedBackup, registry: Regist
     if (plaintext.length > MAX_PLAINTEXT_BYTES) throw new BackupError("LIMIT_EXCEEDED", "decrypted payload too large");
     rawPayload = decodeAndParse(plaintext);
   }
-  return { header: checked.header, payload: validatePayload(rawPayload, registry) };
+  return { header: checked.header, payload: validatePayload(rawPayload, registry, checked.header.app.dataSchemaVersion) };
 }
 
 /** Convenience: all checks and decryption in order. */

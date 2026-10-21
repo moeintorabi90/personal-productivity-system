@@ -1,2 +1,2 @@
 /** App version written into backup headers. Keep in sync with the root package.json. */
-export const APP_VERSION = "0.2.0";
+export const APP_VERSION = "0.3.0";

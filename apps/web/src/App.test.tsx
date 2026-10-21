@@ -8,6 +8,7 @@ import { App } from "./App.tsx";
 import { createBackup } from "./backup/export.ts";
 import { PRODUCT_REGISTRY } from "./backup/registry.ts";
 import { LocalDb } from "./local/db.ts";
+import { createProject, createTask, createWorkstream, loadOrganization, updateProject } from "./local/organization.ts";
 import { getDeviceSettings } from "./local/records.ts";
 import { getSharedPreferences, updateSharedPreferences } from "./local/settings.ts";
 
@@ -69,13 +70,13 @@ async function goTo(name: string) {
 }
 
 describe("v1 app shell (sync frozen and hidden, D-016)", () => {
-  it("renders English LTR with Home, Settings, Backup only; no sync UI; engine not started", async () => {
+  it("renders English LTR with Home, Inbox, Projects, Settings, Backup only; no sync UI; engine not started", async () => {
     const start = vi.spyOn((await import("./sync/sync-engine.ts")).SyncEngine.prototype, "start");
     renderApp();
     expect(await screen.findByRole("heading", { level: 1, name: "Welcome" })).toBeTruthy();
     await waitFor(() => expect(document.documentElement.dir).toBe("ltr"));
     const nav = screen.getByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Home", "Settings", "Backup"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Home", "Inbox", "Projects", "Settings", "Backup"]);
     expect(screen.queryByTestId("sync-status")).toBeNull();
     expect(screen.queryByText("Sync check notes")).toBeNull();
     expect((await screen.findByTestId("last-backup")).textContent).toBe("No backup yet");
@@ -293,5 +294,129 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     fireEvent.click(within(screen.getByTestId("backup-conflict")).getByRole("button", { name: "Keep this device's version" }));
     await waitFor(() => expect(screen.queryByTestId("backup-conflict")).toBeNull());
     expect(await services.db.replacedVersions.count()).toBe(2);
+  });
+
+  it("a project conflict shows readable fields and offers no 'Keep both' (linked record)", async () => {
+    const other = new LocalDb(`other-${++dbCounter}`);
+    await other.meta.put({ key: "device", value: { id: crypto.randomUUID(), name: "Laptop" } });
+    const projectId = await createProject(other, { name: "Thesis" });
+    const first = await createBackup(other, PRODUCT_REGISTRY);
+
+    renderApp();
+    await goTo("Backup");
+    const input = (await screen.findByLabelText("Choose a backup file")) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File([first.text], "a.json")] } });
+    fireEvent.click(within(await screen.findByTestId("import-preview")).getByRole("button", { name: "Import" }));
+    await screen.findByTestId("import-done");
+
+    await updateProject(services.db, projectId, { name: "Thesis (here)" });
+    await updateProject(other, projectId, { name: "Thesis (laptop)" });
+    const second = await createBackup(other, PRODUCT_REGISTRY);
+    other.close();
+    fireEvent.change(screen.getByLabelText("Choose a backup file"), { target: { files: [new File([second.text], "b.json")] } });
+    fireEvent.click(within(await screen.findByTestId("import-preview")).getByRole("button", { name: "Import" }));
+
+    const card = await screen.findByTestId("backup-conflict");
+    expect(within(card).getByRole("heading", { level: 3 }).textContent).toBe("Project");
+    // Field labels (the ":" is added by CSS) instead of raw field names.
+    expect(within(card).getByTestId("conflict-current").textContent).toContain("NameThesis (here)");
+    expect(within(card).getByTestId("conflict-incoming").textContent).toContain("NameThesis (laptop)");
+    expect(within(card).getByTestId("conflict-current").textContent).toContain("ArchivedNot archived");
+    expect(card.textContent).not.toContain("archivedAt");
+    expect(within(card).queryByRole("button", { name: "Keep both" })).toBeNull();
+    fireEvent.click(within(card).getByRole("button", { name: "Use the backup's version" }));
+    await waitFor(() => expect(screen.queryByTestId("backup-conflict")).toBeNull());
+    expect((await loadOrganization(services.db)).projects[0]!.data.name).toBe("Thesis (laptop)");
+  });
+});
+
+describe("Stage 2: inbox, projects, workstreams, tasks", () => {
+  const field = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
+
+  it("captures into the inbox, organizes into a project's workstream, and shows the grouped project detail", async () => {
+    renderApp();
+    await goTo("Projects");
+    expect(await screen.findByText(/No projects yet/)).toBeTruthy();
+    fireEvent.change(field("Name"), { target: { value: "Thesis" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Thesis" })).toBeTruthy();
+    fireEvent.change(field("Workstream name"), { target: { value: "Writing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add workstream" }));
+    await screen.findByLabelText("New task in Writing");
+    fireEvent.change(field("New task in Thesis"), { target: { value: "Meet supervisor" } });
+    fireEvent.click(within(screen.getByTestId("direct-tasks")).getByRole("button", { name: "Add task" }));
+    await within(screen.getByTestId("direct-tasks")).findByText("Meet supervisor");
+
+    await goTo("Inbox");
+    fireEvent.change(await screen.findByLabelText("Capture a task or idea"), { target: { value: "  Draft chapter 2 " } });
+    fireEvent.click(screen.getByRole("button", { name: "Add to inbox" }));
+    expect(await within(screen.getByTestId("inbox-list")).findByText("Draft chapter 2")).toBeTruthy();
+    expect(screen.getByText("Added to the inbox: Draft chapter 2")).toBeTruthy();
+
+    const org = await loadOrganization(services.db);
+    const project = org.projects[0]!;
+    const workstream = org.workstreams[0]!;
+    fireEvent.click(screen.getByRole("button", { name: "Edit task: Draft chapter 2" }));
+    fireEvent.change(field("Project"), { target: { value: project.id } });
+    fireEvent.change(await screen.findByLabelText("Workstream"), { target: { value: workstream.id } });
+    fireEvent.change(field("Next action"), { target: { value: "Outline section 1" } });
+    fireEvent.change(field("Estimate (minutes)"), { target: { value: "45" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("The inbox is empty.")).toBeTruthy();
+
+    await goTo("Projects");
+    fireEvent.click(await screen.findByRole("button", { name: "Open project: Thesis" }));
+    const ws = await screen.findByTestId("workstream");
+    expect(within(ws).getByRole("heading", { level: 2 }).textContent).toContain("Writing");
+    expect(ws.textContent).toContain("Draft chapter 2");
+    expect(ws.textContent).toContain("Next: Outline section 1");
+    expect(ws.textContent).toContain("Estimate: 45 min");
+    const direct = screen.getByTestId("direct-tasks");
+    expect(direct.textContent).toContain("Meet supervisor");
+    expect(direct.textContent).not.toContain("Draft chapter 2");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("archives without deleting, filters by status, and searches across projects, workstreams, and tasks", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    const thesis = await createProject(services.db, { name: "Thesis" });
+    await createProject(services.db, { name: "Garden" });
+    const ws = await createWorkstream(services.db, { projectId: thesis, name: "Writing" });
+    await createTask(services.db, { title: "Draft chapter", projectId: thesis, workstreamId: ws });
+
+    await goTo("Projects");
+    fireEvent.click(await screen.findByRole("button", { name: "Open project: Garden" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Archive: Garden" }));
+    expect(await screen.findByText(/This project is archived/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "← All projects" }));
+
+    const list = await screen.findByTestId("project-list");
+    await waitFor(() => expect(within(list).queryByText("Garden")).toBeNull());
+    fireEvent.change(screen.getByLabelText("Show"), { target: { value: "archived" } });
+    await waitFor(() => expect(within(screen.getByTestId("project-list")).getByText("Garden")).toBeTruthy());
+    expect(within(screen.getByTestId("project-list")).getByText("Archived")).toBeTruthy();
+    expect((await loadOrganization(services.db)).projects).toHaveLength(2); // archived, not deleted
+
+    fireEvent.change(screen.getByLabelText("Show"), { target: { value: "active" } });
+    fireEvent.change(screen.getByLabelText("Search projects, workstreams, and tasks"), { target: { value: "WRIT" } });
+    expect(within(await screen.findByTestId("workstream-results")).getByText("Writing")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Search projects, workstreams, and tasks"), { target: { value: "draft" } });
+    const tasks = await screen.findByTestId("task-results");
+    await waitFor(() => expect(tasks.textContent).toContain("Draft chapter"));
+    expect(tasks.textContent).toContain("Thesis");
+  });
+
+  it("is fully translated in Persian (RTL)", async () => {
+    renderApp();
+    await goTo("Settings");
+    fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
+    await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+    const nav = screen.getByRole("navigation", { name: "اصلی" });
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["خانه", "صندوق ورودی", "پروژه‌ها", "تنظیمات", "پشتیبان"]);
+    fireEvent.click(within(nav).getByRole("button", { name: "صندوق ورودی" }));
+    expect(await screen.findByLabelText("ثبت سریع کار یا ایده")).toBeTruthy();
+    fireEvent.click(within(nav).getByRole("button", { name: "پروژه‌ها" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "پروژه‌ها" })).toBeTruthy();
   });
 });

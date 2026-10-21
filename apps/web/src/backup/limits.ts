@@ -1,7 +1,13 @@
 /** Format version 1 limits for untrusted backup files (docs/BACKUP_FORMAT.md, "Input limits"). */
 export const BACKUP_FORMAT = "pps-backup";
 export const FORMAT_VERSION = 1;
-export const DATA_SCHEMA_VERSION = 1;
+/**
+ * Record types and fields (docs/BACKUP_FORMAT.md, "Versioning and upgrades"). 1: shared
+ * preferences (Stage 1B). 2: adds projects, workstreams, and task definitions (Stage 2).
+ * Readers accept every version from 1 to this one; each record type declares the version that
+ * introduced it.
+ */
+export const DATA_SCHEMA_VERSION = 2;
 
 export const MIB = 1024 * 1024;
 export const MAX_FILE_BYTES = 32 * MIB;

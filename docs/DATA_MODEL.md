@@ -47,7 +47,7 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 
 | Table | Contents | In backups |
 |---|---|---|
-| `records` | Product records as envelopes, primary key `[type+id]` (shared preferences under its reserved ID; later stages' types) | Yes |
+| `records` | Product records as envelopes, primary key `[type+id]`: shared preferences under its reserved ID; since Stage 2 `projects`, `workstreams`, and `taskDefinitions` (no IndexedDB schema change was needed) | Yes |
 | `tombstones` | Deletion markers `[type+id]` with version vector | Yes |
 | `pendingConflicts` | Undecided import conflicts with both versions (D-015) | Yes |
 | `replacedVersions` | Versions replaced by a choice or a confirmed update (undo) | Yes |
@@ -62,6 +62,19 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 - **UserPreference:** shared, transferable settings (explicit IANA time zone, week start, calendar display, later capacity preferences) as one singleton record with a reserved ID; plus device-local settings (language, theme) that stay on each device (decided split, D-017; `BACKUP_FORMAT.md`).
 - **Project / Workstream:** user-created organization. A workstream belongs to one project and is not nestable.
 - **TaskDefinition:** reusable task details and recurrence configuration. It is not evidence that work occurred.
+
+### Stage 2 record types (implemented; `dataSchemaVersion` 2)
+
+| Type | Data fields | Links | Rules |
+|---|---|---|---|
+| `projects` | `name` (1–200 characters, not blank), `description` (≤ 20,000), `archivedAt` (UTC instant or null) | — | — |
+| `workstreams` | `projectId`, `name`, `description`, `archivedAt` | `projectId` → `projects` | `projectId` never changes (DECISIONS T-022) |
+| `taskDefinitions` | `title` (1–200, not blank), `notes` (≤ 20,000), `projectId` (or null), `workstreamId` (or null), `nextAction` (≤ 500), `estimateMinutes` (whole minutes 1–10,080, or null), `archivedAt` | `projectId` → `projects`, `workstreamId` → `workstreams` | a workstream requires a project, and must belong to that project |
+
+- **Inbox:** task definitions with `projectId` null (DECISIONS T-021). Organizing a captured item edits the same record; nothing is copied.
+- **Archive** is data (`archivedAt`), not a deletion; archiving never changes linked records (T-023). Stage 2 offers no delete; deleting a record that live records link to is refused (restrict).
+- Recurrence, active weekdays, output metrics, and task "type" are not fields yet (T-024).
+- All three types are **linked** (they link to, or are linked from, another type), so a conflict on any of them offers "keep this device's" or "use the backup's" version, never "keep both".
 - **OutputMetric:** named unit and formatting/aggregation rules (e.g. pages, words, applications). Metric definitions have revisions so historical outputs retain their meaning.
 - **Goal / GoalContribution:** a measurable outcome, target/window/status and explicit attribution rules. Progress is derived from sessions, task completion events, and output records.
 - **CalendarBlock:** planned occurrence with planned start/end, local-date key, timezone, source recurrence, relationship IDs, and task/project/workstream snapshot/revision.
@@ -78,7 +91,7 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 ### Ownership and relationships
 
 - v1: all records on a device belong to the device's user. (After v1, with a server: all private records are scoped by the authenticated owner ID; client-supplied owner IDs are ignored/rejected.)
-- A workstream's project must match the task's project.
+- A workstream's project must match the task's project. A workstream's project never changes, and a task without a project (inbox) has no workstream. Enforced for typed-in data by the repository (`putRecord`) and for imported data for every version in a backup file (Stage 2).
 - A calendar block's task, project, workstream, and snapshots must be mutually consistent at its recorded revision.
 - An execution session must reference a task definition owned by the same user; its optional block must reference the same task or an explicitly permitted linked task.
 - Deletes of records referenced by history use archive/restrict/tombstone behavior, not destructive cascades.

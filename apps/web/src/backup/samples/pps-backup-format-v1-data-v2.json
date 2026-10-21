@@ -1,0 +1,134 @@
+{
+  "format": "pps-backup",
+  "formatVersion": 1,
+  "backupId": "22222222-2222-4222-8222-222222222222",
+  "createdAt": "2026-10-22T08:00:00.000Z",
+  "app": {
+    "version": "0.3.0",
+    "dataSchemaVersion": 2
+  },
+  "sourceDevice": {
+    "id": "9fd6d7e7-a9ab-42a1-8591-0850be6a5bd6",
+    "name": "Sample device"
+  },
+  "encryption": null,
+  "payload": {
+    "records": {
+      "preferences": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "createdAt": "2026-10-21T15:14:24.127Z",
+          "updatedAt": "2026-10-21T15:14:24.127Z",
+          "version": {},
+          "contentHash": "245da527e2f31806f144b7f4fa13269665aa99fc808d51df4b476212a1e46c1d",
+          "data": {
+            "timeZone": null,
+            "weekStart": 6,
+            "calendarDisplay": "gregorian"
+          }
+        }
+      ],
+      "projects": [
+        {
+          "id": "337047aa-06f5-4546-a602-bce8a9d7ee95",
+          "createdAt": "2026-10-21T15:14:24.114Z",
+          "updatedAt": "2026-10-21T15:14:24.114Z",
+          "version": {
+            "9fd6d7e7-a9ab-42a1-8591-0850be6a5bd6": 1
+          },
+          "contentHash": "7e260388001305d5783cb1901896fcbf7c1c24eb31e15a452bd161d902da355b",
+          "data": {
+            "name": "Sample project",
+            "description": "Fabricated sample data",
+            "archivedAt": null
+          }
+        }
+      ],
+      "workstreams": [
+        {
+          "id": "c79c81a2-30cb-47bb-be46-02c0b82d1ffa",
+          "createdAt": "2026-10-21T15:14:24.119Z",
+          "updatedAt": "2026-10-21T15:14:24.119Z",
+          "version": {
+            "9fd6d7e7-a9ab-42a1-8591-0850be6a5bd6": 1
+          },
+          "contentHash": "87ed60252b00b90387de93f0323115dd3a277c62c483ffbd4fa2acea2e528f2b",
+          "data": {
+            "projectId": "337047aa-06f5-4546-a602-bce8a9d7ee95",
+            "name": "Sample workstream",
+            "description": "",
+            "archivedAt": null
+          }
+        }
+      ],
+      "taskDefinitions": [
+        {
+          "id": "7ea4cbb4-4fec-48c8-897d-b1a93038ad86",
+          "createdAt": "2026-10-21T15:14:24.124Z",
+          "updatedAt": "2026-10-21T15:14:24.124Z",
+          "version": {
+            "9fd6d7e7-a9ab-42a1-8591-0850be6a5bd6": 1
+          },
+          "contentHash": "3fe3e5fdfd710a3608455197501def91c94c03368dde63fdd921de3ffe3e65e2",
+          "data": {
+            "title": "Sample task directly in the project",
+            "notes": "",
+            "projectId": "337047aa-06f5-4546-a602-bce8a9d7ee95",
+            "workstreamId": null,
+            "nextAction": "",
+            "estimateMinutes": null,
+            "archivedAt": null
+          }
+        },
+        {
+          "id": "92326342-8d1a-431a-9f54-4d87c3c3d338",
+          "createdAt": "2026-10-21T15:14:24.122Z",
+          "updatedAt": "2026-10-21T15:14:24.122Z",
+          "version": {
+            "9fd6d7e7-a9ab-42a1-8591-0850be6a5bd6": 1
+          },
+          "contentHash": "ad055e4808043bc8baee614bae368d869ba867fd93d06fe2a36510b85117a0b8",
+          "data": {
+            "title": "Sample task in a workstream",
+            "notes": "",
+            "projectId": "337047aa-06f5-4546-a602-bce8a9d7ee95",
+            "workstreamId": "c79c81a2-30cb-47bb-be46-02c0b82d1ffa",
+            "nextAction": "Start",
+            "estimateMinutes": 25,
+            "archivedAt": null
+          }
+        },
+        {
+          "id": "e2bd6d1c-dbf3-4436-9dc9-61fbd316f1cc",
+          "createdAt": "2026-10-21T15:14:24.125Z",
+          "updatedAt": "2026-10-21T15:14:24.125Z",
+          "version": {
+            "9fd6d7e7-a9ab-42a1-8591-0850be6a5bd6": 1
+          },
+          "contentHash": "49cc0663a19dd28d4352fefb1807d48e1873c9c21c0d0be6823f7cd9d3dcde08",
+          "data": {
+            "title": "Sample inbox item",
+            "notes": "",
+            "projectId": null,
+            "workstreamId": null,
+            "nextAction": "",
+            "estimateMinutes": null,
+            "archivedAt": null
+          }
+        }
+      ]
+    },
+    "tombstones": [],
+    "pendingConflicts": [],
+    "replacedVersions": [],
+    "sourceDeviceSettings": {
+      "language": "en",
+      "theme": "system"
+    }
+  },
+  "integrity": {
+    "algorithm": "SHA-256",
+    "canonicalization": "JCS-RFC8785",
+    "hash": "e2610dafce491721558aee93211d8c5a1d9a60c2f72c7ddf38b02681f0a5bafd"
+  }
+}

@@ -55,13 +55,35 @@ Automated (Vitest, two simulated devices with separate fake IndexedDB stores, pl
 17. **Conflict flow (D-015):** bulk actions show and require confirmation of the number of affected items; history records with the same ID and different content produce an integrity warning and change nothing; a deletion conflict offers only the deletion choices (restore / keep deleted, delete here / keep).
 18. **v1 stays offline (D-016):** with the build flag off (v1 default), the account/sync screens and "Sync check notes" are not shown, the sync engine does not start, and using the app, exporting, and importing make no network request carrying user data.
 
-Until later stages add real product types, items 1–9, 14, 15, and 17 use test-only fixture record types (one independent, one linked parent/child pair) plus preferences.
+Until later stages add real product types, items 1–9, 14, 15, and 17 use test-only fixture record types (one independent, one linked parent/child pair) plus preferences. Since Stage 2 they are also run with the real linked types `projects`, `workstreams`, and `taskDefinitions` (`apps/web/src/backup/organization-backup.test.ts`); the independent fixture type remains the only test of "keep both", because every product type so far is linked.
 
 Manual on real devices (record versions): export on Windows → import on Android, and the reverse; file picker/share sheet behavior; iPhone (Safari Home Screen app) export/import with `.json`; install and offline relaunch of the PWA on each platform (D-013).
 
 ## Release gate
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.
+
+## Stage 2 test report (2026-10-21)
+
+Branch `feat/stage-2-organization` (from `main` at `6055bf7`). Windows 11, Node.js 24, Vitest 5.0.5, Playwright 1.64, Microsoft Edge (headless).
+
+| Command | Result |
+|---|---|
+| `npm.cmd run typecheck` | Passed (shared, API, web; exit 0) |
+| `npm.cmd test` | **179 passed, 0 failed** in 20 files (includes the frozen Stage 1 server/sync tests) |
+| `npm.cmd run test:e2e` (production build + Edge) | **6 passed, 0 failed**; build precaches 11 files |
+| Production bundle check | No test fixtures or `fake-indexeddb` in `apps/web/dist/assets` |
+| Manual check in the browser pane (dev server) | Capture in Inbox, create project and workstream, add a workstream task, organize the inbox item into the project with an estimate; project detail grouped correctly; no console errors |
+
+New and changed automated tests:
+
+- `apps/web/src/local/organization.test.ts` (10): capture (trimmed, newest first, leaves the inbox when organized); blank/over-long titles refused; a workstream needs an existing project and never moves (even a direct write is refused); a task's workstream must belong to its project, an inbox task has no workstream, a link to a missing or deleted project is refused, and a refused move changes nothing; version bump per edit and no-op edits; archiving a project changes no linked record, creates no tombstone, and can be undone; project outline grouping and status filters; search across types and fields; Persian search folds Arabic/Persian Yeh and Kaf and ignores ZWNJ.
+- `apps/web/src/backup/organization-backup.test.ts` (18; the sample writer runs only with `PPS_WRITE_SAMPLE=1`): round-trip into an empty device with identical IDs, hashes, and versions (`dataSchemaVersion` 2); merge into a device with its own same-content project (both kept) and an idempotent second import; a task moved to another project elsewhere is "newer in backup" and applied only after confirmation (old version archived); an old file does not undo newer edits; project and task conflicts offer only keep/use (no "keep both"), survive a restart, keep the ID, and leave tasks attached; deletions from a backup become decisions, "delete here" works for a task and is refused for a project that still has tasks; refused with no change: a task whose workstream belongs to another project, an inbox task with a workstream, the same in an archived version, a workstream whose project differs between device and file, a missing project, a blank title, an unknown field, an estimate of 0; a resolution that would activate a rule-breaking version is refused; the committed data-version-1 sample still imports; a data-version-1 file containing Stage 2 types (as records or tombstones) is refused; data version 3 is refused as newer; the committed data-version-2 sample imports.
+- `apps/web/src/backup/validation.test.ts`: the "newer version" case now uses `dataSchemaVersion` 3, and version 0 is refused.
+- `apps/web/src/App.test.tsx` (+4): navigation now has Inbox and Projects; capture → organize into a project's workstream → grouped project detail (with next action and estimate), no network use; archive without deletion, status filter, search across projects/workstreams/tasks; Persian navigation and screens; a project conflict shows field labels and no "Keep both", and "use the backup's version" keeps the project.
+- `apps/web/e2e/offline.spec.ts` (+1): offline in Edge, create a project and workstream, capture and organize an item, reload offline, export a real backup file, import it into a fresh profile (3 new items), and see the same grouping; no request outside the app's path.
+
+Not tested (manual, owner's devices): the Stage 2 flow on the installed app on the Windows laptop and the Android phone — create items offline, export on one device, import on the other, and the reverse (including a conflict on a project edited on both); Persian text entry and search with the phone keyboard; layout of the new screens on a phone.
 
 ## Stage 1B test report (2026-10-21)
 
@@ -93,7 +115,7 @@ Defect found by these tests and fixed: a refused import (unresolved reference) s
 
 Not tested in Stage 1B (remaining manual items):
 
-- **Windows → Android and Android → Windows** backup export/import on real devices, and **iPhone** (Safari Home Screen app) export/import feasibility: no Android or iPhone device is available to the implementer, and installing on a phone needs the app to be deployed (GitHub Pages selected, D-018; deployment pending), after which its reachability from the owner's region and installation on devices are still to be verified.
+- **Windows → Android and Android → Windows** backup export/import on real devices, and **iPhone** (Safari Home Screen app) export/import feasibility: no Android or iPhone device is available to the implementer, and the app is now deployed on GitHub Pages (D-018) and the owner reports installing it on a Windows laptop and an Android phone, but backup transfer between them has not been checked yet.
 - Share-sheet export ("Share or save…") on phones: only shown where the browser supports sharing files; not available in headless Edge.
 - PWA install UI on Windows (headless E2E does not exercise it).
 - A decrypted payload over 32 MiB: unreachable through a valid file (see BACKUP_FORMAT "Implementation notes"); the check stays as defense in depth.
@@ -102,7 +124,7 @@ Not tested in Stage 1B (remaining manual items):
 
 Production builds and `vite preview` now serve the app under `/personal-productivity-system/`, and the E2E suite runs there. New E2E test "the app works under the GitHub Pages subpath": the service worker's scope is `http://localhost:4173/personal-productivity-system/` and its script is `<base>sw.js`; the manifest link, and the manifest's `id`, `start_url`, and `scope`, resolve to the base URL; every manifest icon returns 200. All E2E tests now also fail on any same-origin request outside the base path. Verified on Windows 11 with Edge (headless): `npm.cmd run typecheck` passed; `npm.cmd test` **147 passed, 0 failed** in 18 files; `npm.cmd run test:e2e` (production build + Playwright) **5 passed, 0 failed**; the build emits hashed assets under `/personal-productivity-system/assets/` and `sw.js` precaches 11 files relative to its scope.
 
-Not verified yet: the workflow `.github/workflows/deploy-pages.yml` has not run (nothing is pushed; it runs on Ubuntu, while all checks above ran on Windows); the deployed site, its reachability from the owner's region, and installation on real devices.
+Not verified yet at that time: the workflow `.github/workflows/deploy-pages.yml` had not run. **Update (2026-10-21):** `main` at `6055bf7` was pushed and deployed by the owner; `https://moeintorabi90.github.io/personal-productivity-system/` and its `manifest.webmanifest` returned HTTP 200 when fetched from the development PC (`Invoke-WebRequest`). The owner reports installing the app on a Windows laptop and an Android phone. Still not verified: offline use of the installed app on those devices, backup export/import between them, and iPhone.
 
 ## Stage 1 test report (2026-10-20)
 

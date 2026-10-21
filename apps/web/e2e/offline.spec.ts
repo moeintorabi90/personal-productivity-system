@@ -164,3 +164,62 @@ test("backup file flow: export on one device, import into a fresh one, offline, 
   await source.close();
   await target.close();
 });
+
+test("Stage 2 offline: capture, organize into a project and workstream, and carry it to a fresh device by backup", async ({ browser }) => {
+  const source = await browser.newContext({ acceptDownloads: true });
+  const a = await source.newPage();
+  const offendersA = forbidNetworkUse(a);
+  await a.goto(BASE_URL);
+  await waitForServiceWorkerControl(a);
+  await source.setOffline(true);
+
+  await a.getByRole("button", { name: "Projects" }).click();
+  await a.getByLabel("Name", { exact: true }).fill("Thesis");
+  await a.getByRole("button", { name: "Create project" }).click();
+  await expect(a.getByRole("heading", { level: 1, name: "Thesis" })).toBeVisible();
+  await a.getByLabel("Workstream name").fill("Writing");
+  await a.getByRole("button", { name: "Add workstream" }).click();
+  await expect(a.getByLabel("New task in Writing")).toBeVisible();
+
+  await a.getByRole("button", { name: "Inbox" }).click();
+  await a.getByLabel("Capture a task or idea").fill("Draft chapter 2");
+  await a.getByRole("button", { name: "Add to inbox" }).click();
+  await a.getByRole("button", { name: "Edit task: Draft chapter 2" }).click();
+  await a.getByLabel("Project").selectOption({ label: "Thesis" });
+  await a.getByLabel("Workstream").selectOption({ label: "Writing" });
+  await a.getByRole("button", { name: "Save" }).click();
+  await expect(a.getByText("The inbox is empty.")).toBeVisible();
+
+  // Survives a reload while offline (served by the service worker, data in IndexedDB).
+  await a.reload();
+  await a.getByRole("button", { name: "Projects" }).click();
+  await a.getByRole("button", { name: "Open project: Thesis" }).click();
+  await expect(a.getByTestId("workstream")).toContainText("Draft chapter 2");
+
+  await a.getByRole("button", { name: "Backup" }).click();
+  const downloadPromise = a.waitForEvent("download");
+  await a.getByRole("button", { name: "Export backup" }).click();
+  const download = await downloadPromise;
+  const filePath = path.join(mkdtempSync(path.join(tmpdir(), "pps-backup-")), download.suggestedFilename());
+  await download.saveAs(filePath);
+
+  const target = await browser.newContext();
+  const b = await target.newPage();
+  const offendersB = forbidNetworkUse(b);
+  await b.goto(BASE_URL);
+  await target.setOffline(true);
+  await b.getByRole("button", { name: "Backup" }).click();
+  await b.getByLabel("Choose a backup file").setInputFiles(filePath);
+  await expect(b.getByTestId("import-preview")).toContainText("New items to add: 3");
+  await b.getByTestId("import-preview").getByRole("button", { name: "Import" }).click();
+  await expect(b.getByTestId("import-done")).toContainText("Added: 3");
+  await b.getByRole("button", { name: "Projects" }).click();
+  await b.getByRole("button", { name: "Open project: Thesis" }).click();
+  await expect(b.getByTestId("workstream")).toContainText("Writing");
+  await expect(b.getByTestId("workstream")).toContainText("Draft chapter 2");
+
+  expect([...offendersA, ...offendersB]).toEqual([]);
+  rmSync(path.dirname(filePath), { recursive: true, force: true });
+  await source.close();
+  await target.close();
+});

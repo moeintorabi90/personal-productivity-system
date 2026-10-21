@@ -4,7 +4,7 @@ import { ensureSharedPreferences } from "../local/settings.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
 import type { BackupHeader, BackupPayload } from "./format.ts";
-import type { Registry } from "./registry.ts";
+import type { DataLookup, Registry } from "./registry.ts";
 import { compareVersions, isContainedIn } from "./versions.ts";
 
 /** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
@@ -197,6 +197,61 @@ async function checkFileReferences(db: LocalDb, payload: BackupPayload, registry
       throw new BackupError("UNRESOLVED_REFERENCE", `${v.where} → ${key}`);
     }
   }
+  await checkFileRelationships(db, versions, registry);
+}
+
+/** Every data version of the given record keys known on this device (record, conflicts, archive). */
+async function deviceVersions(db: LocalDb, keys: Set<string>): Promise<Map<string, Record<string, unknown>[]>> {
+  const out = new Map<string, Record<string, unknown>[]>();
+  const add = (type: string, id: string, entry: VersionEntry | null | undefined) => {
+    const key = `${type}/${id}`;
+    if (!keys.has(key) || !entry || entry.deleted) return;
+    out.set(key, [...(out.get(key) ?? []), entry.envelope.data]);
+  };
+  const pks = [...keys].map((key): [string, string] => [key.slice(0, key.indexOf("/")), key.slice(key.indexOf("/") + 1)]);
+  for (const row of await db.records.bulkGet(pks)) {
+    if (row) add(row.type, row.id, { deleted: false, envelope: toEnvelope(row) });
+  }
+  for (const c of await db.pendingConflicts.toArray()) {
+    add(c.type, c.id, c.local);
+    add(c.type, c.id, c.incoming);
+  }
+  for (const r of await db.replacedVersions.toArray()) add(r.type, r.id, r.entry);
+  return out;
+}
+
+/**
+ * Step 9c (Stage 2): relationship rules for every version in the file. (1) Immutable fields
+ * (a workstream's project) must agree across all versions of one ID, in the file and on this
+ * device; a disagreement means a corrupted or foreign file. (2) Each version must satisfy its
+ * type's rule (a task's workstream belongs to the task's project), looked up in any known version
+ * of the target — safe because the fields a rule reads are immutable.
+ */
+async function checkFileRelationships(
+  db: LocalDb,
+  versions: { type: string; id: string; data: Record<string, unknown>; where: string }[],
+  registry: Registry,
+): Promise<void> {
+  const fileData = new Map<string, Record<string, unknown>[]>();
+  for (const v of versions) fileData.set(`${v.type}/${v.id}`, [...(fileData.get(`${v.type}/${v.id}`) ?? []), v.data]);
+  // Device versions are needed for IDs in the file and for every link target of a rule.
+  const wanted = new Set(fileData.keys());
+  for (const v of versions) for (const key of linkKeys(registry, v.type, v.data, v.where)) wanted.add(key);
+  const onDevice = await deviceVersions(db, wanted);
+  const allData = (key: string) => [...(fileData.get(key) ?? []), ...(onDevice.get(key) ?? [])];
+
+  for (const key of fileData.keys()) {
+    const type = key.slice(0, key.indexOf("/"));
+    for (const field of registry.get(type)?.immutableFields ?? []) {
+      const values = new Set(allData(key).map((data) => JSON.stringify(data[field])));
+      if (values.size > 1) throw new BackupError("INVALID_RELATIONSHIP", `${key}: ${field} differs between versions`);
+    }
+  }
+  const lookup: DataLookup = (type, id) => allData(`${type}/${id}`)[0];
+  for (const v of versions) {
+    const problem = registry.get(v.type)?.rule?.(v.data, lookup);
+    if (problem) throw new BackupError("INVALID_RELATIONSHIP", `${v.where}: ${problem}`);
+  }
 }
 
 /**
@@ -218,6 +273,24 @@ async function checkActiveLinks(db: LocalDb, items: PreviewItem[], registry: Reg
       if (await db.records.get([key.slice(0, slash), key.slice(slash + 1)])) continue;
       throw new BackupError("UNRESOLVED_REFERENCE", `${item.type}/${item.id} → ${key} is not on this device`);
     }
+  }
+  // Relationship rules against what is live after the import (activated data, else this device's).
+  const activatedData = new Map<string, Record<string, unknown>>();
+  for (const item of activated) if (!item.incoming.deleted) activatedData.set(`${item.type}/${item.id}`, item.incoming.envelope.data);
+  const liveTargets = new Map<string, Record<string, unknown> | undefined>();
+  for (const item of activated) {
+    if (item.incoming.deleted) continue;
+    for (const key of linkKeys(registry, item.type, item.incoming.envelope.data, `${item.type}/${item.id}`)) {
+      if (activatedData.has(key) || liveTargets.has(key)) continue;
+      const slash = key.indexOf("/");
+      liveTargets.set(key, (await db.records.get([key.slice(0, slash), key.slice(slash + 1)]))?.data);
+    }
+  }
+  const lookup: DataLookup = (type, id) => activatedData.get(`${type}/${id}`) ?? liveTargets.get(`${type}/${id}`);
+  for (const item of activated) {
+    if (item.incoming.deleted) continue;
+    const problem = registry.get(item.type)?.rule?.(item.incoming.envelope.data, lookup);
+    if (problem) throw new BackupError("INVALID_RELATIONSHIP", `${item.type}/${item.id}: ${problem}`);
   }
 }
 
