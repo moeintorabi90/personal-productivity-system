@@ -50,7 +50,8 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Projects, workstreams, and task definitions can be created, edited, archived, searched, and filtered.
 - [ ] Workstreams belong to one project; tasks' project and workstream must agree.
 - [ ] Project detail shows its workstreams and grouped tasks, including direct-to-project tasks.
-- [ ] Task definitions support description, type, estimate, next action, recurrence, active weekdays, and relevant output metrics.
+- [ ] Task definitions support a title, descriptive notes, an estimate (whole minutes), a next action, and archiving; they belong to a project and optionally a workstream, or to the inbox (no project). Implemented in Stage 2; the `notes` field is the task's description (owner decision, 2026-10-21; DECISIONS T-024).
+- [ ] Deferred task-definition fields (not implemented): **recurrence and active weekdays** in Stage 3 (calendar and planning); **relevant output metrics** in Stage 5 (actual execution and outputs); a task **type**, only once the owner defines a clear use case and meaningful categories (DECISIONS T-024).
 
 ### Goals and measures
 

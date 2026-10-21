@@ -34,11 +34,11 @@ After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offlin
 
 **Acceptance:** CRUD works offline and persists locally; local validation rejects mismatched project/workstream links (including in imported backups); new record types are included in backup export/import with merge and conflict tests; archived records do not erase history.
 
-**Status (2026-10-21): implemented on branch `feat/stage-2-organization`; automated acceptance passed, manual device checks open.** Inbox (quick capture of task definitions without a project), projects, optional workstreams, and task definitions with create, edit, archive/restore, search, and active/archived filters; project detail with workstreams, tasks grouped by workstream, and tasks directly in the project. Design choices: DECISIONS T-020 to T-024 (`dataSchemaVersion` 2, inbox = tasks without a project, workstreams never change project, archive instead of delete, deferred task fields). The automated items pass (see `TESTING.md`, "Stage 2 test report"), including creating and organizing items offline in Edge and moving them to a fresh browser profile by a real backup file. **Still open:** the same flow on the owner's Windows laptop and Android phone (create offline, export on one, import on the other, and the reverse).
+**Status (2026-10-21): implemented on branch `feat/stage-2-organization`; automated acceptance passed, manual device checks open.** Inbox (quick capture of task definitions without a project), projects, optional workstreams, and task definitions with create, edit, archive/restore, search, and active/archived filters; project detail with workstreams, tasks grouped by workstream, and tasks directly in the project. Design choices: DECISIONS T-020 to T-024 (`dataSchemaVersion` 2, inbox = tasks without a project, workstreams never change project, archive instead of delete, deferred task fields). Task fields in Stage 2: title, notes (the task's descriptive text), project, optional workstream, next action, estimate, archive state; **not implemented and deferred** (owner-approved, 2026-10-21, T-024): recurrence and active weekdays (Stage 3), relevant output metrics (Stage 5), and a task type (until the owner defines a use case and categories). The automated items pass (see `TESTING.md`, "Stage 2 test report"), including creating and organizing items offline in Edge and moving them to a fresh browser profile by a real backup file. **Still open:** the same flow on the owner's Windows laptop and Android phone (create offline, export on one, import on the other, and the reverse).
 
 ## Stage 3 — Calendar and planning
 
-**Deliverables:** day/week/month calendar, block editing, recurrence, quick add, search/filter, capacity cues, Today screen.
+**Deliverables:** day/week/month calendar, block editing, recurrence, quick add, search/filter, capacity cues, Today screen. Includes the task-definition fields deferred from Stage 2: recurrence and active weekdays (DECISIONS T-024; new `dataSchemaVersion` with an upgrade step).
 
 **Acceptance:** planned blocks persist offline and round-trip through backup with merge; recurrence/week boundaries/DST pass tests; rescheduling one occurrence has documented scope; planned items remain separate from actual sessions.
 
@@ -50,7 +50,7 @@ After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offlin
 
 ## Stage 5 — Actual execution and outputs
 
-**Deliverables:** running and backfilled sessions, explicit corrections, output metric definitions and records, planned/actual comparison.
+**Deliverables:** running and backfilled sessions, explicit corrections, output metric definitions and records, planned/actual comparison. Includes the task-definition field deferred from Stage 2: relevant output metrics (DECISIONS T-024; new `dataSchemaVersion` with an upgrade step).
 
 **Acceptance:** all state/chronology rules tested through the local repository/domain layer; unplanned session works; immutable snapshots survive edits and backup round-trips; output correction is auditable and imported corrections are appended, never merged into originals; session actions do not mutate planned blocks.
 

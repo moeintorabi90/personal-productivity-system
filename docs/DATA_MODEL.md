@@ -61,7 +61,7 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 - **Device:** local identity of each installation (UUID and editable name). Used in version vectors and to label backups; never sent anywhere in v1.
 - **UserPreference:** shared, transferable settings (explicit IANA time zone, week start, calendar display, later capacity preferences) as one singleton record with a reserved ID; plus device-local settings (language, theme) that stay on each device (decided split, D-017; `BACKUP_FORMAT.md`).
 - **Project / Workstream:** user-created organization. A workstream belongs to one project and is not nestable.
-- **TaskDefinition:** reusable task details and recurrence configuration. It is not evidence that work occurred.
+- **TaskDefinition:** reusable task details (and, from Stage 3, recurrence configuration). It is not evidence that work occurred.
 
 ### Stage 2 record types (implemented; `dataSchemaVersion` 2)
 
@@ -73,7 +73,8 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 
 - **Inbox:** task definitions with `projectId` null (DECISIONS T-021). Organizing a captured item edits the same record; nothing is copied.
 - **Archive** is data (`archivedAt`), not a deletion; archiving never changes linked records (T-023). Stage 2 offers no delete; deleting a record that live records link to is refused (restrict).
-- Recurrence, active weekdays, output metrics, and task "type" are not fields yet (T-024).
+- `notes` is the task's descriptive text; there is no separate description field (owner-approved, T-024).
+- **Deferred, not implemented** (owner-approved, T-024): recurrence and active weekdays (Stage 3), relevant output metrics (Stage 5), and a task type (only after the owner defines a use case and categories). Each would be added with a new `dataSchemaVersion` and an upgrade step.
 - All three types are **linked** (they link to, or are linked from, another type), so a conflict on any of them offers "keep this device's" or "use the backup's" version, never "keep both".
 - **OutputMetric:** named unit and formatting/aggregation rules (e.g. pages, words, applications). Metric definitions have revisions so historical outputs retain their meaning.
 - **Goal / GoalContribution:** a measurable outcome, target/window/status and explicit attribution rules. Progress is derived from sessions, task completion events, and output records.
