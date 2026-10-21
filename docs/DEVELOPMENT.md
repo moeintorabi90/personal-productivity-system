@@ -2,10 +2,10 @@
 
 ## Workspace facts that shape the setup
 
-- **Drive E: is exFAT.** exFAT supports neither symlinks nor junctions, so npm workspaces cannot be installed here (`EISDIR … symlink`). The repository therefore uses one root `package.json` with path aliases (DECISIONS T-014).
-- **PGlite cannot store data on exFAT** (`ErrnoError 28`). Its default data folder is `%LOCALAPPDATA%\PersonalProductivitySystem\pglite-dev` on C: (NTFS), outside the repository.
-- **Git is not on PATH** in this environment. A Git 2.53 binary exists inside the Codex runtime (`%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\git\cmd\git.exe`). Because exFAT does not record file ownership, Git reports "dubious ownership"; pass `-c safe.directory="E:/Moein/My AI Projects/Personal Productivity System"` per command, or add that exception once to your global Git config. Installing Git for Windows is the cleaner long-term fix.
-- About 7.8 GB RAM with little free memory: Docker Desktop is not used (DECISIONS T-005). Vitest runs one test file at a time.
+- **The workspace drive is exFAT.** exFAT supports neither symlinks nor junctions, so npm workspaces cannot be installed here (`EISDIR … symlink`). The repository therefore uses one root `package.json` with path aliases (DECISIONS T-014).
+- **PGlite cannot store data on exFAT** (`ErrnoError 28`). Its default data folder is `%LOCALAPPDATA%\PersonalProductivitySystem\pglite-dev` on the system drive (NTFS), outside the repository.
+- **Git is not on PATH** in some environments. If Git reports "dubious ownership" on an exFAT drive, pass `-c safe.directory="<repository path>"` per command, or add that exception once to your global Git config. Installing Git for Windows is the cleaner long-term fix.
+- Docker Desktop is not used (DECISIONS T-005). Vitest runs one test file at a time to keep resource use predictable.
 - `node_modules` is about 170 MB after `npm install`. No system packages, services, or browsers were installed; end-to-end tests use the installed Microsoft Edge.
 
 ## Prerequisites
