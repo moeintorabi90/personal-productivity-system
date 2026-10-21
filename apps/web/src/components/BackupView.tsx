@@ -1,7 +1,15 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { type ChangeEvent, useId, useState } from "react";
 import { useLastBackupAt, usePreferences, useServices, useT } from "../app-context.tsx";
-import { availableResolutions, type Resolution, ResolutionError, resolveConflict, resolveConflicts, restoreReplacedVersion } from "../backup/conflicts.ts";
+import {
+  type ConflictView,
+  loadConflictViews,
+  type Resolution,
+  ResolutionError,
+  resolveConflict,
+  resolveConflicts,
+  restoreReplacedVersion,
+} from "../backup/conflicts.ts";
 import { canShareFiles, downloadBackup, readFileBytes, shareBackup } from "../backup/deliver.ts";
 import { BackupError } from "../backup/errors.ts";
 import { createBackup, type ExportResult, markBackupExported } from "../backup/export.ts";
@@ -9,7 +17,7 @@ import { applyImport, type ImportPreview, type ImportResult, previewImport } fro
 import { type CheckedBackup, checkBackupFile, type OpenedBackup, openCheckedBackup } from "../backup/read.ts";
 import { PRODUCT_REGISTRY } from "../backup/registry.ts";
 import { formatDateTime, type MessageKey, type Translate } from "../i18n/index.ts";
-import type { DeviceIdentity, PendingConflictRow, VersionEntry } from "../local/db.ts";
+import type { DeviceIdentity, VersionEntry } from "../local/db.ts";
 import { getMeta } from "../local/db.ts";
 import { renameDevice } from "../local/repository.ts";
 import { lastBackupText } from "./StatusBar.tsx";
@@ -21,6 +29,10 @@ function errorMessage(t: Translate, error: unknown): string {
   if (error instanceof ResolutionError && error.code === "HAS_LINKED_ITEMS") {
     return t("backup.resolve.error", { reason: t("backup.resolve.hasLinked") });
   }
+  if (error instanceof ResolutionError && error.code === "BROKEN_LINK") {
+    return t("backup.resolve.error", { reason: t("backup.resolve.brokenLink") });
+  }
+  if (error instanceof ResolutionError && error.code === "STALE") return t("backup.resolve.stale");
   return t("backup.error.generic");
 }
 
@@ -442,17 +454,23 @@ function PendingConflicts() {
   const t = useT();
   const prefs = usePreferences();
   const { db } = useServices();
-  const conflicts = useLiveQuery(() => db.pendingConflicts.orderBy("conflictId").toArray(), [db]);
+  // Live: re-renders when the conflict list OR the device's current versions change, so the
+  // comparison always shows what is on this device now.
+  const views = useLiveQuery(() => loadConflictViews(db, registry), [db]);
   const [error, setError] = useState<string | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
-  if (!conflicts) return null;
+  if (!views) return null;
+  const conflicts = views;
 
-  const bulkIds = conflicts.filter((c) => availableResolutions(c, registry).includes("keepDevice")).map((c) => c.conflictId);
+  // Captured with the versions on screen: the bulk action skips items that changed since.
+  const bulk = views
+    .filter((v) => v.options.includes("keepDevice"))
+    .map((v) => ({ conflictId: v.conflict.conflictId, expected: v.token }));
 
-  async function resolve(conflict: PendingConflictRow, resolution: Resolution) {
+  async function resolve(view: ConflictView, resolution: Resolution) {
     setError(null);
     try {
-      await resolveConflict(db, registry, conflict.conflictId, resolution);
+      await resolveConflict(db, registry, view.conflict.conflictId, resolution, view.token);
     } catch (e) {
       setError(errorMessage(t, e));
     }
@@ -466,19 +484,19 @@ function PendingConflicts() {
       ) : (
         <>
           <p>{t("backup.conflicts.intro")}</p>
-          {bulkIds.length > 1 ? (
+          {bulk.length > 1 ? (
             confirmBulk ? (
-              <div className="notice notice-warn" role="alertdialog" aria-label={t("backup.bulk.keepDevice", { count: bulkIds.length })}>
-                <p>{t("backup.bulk.confirm", { count: bulkIds.length })}</p>
+              <div className="notice notice-warn" role="alertdialog" aria-label={t("backup.bulk.keepDevice", { count: bulk.length })}>
+                <p>{t("backup.bulk.confirm", { count: bulk.length })}</p>
                 <div className="button-row">
                   <button
                     type="button"
                     onClick={async () => {
                       setConfirmBulk(false);
-                      await resolveConflicts(db, registry, bulkIds, "keepDevice");
+                      await resolveConflicts(db, registry, bulk, "keepDevice");
                     }}
                   >
-                    {t("backup.bulk.yes", { count: bulkIds.length })}
+                    {t("backup.bulk.yes", { count: bulk.length })}
                   </button>
                   <button type="button" className="secondary" onClick={() => setConfirmBulk(false)}>
                     {t("backup.bulk.no")}
@@ -487,7 +505,7 @@ function PendingConflicts() {
               </div>
             ) : (
               <button type="button" className="secondary" onClick={() => setConfirmBulk(true)}>
-                {t("backup.bulk.keepDevice", { count: bulkIds.length })}
+                {t("backup.bulk.keepDevice", { count: bulk.length })}
               </button>
             )
           ) : null}
@@ -496,39 +514,53 @@ function PendingConflicts() {
               {error}
             </p>
           ) : null}
-          {conflicts.map((conflict) => (
-            <article key={conflict.conflictId} className="conflict" data-testid="backup-conflict">
-              <h3>{typeLabel(t, conflict.type)}</h3>
-              {conflict.kind === "history" ? <p className="notice notice-warn">{t("backup.conflicts.history")}</p> : null}
-              <div className="conflict-columns">
-                <div>
-                  <h4>{t("backup.conflicts.device")}</h4>
-                  <EntryView type={conflict.type} entry={conflict.local} other={conflict.incoming} missingLabel={t("backup.conflicts.missing")} />
+          {conflicts.map((view) => {
+            const { conflict, current } = view;
+            return (
+              <article key={conflict.conflictId} className="conflict" data-testid="backup-conflict">
+                <h3>{typeLabel(t, conflict.type)}</h3>
+                {conflict.kind === "history" ? <p className="notice notice-warn">{t("backup.conflicts.history")}</p> : null}
+                <div className="conflict-columns">
+                  <div data-testid="conflict-current">
+                    <h4>{t("backup.conflicts.device")}</h4>
+                    <EntryView type={conflict.type} entry={current} other={conflict.incoming} missingLabel={t("backup.conflicts.missing")} />
+                  </div>
+                  <div data-testid="conflict-incoming">
+                    <h4>
+                      {t("backup.conflicts.backup", {
+                        device: conflict.source.deviceName || "—",
+                        date: formatDateTime(conflict.source.exportedAt, prefs),
+                      })}
+                    </h4>
+                    <EntryView type={conflict.type} entry={conflict.incoming} other={current} missingLabel="" />
+                  </div>
                 </div>
-                <div>
-                  <h4>
-                    {t("backup.conflicts.backup", {
-                      device: conflict.source.deviceName || "—",
-                      date: formatDateTime(conflict.source.exportedAt, prefs),
-                    })}
-                  </h4>
-                  <EntryView type={conflict.type} entry={conflict.incoming} other={conflict.local} missingLabel="" />
+                {view.snapshotDiffers ? (
+                  <div className="notice notice-info" data-testid="conflict-snapshot">
+                    <p>
+                      {t("backup.conflicts.snapshot", {
+                        device: conflict.detectedOn?.deviceName || "—",
+                        date: formatDateTime(conflict.detectedAt, prefs),
+                      })}
+                    </p>
+                    <EntryView type={conflict.type} entry={conflict.local} other={current} missingLabel="" />
+                  </div>
+                ) : null}
+                <div className="button-row">
+                  {view.options.map((resolution, i) => (
+                    <button
+                      key={resolution}
+                      type="button"
+                      className={i === 0 ? undefined : "secondary"}
+                      onClick={() => resolve(view, resolution)}
+                    >
+                      {t(RESOLUTION_LABELS[resolution])}
+                    </button>
+                  ))}
                 </div>
-              </div>
-              <div className="button-row">
-                {availableResolutions(conflict, registry).map((resolution, i) => (
-                  <button
-                    key={resolution}
-                    type="button"
-                    className={i === 0 ? undefined : "secondary"}
-                    onClick={() => resolve(conflict, resolution)}
-                  >
-                    {t(RESOLUTION_LABELS[resolution])}
-                  </button>
-                ))}
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </>
       )}
     </section>

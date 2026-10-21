@@ -125,6 +125,7 @@ export interface CarriedConflict {
   incoming: VersionEntry;
   source: { backupId: string; deviceId: string; deviceName: string; exportedAt: string };
   detectedAt: string;
+  detectedOn: { deviceId: string; deviceName: string };
 }
 
 export interface CarriedReplaced {
@@ -176,6 +177,7 @@ const conflictShape = z
     incoming: entryShape,
     source: sourceShape,
     detectedAt: isoInstant,
+    detectedOn: z.object({ deviceId: z.uuid(), deviceName: z.string().max(MAX_DEVICE_NAME_CHARS) }).strict(),
   })
   .strict();
 

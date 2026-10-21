@@ -87,7 +87,7 @@ export const en = {
   "backup.conflicts.title": "Needs your decision",
   "backup.conflicts.empty": "Nothing needs your decision.",
   "backup.conflicts.intro": "These items differ between this device and a backup. Both versions are kept until you choose.",
-  "backup.conflicts.device": "On this device",
+  "backup.conflicts.device": "On this device now",
   "backup.conflicts.backup": "In the backup (from {device}, exported {date})",
   "backup.conflicts.deleted": "(deleted)",
   "backup.conflicts.missing": "(not on this device)",
@@ -101,6 +101,11 @@ export const en = {
   "backup.resolve.keepHere": "Keep it here",
   "backup.resolve.error": "This choice could not be applied: {reason}",
   "backup.resolve.hasLinked": "other items still belong to it.",
+  "backup.resolve.brokenLink": "this version belongs to an item that is not on this device. Restore that item first.",
+  "backup.resolve.stale":
+    "This item changed on this device while you were deciding. The comparison now shows the current version; please choose again. Nothing was changed.",
+  "backup.conflicts.snapshot":
+    "When this conflict was found on {device} ({date}), that device had a different version (below). It is kept in Replaced versions when you decide.",
   "backup.bulk.keepDevice": "Keep this device's version for all ({count})",
   "backup.bulk.confirm": "This keeps this device's version for {count} item(s). The backup versions are kept for undo. Continue?",
   "backup.bulk.yes": "Yes, apply to {count}",

@@ -5,13 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { LocalDb } from "../local/db.ts";
 import { getDeviceSettings, updateDeviceSettings } from "../local/records.ts";
 import { getSharedPreferences, updateSharedPreferences } from "../local/settings.ts";
-import { availableResolutions } from "./conflicts.ts";
 import { createBackup } from "./export.ts";
 import { SHARED_PREFERENCES_ID } from "./limits.ts";
 import { openBackupFile } from "./read.ts";
 import { PRODUCT_REGISTRY } from "./registry.ts";
 import { createTestDevice, type TestDevice } from "./test-fixtures.ts";
-import { blobOf, importInto, mutate } from "./test-helpers.ts";
+import { blobOf, importInto, mutate, viewOf } from "./test-helpers.ts";
 
 const devices: TestDevice[] = [];
 async function device(label: string) {
@@ -58,7 +57,7 @@ describe("16. preferences (D-017)", () => {
     const { result } = await importInto(b, await exportProduct(a), product);
     expect(result.counts.conflict).toBe(1);
     const [conflict] = await b.db.pendingConflicts.toArray();
-    expect(availableResolutions(conflict!, PRODUCT_REGISTRY)).toEqual(["keepDevice", "useBackup"]);
+    expect((await viewOf(b.db, conflict!.conflictId, PRODUCT_REGISTRY)).options).toEqual(["keepDevice", "useBackup"]);
     expect((await getSharedPreferences(b.db)).weekStart).toBe(0);
   });
 

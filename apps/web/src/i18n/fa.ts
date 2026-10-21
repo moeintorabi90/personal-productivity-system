@@ -90,7 +90,7 @@ export const fa: Messages = {
   "backup.conflicts.title": "نیازمند تصمیم شما",
   "backup.conflicts.empty": "موردی منتظر تصمیم شما نیست.",
   "backup.conflicts.intro": "این موارد بین این دستگاه و یک پشتیبان متفاوت‌اند. هر دو نسخه تا زمان انتخاب شما نگه داشته می‌شوند.",
-  "backup.conflicts.device": "روی این دستگاه",
+  "backup.conflicts.device": "اکنون روی این دستگاه",
   "backup.conflicts.backup": "در پشتیبان (از {device}، خروجی در {date})",
   "backup.conflicts.deleted": "(حذف‌شده)",
   "backup.conflicts.missing": "(روی این دستگاه نیست)",
@@ -104,6 +104,11 @@ export const fa: Messages = {
   "backup.resolve.keepHere": "اینجا بماند",
   "backup.resolve.error": "این انتخاب اعمال نشد: {reason}",
   "backup.resolve.hasLinked": "موارد دیگری هنوز به آن تعلق دارند.",
+  "backup.resolve.brokenLink": "این نسخه به موردی تعلق دارد که روی این دستگاه نیست. ابتدا آن مورد را بازگردانید.",
+  "backup.resolve.stale":
+    "این مورد هنگام تصمیم‌گیری شما روی این دستگاه تغییر کرد. مقایسه اکنون نسخهٔ فعلی را نشان می‌دهد؛ لطفاً دوباره انتخاب کنید. هیچ چیزی تغییر نکرد.",
+  "backup.conflicts.snapshot":
+    "وقتی این ناسازگاری روی {device} ({date}) پیدا شد، آن دستگاه نسخهٔ دیگری داشت (پایین). با تصمیم شما این نسخه در «نسخه‌های جایگزین‌شده» نگه داشته می‌شود.",
   "backup.bulk.keepDevice": "نگه‌داشتن نسخهٔ این دستگاه برای همه ({count})",
   "backup.bulk.confirm": "با این کار نسخهٔ این دستگاه برای {count} مورد نگه داشته می‌شود. نسخه‌های پشتیبان برای بازگردانی نگه داشته می‌شوند. ادامه می‌دهید؟",
   "backup.bulk.yes": "بله، برای {count} مورد",

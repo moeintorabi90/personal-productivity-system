@@ -1,6 +1,7 @@
 /** TEST-ONLY helpers for backup tests. */
 import { createHash } from "node:crypto";
 import type { LocalDb } from "../local/db.ts";
+import { type ConflictView, loadConflictViews, type Resolution, resolveConflict } from "./conflicts.ts";
 import { createBackup, type ExportOptions } from "./export.ts";
 import { canonicalize } from "./jcs.ts";
 import { applyImport, type ImportChoices, previewImport } from "./merge.ts";
@@ -9,6 +10,19 @@ import type { Registry } from "./registry.ts";
 import { TEST_REGISTRY, type TestDevice } from "./test-fixtures.ts";
 
 export const blobOf = (text: string) => new Blob([text]);
+
+/** The conflict as the UI shows it now (current device version, token, options). */
+export async function viewOf(db: LocalDb, conflictId: string, registry: Registry = TEST_REGISTRY): Promise<ConflictView> {
+  const view = (await loadConflictViews(db, registry)).find((v) => v.conflict.conflictId === conflictId);
+  if (!view) throw new Error(`no conflict ${conflictId}`);
+  return view;
+}
+
+/** Resolves a conflict exactly as the UI does: with the token of the version that was shown. */
+export async function decide(db: LocalDb, conflictId: string, resolution: Resolution, registry: Registry = TEST_REGISTRY) {
+  const view = await viewOf(db, conflictId, registry);
+  await resolveConflict(db, registry, conflictId, resolution, view.token);
+}
 
 export async function exportFrom(device: TestDevice, options: ExportOptions = {}, registry: Registry = TEST_REGISTRY) {
   return createBackup(device.db, registry, options);

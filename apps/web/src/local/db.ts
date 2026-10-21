@@ -96,11 +96,17 @@ export interface PendingConflictRow {
   kind: ConflictKind;
   type: string;
   id: string;
-  /** This device's version when the conflict was detected (for display; resolution uses the current one). */
+  /**
+   * Snapshot of the version on the detecting device (`detectedOn`) when the conflict was found.
+   * NOT "this device now": a carried conflict may come from another device, and the record may
+   * have changed since. The UI shows the current version separately; resolutions use it.
+   */
   local: VersionEntry | null;
   incoming: VersionEntry;
   source: ConflictSource;
   detectedAt: string;
+  /** Device where the conflict was found (and whose version `local` is). */
+  detectedOn: { deviceId: string; deviceName: string };
 }
 
 /** A version replaced by a user's choice, kept so the choice can be undone. */

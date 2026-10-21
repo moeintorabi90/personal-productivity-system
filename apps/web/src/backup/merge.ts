@@ -1,5 +1,5 @@
 import type { DeviceSettings, ImportLogRow, LocalDb, PendingConflictRow, ReplacedVersionRow, VersionEntry } from "../local/db.ts";
-import { getDeviceSettings, toEnvelope } from "../local/records.ts";
+import { deviceIdentity, getDeviceSettings, toEnvelope } from "../local/records.ts";
 import { ensureSharedPreferences } from "../local/settings.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
@@ -149,21 +149,74 @@ function localEntry(local: LocalState): VersionEntry | null {
   return null;
 }
 
-/** Step 9: every link must resolve to a record in the file or on this device. */
-async function checkReferences(db: LocalDb, payload: BackupPayload, registry: Registry): Promise<void> {
-  const inFile = new Set<string>();
-  for (const [type, list] of Object.entries(payload.records)) for (const e of list) inFile.add(`${type}/${e.id}`);
+/** Link targets of one record version as `type/id` keys (null/absent links are allowed). */
+function linkKeys(registry: Registry, type: string, data: Record<string, unknown>, where: string): string[] {
+  const keys: string[] = [];
+  for (const link of registry.get(type)?.links ?? []) {
+    const target = data[link.field];
+    if (target === null || target === undefined) continue;
+    if (typeof target !== "string") throw new BackupError("UNRESOLVED_REFERENCE", `${where}.${link.field}`);
+    keys.push(`${link.target}/${target}`);
+  }
+  return keys;
+}
+
+/**
+ * Step 9a: EVERY record version in the file — active records, both versions of carried
+ * conflicts, and archived (replaced) versions — may only link to IDs known somewhere: in the
+ * file (record, tombstone, conflict or archive version) or on this device (record or tombstone).
+ * Conflict and archive versions are history, so their targets may be deleted; an unknown ID
+ * means a corrupted or foreign file. Runs inside the preview/apply transaction.
+ */
+async function checkFileReferences(db: LocalDb, payload: BackupPayload, registry: Registry): Promise<void> {
+  const known = new Set<string>();
+  const versions: { type: string; id: string; data: Record<string, unknown>; where: string }[] = [];
   for (const [type, list] of Object.entries(payload.records)) {
-    const def = registry.get(type)!;
-    for (const link of def.links) {
-      for (const envelope of list) {
-        const target = envelope.data[link.field];
-        if (target === null || target === undefined) continue;
-        if (typeof target !== "string") throw new BackupError("UNRESOLVED_REFERENCE", `${type}.${link.field}`);
-        if (inFile.has(`${link.target}/${target}`)) continue;
-        if (await db.records.get([link.target, target])) continue;
-        throw new BackupError("UNRESOLVED_REFERENCE", `${type}/${envelope.id} → ${link.target}/${target}`);
-      }
+    for (const e of list) {
+      known.add(`${type}/${e.id}`);
+      versions.push({ type, id: e.id, data: e.data, where: `records.${type}/${e.id}` });
+    }
+  }
+  for (const t of payload.tombstones) known.add(`${t.type}/${t.id}`);
+  const addEntry = (type: string, id: string, entry: VersionEntry | null, where: string) => {
+    known.add(`${type}/${id}`);
+    if (entry && !entry.deleted) versions.push({ type, id, data: entry.envelope.data, where });
+  };
+  for (const c of payload.pendingConflicts) {
+    addEntry(c.type, c.id, c.local, `pendingConflicts.${c.conflictId}.local`);
+    addEntry(c.type, c.id, c.incoming, `pendingConflicts.${c.conflictId}.incoming`);
+  }
+  for (const r of payload.replacedVersions) addEntry(r.type, r.id, r.entry, `replacedVersions.${r.replacedId}`);
+
+  for (const v of versions) {
+    for (const key of linkKeys(registry, v.type, v.data, v.where)) {
+      if (known.has(key)) continue;
+      const slash = key.indexOf("/");
+      const pk: [string, string] = [key.slice(0, slash), key.slice(slash + 1)];
+      if ((await db.records.get(pk)) || (await db.tombstones.get(pk))) continue;
+      throw new BackupError("UNRESOLVED_REFERENCE", `${v.where} → ${key}`);
+    }
+  }
+}
+
+/**
+ * Step 9b: records this import makes ACTIVE ("new", and "newer in backup" when applied) must
+ * link to records that are live after the import: already live on this device or activated by
+ * the same import. Checked inside the transaction, so a target deleted after the preview makes
+ * the import fail as a whole instead of writing a broken link.
+ */
+async function checkActiveLinks(db: LocalDb, items: PreviewItem[], registry: Registry, includeUpdates: boolean): Promise<void> {
+  const activated = items.filter(
+    (item) => !item.incoming.deleted && (item.category === "new" || (includeUpdates && item.category === "newerInBackup")),
+  );
+  const liveAfter = new Set(activated.map((item) => `${item.type}/${item.id}`));
+  for (const item of activated) {
+    if (item.incoming.deleted) continue;
+    for (const key of linkKeys(registry, item.type, item.incoming.envelope.data, `${item.type}/${item.id}`)) {
+      if (liveAfter.has(key)) continue;
+      const slash = key.indexOf("/");
+      if (await db.records.get([key.slice(0, slash), key.slice(slash + 1)])) continue;
+      throw new BackupError("UNRESOLVED_REFERENCE", `${item.type}/${item.id} → ${key} is not on this device`);
     }
   }
 }
@@ -244,9 +297,12 @@ export async function previewImport(
   opened: { header: BackupHeader; payload: BackupPayload },
   registry: Registry,
 ): Promise<ImportPreview> {
-  await checkReferences(db, opened.payload, registry);
   return db.transaction("r", [db.records, db.tombstones, db.pendingConflicts, db.replacedVersions, db.importLog, db.meta], async () => {
+    await checkFileReferences(db, opened.payload, registry);
     const items = await classifyAll(db, opened.payload, registry);
+    // Preview assumes the updates will be confirmed, so a file whose newer versions would
+    // break links is refused before the user is asked.
+    await checkActiveLinks(db, items, registry, true);
     const carried = await carriedCounts(db, opened.payload);
     const previous = await db.importLog.where("backupId").equals(opened.header.backupId).sortBy("importedAt");
     const device = await getDeviceSettings(db);
@@ -274,13 +330,15 @@ export async function applyImport(
   registry: Registry,
   choices: ImportChoices,
 ): Promise<ImportResult> {
-  await checkReferences(db, opened.payload, registry);
   const tables = [db.records, db.tombstones, db.pendingConflicts, db.replacedVersions, db.importLog, db.meta];
   return db.transaction("rw", tables, async () => {
     // Inside the import transaction: written only if the whole import succeeds.
     await ensureSharedPreferences(db);
+    await checkFileReferences(db, opened.payload, registry);
     const items = await classifyAll(db, opened.payload, registry);
+    await checkActiveLinks(db, items, registry, choices.applyUpdates);
     const carried = await carriedCounts(db, opened.payload);
+    const thisDevice = await deviceIdentity(db);
     const header = opened.header;
     const source = {
       backupId: header.backupId,
@@ -330,6 +388,7 @@ export async function applyImport(
               incoming,
               source,
               detectedAt: at,
+              detectedOn: { deviceId: thisDevice.id, deviceName: thisDevice.name.slice(0, 80) },
             });
           }
       }

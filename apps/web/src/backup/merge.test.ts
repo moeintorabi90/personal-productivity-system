@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deleteRecord, putRecord } from "../local/records.ts";
-import { availableResolutions, resolveConflict, resolveConflicts, restoreReplacedVersion } from "./conflicts.ts";
+import { loadConflictViews, resolveConflicts, restoreReplacedVersion } from "./conflicts.ts";
 import { openBackupFile } from "./read.ts";
 import { applyImport, previewImport } from "./merge.ts";
 import { createTestDevice, HISTORY_REGISTRY, TEST_REGISTRY, type TestDevice } from "./test-fixtures.ts";
-import { blobOf, exportFrom, importInto, snapshot } from "./test-helpers.ts";
+import { blobOf, decide, exportFrom, importInto, snapshot, viewOf } from "./test-helpers.ts";
 
 const devices: TestDevice[] = [];
 async function device(label: string) {
@@ -124,10 +124,10 @@ describe("backup round-trip and merge (docs/TESTING.md backup tests 1–7)", () 
     const [conflict] = await b.db.pendingConflicts.toArray();
     expect(conflict).toMatchObject({ kind: "edit", type: "fixtureNote", id: item });
     expect(conflict!.incoming).toMatchObject({ envelope: { data: note("edited on A") } });
-    expect(availableResolutions(conflict!, TEST_REGISTRY)).toEqual(["keepDevice", "useBackup", "keepBoth"]);
+    expect((await viewOf(b.db, conflict!.conflictId)).options).toEqual(["keepDevice", "useBackup", "keepBoth"]);
 
     // keepBoth (independent type): the backup version becomes a copy with a new ID.
-    await resolveConflict(b.db, TEST_REGISTRY, conflict!.conflictId, "keepBoth");
+    await decide(b.db, conflict!.conflictId, "keepBoth");
     const notes = await b.db.records.where("type").equals("fixtureNote").toArray();
     expect(notes.map((n) => n.data.text).sort()).toEqual(["edited on A", "edited on B"]);
     expect(notes.find((n) => n.id !== item)?.copyOf).toBe(item);
@@ -149,7 +149,7 @@ describe("backup round-trip and merge (docs/TESTING.md backup tests 1–7)", () 
     await importInto(b, (await exportFrom(a)).text);
 
     const [c1] = await b.db.pendingConflicts.toArray();
-    await resolveConflict(b.db, TEST_REGISTRY, c1!.conflictId, "useBackup");
+    await decide(b.db, c1!.conflictId, "useBackup");
     expect((await b.db.records.get(["fixtureNote", item]))?.data).toEqual(note("A"));
     const [archived] = await b.db.replacedVersions.toArray();
     expect(archived!.entry).toMatchObject({ envelope: { data: note("B") } });
@@ -175,11 +175,11 @@ describe("backup round-trip and merge (docs/TESTING.md backup tests 1–7)", () 
 
     const [conflict] = await b.db.pendingConflicts.toArray();
     expect(conflict!.type).toBe("fixtureParent");
-    expect(availableResolutions(conflict!, TEST_REGISTRY)).toEqual(["keepDevice", "useBackup"]);
-    await expect(resolveConflict(b.db, TEST_REGISTRY, conflict!.conflictId, "keepBoth")).rejects.toMatchObject({
+    expect((await viewOf(b.db, conflict!.conflictId)).options).toEqual(["keepDevice", "useBackup"]);
+    await expect(decide(b.db, conflict!.conflictId, "keepBoth")).rejects.toMatchObject({
       code: "NOT_ALLOWED",
     });
-    await resolveConflict(b.db, TEST_REGISTRY, conflict!.conflictId, "useBackup");
+    await decide(b.db, conflict!.conflictId, "useBackup");
     expect((await b.db.records.get(["fixtureParent", parent]))?.data).toEqual({ name: "P-A" });
     expect((await b.db.records.get(["fixtureChild", child]))?.data.parentId).toBe(parent);
     expect(await b.db.records.where("type").equals("fixtureParent").count()).toBe(1);
@@ -209,13 +209,13 @@ describe("backup round-trip and merge (docs/TESTING.md backup tests 1–7)", () 
     const conflicts = await b.db.pendingConflicts.toArray();
     const inBackup = conflicts.find((c) => c.kind === "deletedInBackup")!;
     const here = conflicts.find((c) => c.kind === "deletedHere")!;
-    expect(availableResolutions(inBackup, TEST_REGISTRY)).toEqual(["deleteHere", "keepHere"]);
-    expect(availableResolutions(here, TEST_REGISTRY)).toEqual(["restore", "keepDeleted"]);
+    expect((await viewOf(b.db, inBackup.conflictId)).options).toEqual(["deleteHere", "keepHere"]);
+    expect((await viewOf(b.db, here.conflictId)).options).toEqual(["restore", "keepDeleted"]);
 
-    await resolveConflict(b.db, TEST_REGISTRY, here.conflictId, "restore");
+    await decide(b.db, here.conflictId, "restore");
     expect((await b.db.records.get(["fixtureNote", deletedOnB]))?.data).toEqual(note("b edited on A"));
     expect(await b.db.tombstones.get(["fixtureNote", deletedOnB])).toBeUndefined();
-    await resolveConflict(b.db, TEST_REGISTRY, inBackup.conflictId, "deleteHere");
+    await decide(b.db, inBackup.conflictId, "deleteHere");
     expect(await b.db.records.get(["fixtureNote", deletedOnA])).toBeUndefined();
     expect(await b.db.tombstones.get(["fixtureNote", deletedOnA])).toBeDefined();
   });
@@ -240,7 +240,7 @@ describe("backup round-trip and merge (docs/TESTING.md backup tests 1–7)", () 
     await importInto(b, (await exportFrom(a)).text);
     const [conflict] = await b.db.pendingConflicts.toArray();
     expect(conflict!.kind).toBe("deletedInBackup");
-    await expect(resolveConflict(b.db, TEST_REGISTRY, conflict!.conflictId, "deleteHere")).rejects.toMatchObject({
+    await expect(decide(b.db, conflict!.conflictId, "deleteHere")).rejects.toMatchObject({
       code: "HAS_LINKED_ITEMS",
     });
     expect(await b.db.records.get(["fixtureParent", parent])).toBeDefined();
@@ -265,7 +265,7 @@ describe("history, identity, preview, bulk, atomicity (items 8, 14, 15, 17)", ()
     expect((await b.db.records.get(["fixtureNote", event]))?.data).toEqual(note("different"));
     const [warning] = await b.db.pendingConflicts.toArray();
     expect(warning!.kind).toBe("history");
-    expect(availableResolutions(warning!, HISTORY_REGISTRY)).toEqual(["keepDevice"]);
+    expect((await viewOf(b.db, warning!.conflictId, HISTORY_REGISTRY)).options).toEqual(["keepDevice"]);
     await expect(putRecord(b.db, HISTORY_REGISTRY, "fixtureNote", event, note("edit"))).rejects.toThrow(/Append-only/);
   });
 
@@ -306,9 +306,9 @@ describe("history, identity, preview, bulk, atomicity (items 8, 14, 15, 17)", ()
       await putRecord(b.db, TEST_REGISTRY, "fixtureNote", i, note("B"));
     }
     await importInto(b, (await exportFrom(a)).text);
-    const conflictIds = (await b.db.pendingConflicts.toArray()).map((c) => c.conflictId);
-    expect(conflictIds).toHaveLength(3);
-    expect(await resolveConflicts(b.db, TEST_REGISTRY, conflictIds, "keepDevice")).toBe(3);
+    const shown = (await loadConflictViews(b.db, TEST_REGISTRY)).map((v) => ({ conflictId: v.conflict.conflictId, expected: v.token }));
+    expect(shown).toHaveLength(3);
+    expect(await resolveConflicts(b.db, TEST_REGISTRY, shown, "keepDevice")).toBe(3);
     expect(await b.db.pendingConflicts.count()).toBe(0);
     expect(await b.db.replacedVersions.count()).toBe(3);
     for (const i of ids) expect((await b.db.records.get(["fixtureNote", i]))?.data).toEqual(note("B"));

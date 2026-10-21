@@ -243,8 +243,20 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     expect(conflict.textContent).toContain("On this device");
     expect(conflict.textContent).toContain("In the backup (from Laptop");
     expect(within(conflict).queryByRole("button", { name: "Keep both" })).toBeNull();
-    fireEvent.click(within(conflict).getByRole("button", { name: "Keep this device's version" }));
+    expect(screen.getByTestId("conflict-current").textContent).toContain("Sunday");
+    expect(screen.queryByTestId("conflict-snapshot")).toBeNull();
+
+    // Edited after the conflict was found: the card shows the CURRENT version, plus the earlier one.
+    await act(() => updateSharedPreferences(services.db, { weekStart: 3 }));
+    await waitFor(() => expect(screen.getByTestId("conflict-current").textContent).toContain("Wednesday"));
+    const earlier = await screen.findByTestId("conflict-snapshot");
+    expect(earlier.textContent).toContain("Sunday");
+    expect(earlier.textContent).toContain("kept in Replaced versions");
+
+    fireEvent.click(within(screen.getByTestId("backup-conflict")).getByRole("button", { name: "Keep this device's version" }));
     await waitFor(() => expect(screen.queryByTestId("backup-conflict")).toBeNull());
-    expect((await getSharedPreferences(services.db)).weekStart).toBe(0);
+    expect((await getSharedPreferences(services.db)).weekStart).toBe(3);
+    // The backup's version and the earlier snapshot are both kept for undo.
+    expect(await services.db.replacedVersions.count()).toBe(2);
   });
 });
