@@ -538,10 +538,13 @@ function PendingConflicts() {
                 {view.snapshotDiffers ? (
                   <div className="notice notice-info" data-testid="conflict-snapshot">
                     <p>
-                      {t("backup.conflicts.snapshot", {
-                        device: conflict.detectedOn?.deviceName || "—",
-                        date: formatDateTime(conflict.detectedAt, prefs),
-                      })}
+                      {/* Conflicts from the first Stage 1B build did not record the device: say so, never guess. */}
+                      {conflict.detectedOn
+                        ? t("backup.conflicts.snapshot", {
+                            device: conflict.detectedOn.deviceName || "—",
+                            date: formatDateTime(conflict.detectedAt, prefs),
+                          })
+                        : t("backup.conflicts.snapshotUnknownDevice", { date: formatDateTime(conflict.detectedAt, prefs) })}
                     </p>
                     <EntryView type={conflict.type} entry={conflict.local} other={current} missingLabel="" />
                   </div>

@@ -62,7 +62,7 @@ describe("Issue 1, scenario 1: a local edit after the conflict was found", () =>
     expect(view.current).toMatchObject({ envelope: { data: note("B2 (edited after the conflict)") } });
     expect(view.snapshotDiffers).toBe(true);
     expect(view.conflict.local).toMatchObject({ envelope: { data: note("B1") } });
-    expect(view.conflict.detectedOn.deviceName).toBe("B");
+    expect(view.conflict.detectedOn?.deviceName).toBe("B");
   });
 
   for (const [resolution, expectedCurrent, expectedArchive] of [
@@ -102,12 +102,12 @@ describe("Issue 1, scenario 2: a conflict carried from another device", () => {
     await importInto(c, (await exportFrom(b)).text); // brings B1 (conflict on C) + B's conflict
 
     const views = await loadConflictViews(c.db, TEST_REGISTRY);
-    const carried = views.find((v) => v.conflict.detectedOn.deviceName === "B")!;
+    const carried = views.find((v) => v.conflict.detectedOn?.deviceName === "B")!;
     expect(carried).toBeDefined();
     expect(carried.current).toMatchObject({ envelope: { data: note("C1") } }); // not B's snapshot
     expect(carried.conflict.local).toMatchObject({ envelope: { data: note("B1") } });
     expect(carried.snapshotDiffers).toBe(true);
-    const own = views.find((v) => v.conflict.detectedOn.deviceName === "C")!;
+    const own = views.find((v) => v.conflict.detectedOn?.deviceName === "C")!;
     expect(own.conflict.local).toMatchObject({ envelope: { data: note("C1") } });
 
     await decide(c.db, carried.conflict.conflictId, "keepDevice");

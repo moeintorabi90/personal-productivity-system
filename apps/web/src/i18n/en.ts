@@ -106,6 +106,8 @@ export const en = {
     "This item changed on this device while you were deciding. The comparison now shows the current version; please choose again. Nothing was changed.",
   "backup.conflicts.snapshot":
     "When this conflict was found on {device} ({date}), that device had a different version (below). It is kept in Replaced versions when you decide.",
+  "backup.conflicts.snapshotUnknownDevice":
+    "When this conflict was found ({date}), the device where it was found had a different version (below). Which device that was is not known. It is kept in Replaced versions when you decide.",
   "backup.bulk.keepDevice": "Keep this device's version for all ({count})",
   "backup.bulk.confirm": "This keeps this device's version for {count} item(s). The backup versions are kept for undo. Continue?",
   "backup.bulk.yes": "Yes, apply to {count}",

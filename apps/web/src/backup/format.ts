@@ -125,7 +125,8 @@ export interface CarriedConflict {
   incoming: VersionEntry;
   source: { backupId: string; deviceId: string; deviceName: string; exportedAt: string };
   detectedAt: string;
-  detectedOn: { deviceId: string; deviceName: string };
+  /** Absent in entries written before it was added (unknown device; never filled in). */
+  detectedOn?: { deviceId: string; deviceName: string };
 }
 
 export interface CarriedReplaced {
@@ -177,7 +178,8 @@ const conflictShape = z
     incoming: entryShape,
     source: sourceShape,
     detectedAt: isoInstant,
-    detectedOn: z.object({ deviceId: z.uuid(), deviceName: z.string().max(MAX_DEVICE_NAME_CHARS) }).strict(),
+    // Optional within format version 1: files from the first Stage 1B build have no such field.
+    detectedOn: z.object({ deviceId: z.uuid(), deviceName: z.string().max(MAX_DEVICE_NAME_CHARS) }).strict().optional(),
   })
   .strict();
 

@@ -105,8 +105,11 @@ export interface PendingConflictRow {
   incoming: VersionEntry;
   source: ConflictSource;
   detectedAt: string;
-  /** Device where the conflict was found (and whose version `local` is). */
-  detectedOn: { deviceId: string; deviceName: string };
+  /**
+   * Device where the conflict was found (and whose version `local` is). Absent on rows stored,
+   * or files written, by the first Stage 1B build: that device is unknown and is never guessed.
+   */
+  detectedOn?: { deviceId: string; deviceName: string };
 }
 
 /** A version replaced by a user's choice, kept so the choice can be undone. */

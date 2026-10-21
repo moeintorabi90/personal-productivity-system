@@ -252,11 +252,46 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     const earlier = await screen.findByTestId("conflict-snapshot");
     expect(earlier.textContent).toContain("Sunday");
     expect(earlier.textContent).toContain("kept in Replaced versions");
+    expect(earlier.textContent).toContain("found on This device"); // new conflicts name the device that found them
 
     fireEvent.click(within(screen.getByTestId("backup-conflict")).getByRole("button", { name: "Keep this device's version" }));
     await waitFor(() => expect(screen.queryByTestId("backup-conflict")).toBeNull());
     expect((await getSharedPreferences(services.db)).weekStart).toBe(3);
     // The backup's version and the earlier snapshot are both kept for undo.
+    expect(await services.db.replacedVersions.count()).toBe(2);
+  });
+
+  it("a conflict stored by the first Stage 1B build (no detectedOn) says the device is unknown and names no device", async () => {
+    renderApp();
+    await goTo("Backup");
+    await screen.findByTestId("pending-conflicts");
+    await services.db.meta.put({ key: "device", value: { id: crypto.randomUUID(), name: "Desk" } });
+    await updateSharedPreferences(services.db, { weekStart: 0 });
+    const other = new LocalDb(`other-${++dbCounter}`);
+    await other.meta.put({ key: "device", value: { id: crypto.randomUUID(), name: "Laptop" } });
+    await updateSharedPreferences(other, { weekStart: 2 });
+    const backup = await createBackup(other, PRODUCT_REGISTRY);
+    other.close();
+    fireEvent.change(screen.getByLabelText("Choose a backup file"), { target: { files: [new File([backup.text], "b.json")] } });
+    fireEvent.click(within(await screen.findByTestId("import-preview")).getByRole("button", { name: "Import" }));
+    await screen.findByTestId("backup-conflict");
+
+    // Rewrite the row as that build stored it, then edit so the snapshot differs.
+    const [row] = await services.db.pendingConflicts.toArray();
+    const { detectedOn: _notStoredThen, ...legacy } = row!;
+    await act(async () => {
+      await services.db.pendingConflicts.put(legacy);
+      await updateSharedPreferences(services.db, { weekStart: 3 });
+    });
+    const earlier = await screen.findByTestId("conflict-snapshot");
+    expect(earlier.textContent).toContain("Which device that was is not known");
+    expect(earlier.textContent).toContain("Sunday");
+    expect(earlier.textContent).not.toContain("Desk");
+    expect(earlier.textContent).not.toContain("Laptop");
+    expect(earlier.textContent).not.toContain("This device");
+
+    fireEvent.click(within(screen.getByTestId("backup-conflict")).getByRole("button", { name: "Keep this device's version" }));
+    await waitFor(() => expect(screen.queryByTestId("backup-conflict")).toBeNull());
     expect(await services.db.replacedVersions.count()).toBe(2);
   });
 });
