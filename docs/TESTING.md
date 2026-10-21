@@ -93,7 +93,7 @@ Defect found by these tests and fixed: a refused import (unresolved reference) s
 
 Not tested in Stage 1B (remaining manual items):
 
-- **Windows → Android and Android → Windows** backup export/import on real devices, and **iPhone** (Safari Home Screen app) export/import feasibility: no Android or iPhone device is available to the implementer, and installing on a phone needs the hosted app (GitHub Pages, D-018), whose reachability from the owner's region and installation on devices are not yet verified.
+- **Windows → Android and Android → Windows** backup export/import on real devices, and **iPhone** (Safari Home Screen app) export/import feasibility: no Android or iPhone device is available to the implementer, and installing on a phone needs the app to be deployed (GitHub Pages selected, D-018; deployment pending), after which its reachability from the owner's region and installation on devices are still to be verified.
 - Share-sheet export ("Share or save…") on phones: only shown where the browser supports sharing files; not available in headless Edge.
 - PWA install UI on Windows (headless E2E does not exercise it).
 - A decrypted payload over 32 MiB: unreachable through a valid file (see BACKUP_FORMAT "Implementation notes"); the check stays as defense in depth.
