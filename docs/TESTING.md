@@ -93,10 +93,16 @@ Defect found by these tests and fixed: a refused import (unresolved reference) s
 
 Not tested in Stage 1B (remaining manual items):
 
-- **Windows → Android and Android → Windows** backup export/import on real devices, and **iPhone** (Safari Home Screen app) export/import feasibility: no Android or iPhone device is available to the implementer, and installing on a phone needs the hosting origin that is still undecided (DECISIONS open question 8).
+- **Windows → Android and Android → Windows** backup export/import on real devices, and **iPhone** (Safari Home Screen app) export/import feasibility: no Android or iPhone device is available to the implementer, and installing on a phone needs the hosted app (GitHub Pages, D-018), whose reachability from the owner's region and installation on devices are not yet verified.
 - Share-sheet export ("Share or save…") on phones: only shown where the browser supports sharing files; not available in headless Edge.
 - PWA install UI on Windows (headless E2E does not exercise it).
 - A decrypted payload over 32 MiB: unreachable through a valid file (see BACKUP_FORMAT "Implementation notes"); the check stays as defense in depth.
+
+## GitHub Pages hosting preparation (2026-10-21, branch `feat/github-pages-deploy`, D-018)
+
+Production builds and `vite preview` now serve the app under `/personal-productivity-system/`, and the E2E suite runs there. New E2E test "the app works under the GitHub Pages subpath": the service worker's scope is `http://localhost:4173/personal-productivity-system/` and its script is `<base>sw.js`; the manifest link, and the manifest's `id`, `start_url`, and `scope`, resolve to the base URL; every manifest icon returns 200. All E2E tests now also fail on any same-origin request outside the base path. Verified on Windows 11 with Edge (headless): `npm.cmd run typecheck` passed; `npm.cmd test` **147 passed, 0 failed** in 18 files; `npm.cmd run test:e2e` (production build + Playwright) **5 passed, 0 failed**; the build emits hashed assets under `/personal-productivity-system/assets/` and `sw.js` precaches 11 files relative to its scope.
+
+Not verified yet: the workflow `.github/workflows/deploy-pages.yml` has not run (nothing is pushed; it runs on Ubuntu, while all checks above ran on Windows); the deployed site, its reachability from the owner's region, and installation on real devices.
 
 ## Stage 1 test report (2026-10-20)
 

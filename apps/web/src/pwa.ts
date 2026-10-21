@@ -6,7 +6,10 @@ export type OfflineReadiness = "dev" | "unsupported" | "installing" | "ready";
 export function registerServiceWorker(): void {
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch((error: unknown) => {
+    // Absolute URL and scope from the build's base path (the app is served under a project
+    // subpath on GitHub Pages), so the worker never claims, or misses, a different path.
+    const base = import.meta.env.BASE_URL;
+    navigator.serviceWorker.register(`${base}sw.js`, { scope: base }).catch((error: unknown) => {
       console.warn("Service worker registration failed", error);
     });
   });

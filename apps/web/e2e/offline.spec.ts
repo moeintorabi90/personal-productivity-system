@@ -3,25 +3,51 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium, expect, type Page, test } from "@playwright/test";
 
-const BASE_URL = "http://localhost:4173/";
+// Same project subpath as the GitHub Pages site (apps/web/vite.config.ts, APP_BASE_PATH).
+const BASE_PATH = "/personal-productivity-system/";
+const BASE_URL = `http://localhost:4173${BASE_PATH}`;
 
 async function waitForServiceWorkerControl(page: Page) {
   await page.waitForFunction(() => navigator.serviceWorker?.controller !== null, null, { timeout: 30_000 });
 }
 
-/** Fails the test if the app sends anything to the API or to another origin (v1 is offline-only). */
+/**
+ * Fails the test if the app sends anything to the API or to another origin (v1 is offline-only),
+ * or requests a same-origin file outside the app's subpath (it would 404 on GitHub Pages).
+ */
 function forbidNetworkUse(page: Page) {
   const offenders: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.origin !== new URL(BASE_URL).origin || url.pathname.startsWith("/v1")) offenders.push(request.url());
+    if (url.origin !== new URL(BASE_URL).origin || !url.pathname.startsWith(BASE_PATH)) offenders.push(request.url());
   });
   return offenders;
 }
 
+test("the app works under the GitHub Pages subpath: worker scope, manifest, and icons", async ({ page }) => {
+  const offenders = forbidNetworkUse(page);
+  await page.goto(BASE_URL);
+  await waitForServiceWorkerControl(page);
+  const worker = await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    return { scope: registration?.scope, script: registration?.active?.scriptURL };
+  });
+  expect(worker).toEqual({ scope: BASE_URL, script: `${BASE_URL}sw.js` });
+
+  const manifestHref = await page.locator('link[rel="manifest"]').evaluate((link: HTMLLinkElement) => link.href);
+  expect(manifestHref).toBe(`${BASE_URL}manifest.webmanifest`);
+  const manifest = await (await page.request.get(manifestHref)).json();
+  for (const key of ["id", "start_url", "scope"]) expect(new URL(manifest[key], manifestHref).href).toBe(BASE_URL);
+  for (const icon of manifest.icons) {
+    const response = await page.request.get(new URL(icon.src, manifestHref).href);
+    expect(response.status(), icon.src).toBe(200);
+  }
+  expect(offenders).toEqual([]);
+});
+
 test("the installed app shell opens offline and keeps working", async ({ page, context }) => {
   const offenders = forbidNetworkUse(page);
-  await page.goto("/");
+  await page.goto(BASE_URL);
   await expect(page.getByRole("heading", { level: 1, name: "Welcome" })).toBeVisible();
   await waitForServiceWorkerControl(page);
   await expect(page.getByTestId("offline-readiness")).toHaveText("Ready to work offline on this device.");
@@ -67,7 +93,7 @@ test("local data survives closing and reopening the browser (reopened offline)",
 });
 
 test("Persian switches the shell to right-to-left and the theme applies, both persisting after reload", async ({ page }) => {
-  await page.goto("/");
+  await page.goto(BASE_URL);
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByLabel("Language").selectOption("fa");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
@@ -96,7 +122,7 @@ test("backup file flow: export on one device, import into a fresh one, offline, 
   const source = await browser.newContext({ acceptDownloads: true });
   const a = await source.newPage();
   const offendersA = forbidNetworkUse(a);
-  await a.goto("/");
+  await a.goto(BASE_URL);
   await a.getByRole("button", { name: "Settings" }).click();
   await a.getByLabel("Week starts on").selectOption("2");
   await a.getByLabel("Calendar display").selectOption("both");
@@ -114,7 +140,7 @@ test("backup file flow: export on one device, import into a fresh one, offline, 
   const target = await browser.newContext();
   const b = await target.newPage();
   const offendersB = forbidNetworkUse(b);
-  await b.goto("/");
+  await b.goto(BASE_URL);
   await target.setOffline(true);
   await b.getByRole("button", { name: "Backup" }).click();
   await b.getByLabel("Choose a backup file").setInputFiles(filePath);

@@ -10,6 +10,13 @@ const WEB_ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = path.join(WEB_ROOT, "public");
 // 127.0.0.1, not "localhost": the API binds IPv4 loopback only, and "localhost" may resolve to ::1.
 const API_TARGET = process.env.PPS_API_URL ?? "http://127.0.0.1:8787";
+/**
+ * Path of the hosted app (GitHub Pages project site, DECISIONS D-018):
+ * https://moeintorabi90.github.io/personal-productivity-system/. Production builds and `vite preview`
+ * (and so the E2E tests) use it; the dev server stays at "/". Local data belongs to the origin, and
+ * the service worker scope is this path, so it must not change once people use the app.
+ */
+export const APP_BASE_PATH = "/personal-productivity-system/";
 
 function listFiles(dir: string, prefix = ""): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -46,9 +53,9 @@ function serviceWorker(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ command, isPreview }) => ({
   root: WEB_ROOT,
-  base: "./",
+  base: command === "serve" && !isPreview ? "/" : APP_BASE_PATH,
   plugins: [react(), serviceWorker()],
   resolve: { alias: aliases },
   build: {
@@ -59,4 +66,4 @@ export default defineConfig({
   // Same-origin API in development and preview: the browser talks to /v1 on the web origin.
   server: { port: 5173, strictPort: true, proxy: { "/v1": API_TARGET } },
   preview: { port: 4173, strictPort: true, proxy: { "/v1": API_TARGET } },
-});
+}));
