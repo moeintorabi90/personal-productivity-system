@@ -83,7 +83,25 @@ New and changed automated tests:
 - `apps/web/src/App.test.tsx` (+4): navigation now has Inbox and Projects; capture → organize into a project's workstream → grouped project detail (with next action and estimate), no network use; archive without deletion, status filter, search across projects/workstreams/tasks; Persian navigation and screens; a project conflict shows field labels and no "Keep both", and "use the backup's version" keeps the project.
 - `apps/web/e2e/offline.spec.ts` (+1): offline in Edge, create a project and workstream, capture and organize an item, reload offline, export a real backup file, import it into a fresh profile (3 new items), and see the same grouping; no request outside the app's path.
 
-Not tested (manual, owner's devices): the Stage 2 flow on the installed app on the Windows laptop and the Android phone — create items offline, export on one device, import on the other, and the reverse (including a conflict on a project edited on both); Persian text entry and search with the phone keyboard; layout of the new screens on a phone.
+Manual checks on the owner's devices: see "Owner device checks (2026-10-23)" below. Not covered by that report: a conflict from the same project edited independently on both devices and then merged by backup (automated tests only), and iPhone.
+
+## Owner device checks (2026-10-23)
+
+Reported by the owner; not run by the implementer. Build: `main` with Stage 2, deployed to GitHub Pages by the workflow run for `644843b` (completed successfully on 2026-10-21). Devices: a Windows laptop and an Android phone; **device models, OS versions, and browser names/versions unspecified**.
+
+| Check | Result (owner report) |
+|---|---|
+| The app opens and remains usable offline after being loaded | Passed (Windows, Android) |
+| Project/task workflows work offline and persist after closing and reopening the app | Passed (Windows, Android) |
+| Backup export on Windows → import on Android | Passed |
+| Backup export on Android → import on Windows | Passed |
+| Importing the backup does not create duplicate records | Passed |
+| Persian text entry and search | Passed (device not specified) |
+| Phone layout | Passed (Android) |
+
+Still open (not in the report): iPhone (Safari Home Screen app) install, offline use, and export/import; a conflict from the same project edited independently on both devices, then merged by backup; other on-device items not listed above (e.g. encrypted backups, the share sheet, refused files, persistent-storage grant and eviction, update after a new build).
+
+Hosting note: on 2026-10-23 the app URL `https://moeintorabi90.github.io/personal-productivity-system/`, its `manifest.webmanifest`, and the GitHub Pages API for the repository returned HTTP 404 from the development PC (`Invoke-WebRequest` / `Invoke-RestMethod`), while the repository is public and the Actions API lists the deployment runs as successful. The site therefore does not appear to be served at that time; GitHub Pages may need to be turned on again (Settings → Pages → Source: GitHub Actions) and the workflow re-run. Not changed by the implementer.
 
 ## Stage 1B test report (2026-10-21)
 
@@ -115,7 +133,7 @@ Defect found by these tests and fixed: a refused import (unresolved reference) s
 
 Not tested in Stage 1B (remaining manual items):
 
-- **Windows → Android and Android → Windows** backup export/import on real devices, and **iPhone** (Safari Home Screen app) export/import feasibility: no Android or iPhone device is available to the implementer, and the app is now deployed on GitHub Pages (D-018) and the owner reports installing it on a Windows laptop and an Android phone, but backup transfer between them has not been checked yet.
+- **Windows → Android and Android → Windows** backup export/import on real devices: **owner-reported as passed on 2026-10-23** (versions unspecified; see "Owner device checks (2026-10-23)"). **iPhone** (Safari Home Screen app) export/import feasibility: still open; no iPhone device is available to the implementer.
 - Share-sheet export ("Share or save…") on phones: only shown where the browser supports sharing files; not available in headless Edge.
 - PWA install UI on Windows (headless E2E does not exercise it).
 - A decrypted payload over 32 MiB: unreachable through a valid file (see BACKUP_FORMAT "Implementation notes"); the check stays as defense in depth.
