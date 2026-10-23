@@ -38,9 +38,23 @@ After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offlin
 
 ## Stage 3 — Calendar and planning
 
-**Deliverables:** day/week/month calendar, block editing, recurrence, quick add, search/filter, capacity cues, Today screen. Includes the task-definition fields deferred from Stage 2: recurrence and active weekdays (DECISIONS T-024; new `dataSchemaVersion` with an upgrade step).
+**Deliverables:** day/week/month calendar, block editing, recurrence, quick add, search/filter, capacity cues, Today screen. Includes the task-definition fields deferred from Stage 2: recurrence and active weekdays (DECISIONS T-024; new `dataSchemaVersion` with an upgrade step). Contract: PRODUCT_SPEC "Stage 3 planning contract", DATA_MODEL "Stage 3 record types and fields", BACKUP_FORMAT "Data schema version 3", TESTING "Stage 3 acceptance tests".
 
-**Acceptance:** planned blocks persist offline and round-trip through backup with merge; recurrence/week boundaries/DST pass tests; rescheduling one occurrence has documented scope; planned items remain separate from actual sessions.
+**Owner decisions (2026-10-24):** D-019 (recurring tasks appear as unscheduled items on their active weekdays; never given a time automatically; other planned work never moved), D-020 (Gregorian display by default, Jalali selectable; Saturday week start by default, configurable; calculations in the explicitly configured time zone; language never changes calendar or calculations), D-021 (configurable daily capacity; warnings only; nothing rescheduled, changed, or deleted automatically).
+
+**Acceptance:**
+
+- Planned blocks can be created (from a task, an unscheduled item, or quick add), edited, moved, resized, cancelled, and restored offline, and persist after closing and reopening the app.
+- A recurring task shows exactly one unscheduled item on each selected weekday within its start/end dates, none on other days, none for archived tasks; scheduling creates an explicit block with the user-entered start time; the item then shows as scheduled; cancelling that block makes it unscheduled again. The app never assigns a time, creates a block, or moves another block by itself, and never carries a past unscheduled item forward.
+- Day, week, and month views, navigation, search, and filters work; the week starts on the configured week start (Saturday by default); Gregorian is the default display and Jalali is selectable; switching the language changes no date, week, recurrence, or capacity result.
+- All calculations use the configured time zone; without one, planning asks the user to set it and writes nothing; recurrence, week boundaries, and blocks across daylight-saving changes and midnight pass the tests in TESTING.
+- With a daily capacity set, over-capacity days show a warning (and the softer notice when unscheduled estimates do not fit); no block is changed, moved, cancelled, or deleted because of capacity; without capacity, no warning appears.
+- Today shows today's blocks, unscheduled items, and capacity summary.
+- Backups: `dataSchemaVersion` 3; blocks, recurrence, and capacity round-trip and merge (new / already here / older / newer-with-confirmation / conflict / deletion), block conflicts offer keep/use only; the committed version-1 and version-2 samples still import unchanged; version-1/2 files with version-3 fields or types are refused; existing task and preference records keep their content hashes after the update (no false conflicts with not-yet-updated backups).
+- Planned items remain separate from actual execution: blocks have no completion or actual-time data.
+- Manual (owner's devices): the Stage 3 flow offline on the Windows laptop and Android phone, and backup transfer of blocks in both directions.
+
+**Status (2026-10-24): contract specified; implementation not started.** Before implementation, the owner should approve or change the proposed defaults T-029 to T-036 (DECISIONS); T-029 (recurrence shape), T-030 (block time model), T-031 (capacity shape and default), and T-036 (block snapshot) affect the stored data and must be settled first; the others affect only behavior and screens.
 
 ## Stage 4 — Goals and milestones
 

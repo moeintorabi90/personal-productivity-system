@@ -74,11 +74,11 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 - **Inbox:** task definitions with `projectId` null (DECISIONS T-021). Organizing a captured item edits the same record; nothing is copied.
 - **Archive** is data (`archivedAt`), not a deletion; archiving never changes linked records (T-023). Stage 2 offers no delete; deleting a record that live records link to is refused (restrict).
 - `notes` is the task's descriptive text; there is no separate description field (owner-approved, T-024).
-- **Deferred, not implemented** (owner-approved, T-024): recurrence and active weekdays (Stage 3), relevant output metrics (Stage 5), and a task type (only after the owner defines a use case and categories). Each would be added with a new `dataSchemaVersion` and an upgrade step.
+- **Deferred, not implemented** (owner-approved, T-024): recurrence and active weekdays (Stage 3; specified below in "Stage 3 record types and fields"), relevant output metrics (Stage 5), and a task type (only after the owner defines a use case and categories). Each would be added with a new `dataSchemaVersion` and an upgrade step.
 - All three types are **linked** (they link to, or are linked from, another type), so a conflict on any of them offers "keep this device's" or "use the backup's" version, never "keep both".
 - **OutputMetric:** named unit and formatting/aggregation rules (e.g. pages, words, applications). Metric definitions have revisions so historical outputs retain their meaning.
 - **Goal / GoalContribution:** a measurable outcome, target/window/status and explicit attribution rules. Progress is derived from sessions, task completion events, and output records.
-- **CalendarBlock:** planned occurrence with planned start/end, local-date key, timezone, source recurrence, relationship IDs, and task/project/workstream snapshot/revision.
+- **CalendarBlock:** planned occurrence with planned start/end, local-date key, timezone, source recurrence, relationship IDs, and task/project/workstream snapshot/revision. Specified for Stage 3 as record type `calendarBlocks` (below).
 - **ExecutionSession:** actual work event, planned or unplanned, with task ID, optional block ID, actual timestamps, state, context, notes, and canonical snapshots.
 - **OutputRecord:** actual value for a metric and session. Corrections append an audit event rather than replacing the original value.
 - **Habit / HabitOccurrence / HabitCompletion:** user-defined recurring activity, planned local-date occurrence, and separate completion record.
@@ -86,6 +86,41 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 - **Tombstone:** deletion marker (record type, ID, deletion time, version vector) kept locally and exported in backups.
 - **PendingConflict / ReplacedVersion / ImportLog (v1, local only):** both versions of an unresolved import conflict; versions replaced by a user's choice (for undo); and the record of each import (backup ID, source device, counts). See `BACKUP_FORMAT.md`.
 - **SyncDevice / ChangeLog (after v1, server):** enrolled device cursor and accepted change stream; implemented in the frozen Stage 1 code.
+
+### Stage 3 record types and fields (specified, not implemented; `dataSchemaVersion` 3)
+
+Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-021, T-025 to T-036 in DECISIONS. Fields whose shape depends on a proposal awaiting owner approval are marked *(proposed: T-0xx)*; their final shape must be approved before implementation.
+
+Common value formats: **local date** = ISO Gregorian `YYYY-MM-DD` (a real calendar date); **instant** = UTC ISO-8601 timestamp; **weekday** = integer 0 (Sunday) … 6 (Saturday), the same numbering as `weekStart`; **zone** = valid IANA time zone name.
+
+| Type / field | Shape | Rules |
+|---|---|---|
+| `taskDefinitions.recurrence` (new, optional) | absent = not recurring; otherwise `{ kind: "weekdays", weekdays, startDate, endDate }` *(proposed: T-029)* | `weekdays`: 1–7 distinct weekdays, stored in ascending order; `startDate`: local date; `endDate`: local date ≥ `startDate`, or null. Never stored as `null` (absent instead). |
+| `preferences.dailyCapacityMinutes` (new, optional) | absent = not set; otherwise whole minutes 1–1,440 *(proposed: T-031)* | Shared preference (D-017): travels in backups, merges as the preferences singleton. |
+| `calendarBlocks` (new type) | `taskId`, `startsAt`, `endsAt`, `timeZone`, `localDate`, `occurrenceDate`, `status`, `snapshot` *(time model proposed: T-030; snapshot proposed: T-036)* | see below |
+
+`calendarBlocks` fields and rules:
+
+- `taskId` — link → `taskDefinitions` (required). The only link of a block; blocks are therefore **linked** records (keep/use, never "keep both").
+- `startsAt`, `endsAt` — instants, minute precision (seconds and milliseconds zero); `endsAt` > `startsAt`; duration ≤ 24 hours.
+- `timeZone` — the zone the block was planned in (the configured zone at creation or last edit).
+- `localDate` — the local date of `startsAt` in `timeZone`; must match it exactly.
+- `occurrenceDate` — local date of the recurring item this block schedules, or null for a block not made from an unscheduled item. Not checked against the task's current recurrence (the recurrence may have changed since; plans are not rewritten).
+- `status` — `"planned"` or `"cancelled"`. Cancel and restore are ordinary edits; there is no deletion in the UI (T-027).
+- `snapshot` — `{ taskTitle (1–200), projectId (or null), projectName (≤ 200, or null), workstreamId (or null), workstreamName (≤ 200, or null) }`, taken when the block is created or edited; `workstreamId` requires `projectId`; names are null exactly when their ID is null. Snapshot IDs are history, **not links** (they may refer to items deleted later).
+- No completion, actual time, or output fields (planning only; Stage 5 adds execution sessions that may reference a block).
+
+Derived, not stored (T-026):
+
+- **Unscheduled item** of task T on local date D: T exists and is not archived; T has a recurrence; `startDate` ≤ D and (`endDate` null or D ≤ `endDate`); weekday(D) ∈ `weekdays`; and no block with `taskId` = T, `occurrenceDate` = D, `status` = planned exists. Weekday(D) comes from the Gregorian date and does not depend on the zone; which date is "today" does (configured zone).
+- **Planned minutes** of local date D in the configured zone: the sum, over blocks with `status` = planned, of the part of [`startsAt`, `endsAt`) that falls inside D (overlapping blocks are each counted) *(proposed: T-031)*.
+
+Invariants added in Stage 3:
+
+- A block's task must exist when the block is created, edited, restored, imported as active, or activated by a conflict choice or undo (live link). Editing, moving, archiving, or changing the recurrence of a task never changes its blocks.
+- A task that live blocks link to cannot be deleted (restrict, as for projects with tasks). Archiving it is allowed and leaves its blocks unchanged.
+- Nothing in the app creates, moves, shortens, cancels, or deletes a block except an explicit user action on that block (D-019, D-021); imports follow the backup rules (only new blocks are added automatically).
+- No IndexedDB schema version change is required: blocks are stored in `records` like other types. An index for date-range queries may be added as an implementation detail (a Dexie version step that rewrites no data).
 
 ## Core invariants
 

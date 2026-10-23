@@ -157,7 +157,7 @@ Today the app stores one preferences row in IndexedDB under the key `"self"` wit
 
 | Group | Fields | In backup | Why |
 |---|---|---|---|
-| **Shared preferences** (transferable) | `timeZone`, `weekStart`, `calendarDisplay`; later stages add calculation-relevant settings here (e.g. capacity defaults) | Yes, as one record of type `preferences` | Time zone and week start change how days, weeks, recurrence, and reviews are computed; all devices should agree. Calendar display is grouped here so dates look the same everywhere. |
+| **Shared preferences** (transferable) | `timeZone`, `weekStart`, `calendarDisplay`; later stages add calculation-relevant settings here (Stage 3: optional `dailyCapacityMinutes`, see "Data schema version 3") | Yes, as one record of type `preferences` | Time zone and week start change how days, weeks, recurrence, and reviews are computed; all devices should agree. Calendar display is grouped here so dates look the same everywhere. |
 | **Device settings** (device-local) | `language`, `theme`; later device-only items (e.g. reminders on this device) | Not merged. The exporting device's values are written as informational `sourceDeviceSettings` inside the payload. | A phone and a laptop may reasonably differ (e.g. dark theme on the phone only). |
 
 Rules:
@@ -225,10 +225,47 @@ Export enforces the same limits: if a device's data would exceed them, export st
 ## Versioning and upgrades
 
 - `formatVersion` describes the container and envelope; `dataSchemaVersion` describes the record types and their fields.
-- **Data schema versions so far** (all with `formatVersion` 1): **1** — shared preferences (Stage 1B); **2** — adds `projects`, `workstreams`, and `taskDefinitions` (Stage 2; fields in DATA_MODEL "Stage 2 record types"). The current app writes version 2 and reads 1 and 2. The upgrade 1 → 2 changes nothing (types were only added), but a file is checked against the types of **its** version: a version-1 file containing a Stage 2 type is refused as unknown data. A Stage 1B app refuses a version-2 file with "made by a newer version" before reading its contents. Samples: `apps/web/src/backup/samples/pps-backup-format-v1.json` (data version 1) and `pps-backup-format-v1-data-v2.json` (data version 2), both fabricated.
+- **Data schema versions so far** (all with `formatVersion` 1): **1** — shared preferences (Stage 1B); **2** — adds `projects`, `workstreams`, and `taskDefinitions` (Stage 2; fields in DATA_MODEL "Stage 2 record types"). The current app writes version 2 and reads 1 and 2. The upgrade 1 → 2 changes nothing (types were only added), but a file is checked against the types of **its** version: a version-1 file containing a Stage 2 type is refused as unknown data. A Stage 1B app refuses a version-2 file with "made by a newer version" before reading its contents. Samples: `apps/web/src/backup/samples/pps-backup-format-v1.json` (data version 1) and `pps-backup-format-v1-data-v2.json` (data version 2), both fabricated. **Version 3** (Stage 3, specified, not implemented) is described in "Data schema version 3" below.
 - The importer contains a chain of upgrade functions (`v1 → v2 → …`). An older file is upgraded in memory, then validated against the current schema. Upgrades never lose fields; removed concepts are mapped or kept in an `extra` object.
 - A file with a **newer** version than the app understands is refused with a clear message ("This backup was made by a newer version; update the app first"). It is never partially imported.
 - Every format change ships with a stored sample file of the previous version and a test that the new app imports it.
+
+### Data schema version 3 (Stage 3 — specified, not implemented)
+
+Decisions: D-019 to D-021, T-025 to T-036 (DECISIONS); fields: DATA_MODEL "Stage 3 record types and fields". `formatVersion` stays 1.
+
+**What version 3 adds** (additive only):
+
+| Change | Version 3 | Meaning when absent |
+|---|---|---|
+| `taskDefinitions` data | optional `recurrence` | not recurring |
+| `preferences` data | optional `dailyCapacityMinutes` | capacity not set |
+| new record type | `calendarBlocks` (since version 3) | — |
+
+**Why optional, never `null`, for the new fields (T-025):** a record's `contentHash` covers its `data`. If the upgrade added `recurrence: null` to every stored task, every unchanged task would get a new content hash under the same version vector; the next backup exchange with a device that has not upgraded yet (or with an older backup file) would see "same version, different content" and raise a false conflict for every task. Keeping the field absent when unused leaves existing data byte-for-byte identical. Writers must never write the new fields as `null`, and must remove the field (not write `null`) when the user turns recurrence or capacity off.
+
+**Upgrade path (no data loss):**
+
+1. **Stored data:** no rewrite. Stage 2 task definitions and preferences are already valid version-3 data (fields absent). Their data, content hashes, and version vectors stay unchanged; no IndexedDB data migration runs. (An optional new index for blocks is a schema step that rewrites no record.)
+2. **Files:** readers accept data versions 1, 2, and 3. The in-memory upgrade chain is 1 → 2 → 3, each step the identity: version 1 adds nothing to remove, version 2 tasks simply have no `recurrence`.
+3. **Validation per version** (extends Stage 2's per-version type check to fields): a file is validated against the types **and fields** of its declared version. A version-1 or version-2 file containing `recurrence`, `dailyCapacityMinutes`, or `calendarBlocks` is refused (`INVALID_PAYLOAD` for fields, `UNKNOWN_RECORD_TYPE` for the type), with nothing changed. This requires version-aware schemas for `taskDefinitions` and `preferences` (the version-2 schemas stay strict).
+4. **Writers** always write version 3 once Stage 3 ships. A Stage 2 app (data version 2) refuses a version-3 file before reading its payload ("made by a newer version"); every device must be updated before moving version-3 backups to it. A Stage 3 app imports Stage 1B and Stage 2 files unchanged.
+5. **Samples:** the committed version-1 and version-2 samples keep importing; a fabricated version-3 sample (tasks with and without recurrence, preferences with and without capacity, planned and cancelled blocks, a block with and without `occurrenceDate`) is added and imported by the tests.
+
+**Validation of version-3 content on import** (in addition to the existing order and limits):
+
+- Blocks: shape and limits from DATA_MODEL; `endsAt` after `startsAt` and at most 24 hours later; minute precision; `localDate` equal to the local date of `startsAt` in the block's `timeZone`; valid IANA `timeZone`; snapshot consistency. A violation refuses the file (`INVALID_PAYLOAD`), in any version in the file (records, carried conflicts, archived versions).
+- Links: `taskId` must be known (file or device), as for other links ("Links in every version"); a block that becomes active (new, confirmed update, "use the backup's version", "restore", undo) needs a **live** task.
+- Recurrence: weekdays 1–7 distinct values 0–6 in ascending order; `endDate` null or ≥ `startDate`; valid calendar dates.
+- `occurrenceDate` is not checked against the task's recurrence (plans are history).
+
+**Merge and conflicts:**
+
+- Blocks follow the general rules: new blocks are added; identical and older copies are skipped; a block changed only elsewhere is "newer in backup" and applied only after confirmation; a block moved, resized, cancelled, or restored on both devices is a conflict with "keep this device's" or "use the backup's" version (linked type: no "keep both"); a block deleted in a backup (only possible through earlier conflict choices) is a deletion conflict.
+- A task deleted in the backup while live blocks here link to it: "Delete here" is refused (restrict); the user can keep it.
+- Recurrence and capacity are ordinary field edits: a recurrence edited on both devices is a task conflict; a capacity edited on both devices is a preferences conflict (singleton, no "keep both").
+- Unscheduled items are derived, so they are never exported, imported, or in conflict; after an import they are recomputed from the merged tasks and blocks.
+- Import never creates, moves, or cancels a block except as the rules above allow, and capacity warnings never cause any change (D-021).
 
 ## Import flow
 

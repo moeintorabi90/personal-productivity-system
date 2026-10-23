@@ -167,6 +167,17 @@ Known limitations of the frozen Stage 1 server code, to address before it is eve
 - **Domain module:** `local/organization.ts` — commands (capture, create, edit, move, archive/restore) and pure queries (inbox, search across all three types with Persian/Arabic letter folding, active/archived filter, project outline grouped by workstream).
 - **UI:** Inbox (quick capture, search, filter, edit/organize, archive) and Projects (list, search across projects/workstreams/tasks, filter, create; project detail with workstreams, tasks grouped by workstream, and tasks directly in the project). The Backup screen labels the new types and fields and shows project/workstream names instead of IDs in conflicts.
 
+## Stage 3 design outline (specified, not implemented)
+
+Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-021 and T-025 to T-036 (T-029 to T-036 await owner approval).
+
+- **Planning stays local and separate from execution:** one new record type, `calendarBlocks` (plans only), plus optional fields on task definitions (`recurrence`) and shared preferences (`dailyCapacityMinutes`). No server, sync, or account is involved; the frozen sync code is untouched (D-016).
+- **No scheduler component.** Nothing runs in the background to place, move, or cancel work. Unscheduled items and capacity are **pure, derived computations** over tasks, blocks, preferences, and a date range, recomputed on display (D-019, D-021, T-026). Only explicit user actions write blocks.
+- **Date/time module** (pure functions, unit-tested; in `packages/shared` or the web app's domain layer): local date of an instant in a zone, the instants of a local wall time (refusing daylight-saving gaps, choosing the earlier instant for overlaps; T-030), weekday of a local date, week range from the configured week start, month ranges in the Gregorian and Jalali display calendars (T-035), day clipping of blocks for capacity. Built on the platform's `Intl` time-zone data; any new date library would be a dependency decision to raise first.
+- **Calculations read only the shared time zone** (D-020, T-028); language and display calendar affect formatting only.
+- **Backup:** registry entries for the new type and version-aware schemas for `taskDefinitions` and `preferences` (version 2 vs 3); validation, links, and relationship rules as in BACKUP_FORMAT "Data schema version 3". No IndexedDB data rewrite; an optional date index for blocks would be a schema step without data changes.
+- **UI:** Calendar (day/week/month, navigation, search/filters), Today, block forms (create/schedule/quick add/edit/cancel/restore), capacity setting in Settings, warnings in views. All forms keyboard- and screen-reader-accessible, English and Persian, LTR/RTL.
+
 ### Platform feasibility (Stage 1 findings)
 
 | Platform | Status |
