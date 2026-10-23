@@ -87,7 +87,7 @@ Manual checks on the owner's devices: see "Owner device checks (2026-10-23)" bel
 
 ## Owner device checks (2026-10-23)
 
-Reported by the owner; not run by the implementer. Build: `main` with Stage 2, deployed to GitHub Pages by the workflow run for `644843b` (completed successfully on 2026-10-21). Devices: a Windows laptop and an Android phone; **device models, OS versions, and browser names/versions unspecified**.
+Reported by the owner; not run by the implementer. Build: `main` with Stage 2, published to GitHub Pages by the workflow run for `644843b` (completed successfully on 2026-10-21; see the hosting note below for the live site's later status). Devices: a Windows laptop and an Android phone; **device models, OS versions, and browser names/versions unspecified**.
 
 | Check | Result (owner report) |
 |---|---|
@@ -142,7 +142,7 @@ Not tested in Stage 1B (remaining manual items):
 
 Production builds and `vite preview` now serve the app under `/personal-productivity-system/`, and the E2E suite runs there. New E2E test "the app works under the GitHub Pages subpath": the service worker's scope is `http://localhost:4173/personal-productivity-system/` and its script is `<base>sw.js`; the manifest link, and the manifest's `id`, `start_url`, and `scope`, resolve to the base URL; every manifest icon returns 200. All E2E tests now also fail on any same-origin request outside the base path. Verified on Windows 11 with Edge (headless): `npm.cmd run typecheck` passed; `npm.cmd test` **147 passed, 0 failed** in 18 files; `npm.cmd run test:e2e` (production build + Playwright) **5 passed, 0 failed**; the build emits hashed assets under `/personal-productivity-system/assets/` and `sw.js` precaches 11 files relative to its scope.
 
-Not verified yet at that time: the workflow `.github/workflows/deploy-pages.yml` had not run. **Update (2026-10-21):** `main` at `6055bf7` was pushed and deployed by the owner; `https://moeintorabi90.github.io/personal-productivity-system/` and its `manifest.webmanifest` returned HTTP 200 when fetched from the development PC (`Invoke-WebRequest`). The owner reports installing the app on a Windows laptop and an Android phone. Still not verified: offline use of the installed app on those devices, backup export/import between them, and iPhone.
+Not verified yet at that time: the workflow `.github/workflows/deploy-pages.yml` had not run. **Update (2026-10-21):** `main` at `6055bf7` was pushed and deployed by the owner; `https://moeintorabi90.github.io/personal-productivity-system/` and its `manifest.webmanifest` returned HTTP 200 when fetched from the development PC (`Invoke-WebRequest`). The owner reports installing the app on a Windows laptop and an Android phone. **Later status:** on 2026-10-23 the same URLs and the GitHub Pages API returned HTTP 404 (live site unavailable), and the owner reported the Windows/Android offline and backup-transfer checks as passed; see "Owner device checks (2026-10-23)". iPhone is still not verified.
 
 ## Stage 1 test report (2026-10-20)
 
