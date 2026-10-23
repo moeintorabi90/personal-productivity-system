@@ -61,50 +61,52 @@ Manual on real devices (record versions): export on Windows → import on Androi
 
 ## Stage 3 acceptance tests (specified, not implemented)
 
-Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-021, T-025 to T-036. Tests that depend on a proposal awaiting owner approval are marked with its ID and must follow the approved version. Fixed dates and zones are used so results do not depend on the test machine's clock or zone.
+Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-023, T-025 to T-036. Tests that depend on a proposal awaiting owner approval are marked with its ID and must follow the approved version. Fixed dates and zones are used so results do not depend on the test machine's clock or zone.
 
-**Date/time and settings (pure unit tests; D-020, T-028, T-030, T-035)**
+**Date/time and settings (pure unit tests; D-020, D-022, T-028, T-030, T-035)**
 
 1. "Today" and the local date of an instant come from the configured zone, not the machine's (e.g. an instant that is still the previous day in `America/New_York` but the next day in `Asia/Tehran`).
 2. Week ranges start on the configured week start for every value 0–6; the default (Saturday) gives Saturday–Friday.
 3. Changing the language (English ↔ Persian) changes no computed date, week range, recurrence result, or capacity result; it changes only labels and direction.
 4. Display calendar Gregorian / Jalali / Both changes only formatting; stored dates stay ISO Gregorian. Month ranges follow the display calendar (T-035), including Jalali month boundaries and the Jalali leap year.
-5. Daylight saving, in a zone that has it (e.g. `Europe/London`) and one that does not (`Asia/Tehran`): a wall time in the spring gap is refused, not shifted; an ambiguous wall time resolves to the earlier instant (T-030); a 23-hour and a 25-hour day are handled in day views and capacity.
+5. Daylight saving, in a zone that has it (e.g. `Europe/London`) and one that does not (`Asia/Tehran`): a wall time in the spring gap is refused, not shifted; an ambiguous wall time resolves to the earlier instant (both proposed, T-030); a 23-hour and a 25-hour day are handled in day views and capacity.
 6. Without a configured time zone, the planning screens ask for one and nothing is written; the device zone is only suggested.
 
-**Recurring tasks and unscheduled items (D-019, T-026, T-029, T-034)**
+**Recurring tasks and unscheduled items (D-019, D-023, T-026, T-029, T-034)**
 
 7. A task recurring on chosen weekdays shows exactly one unscheduled item on each matching date within start/end dates (inclusive), none outside them, none on other weekdays; archived tasks show none; non-recurring tasks show none.
-8. Scheduling an item creates a block with the user-entered start time (the form never pre-fills a time); the date and, with an estimate, the duration are pre-filled (T-033); the item then shows as scheduled; cancelling the block makes it unscheduled again; restoring makes it scheduled.
-9. No automatic action: creating, editing, or deleting tasks, changing recurrence, opening any view, passing midnight, or importing a backup never creates, moves, resizes, or cancels a block (database snapshot unchanged except for the explicit action). A past unscheduled item is never shown on a later date.
-10. Editing a task's recurrence, title, project, or archive state leaves every existing block unchanged (data, hash, version).
+8. Scheduling an item with one block: the block gets the user-entered start time (the form never pre-fills a time); the date and, with an estimate, the duration are pre-filled (T-033); the item then shows as scheduled; cancelling that block, the occurrence's only planned block, makes the item unscheduled again; restoring the block makes it scheduled again.
+9. Several blocks for one occurrence (D-023): with two blocks A and B for the same task and occurrence date, the occurrence is scheduled; cancelling A leaves it scheduled (no unscheduled item, not listed by "only unscheduled", its estimate not counted in the capacity notice); then cancelling B, the last planned block, makes it unscheduled; restoring either A or B makes it scheduled again; restoring the other changes nothing further. Blocks of another task, or of the same task with another occurrence date, never schedule it.
+10. No automatic action: creating, editing, or deleting tasks, changing recurrence, changing the time zone, opening any view, passing midnight, or importing a backup never creates, moves, resizes, or cancels a block (database snapshot unchanged except for the explicit action). A past unscheduled item is never shown on a later date.
+11. Editing a task's recurrence, title, project, or archive state leaves every existing block unchanged (data, hash, version).
 
-**Blocks and views (T-027, T-030, T-032, T-036)**
+**Blocks and views (D-022, T-027, T-030, T-032, T-036)**
 
-11. Block validation for typed-in data: end after start, at most 24 hours, minute precision, `localDate` matches `startsAt` in `timeZone`, live task link; violations are refused with no change.
-12. Edit, move, resize, cancel, restore, and quick add (inbox task + block in one transaction, T-032) work offline and persist after a restart; there is no delete.
-13. A block crossing midnight appears on both dates, clipped; overlapping blocks are both shown and neither is moved.
-14. Day, week, and month views show the right blocks, unscheduled items, and indicators for the range; navigation and "go to date" work; search by task title and filters (project incl. inbox, workstream, cancelled, only unscheduled) return the expected items; labels use the current task title, and the snapshot when the task is absent (T-036).
-15. Changing the configured zone changes no stored block; blocks display at their fixed instants in the new zone (T-030).
-16. Today shows today's blocks, unscheduled items, and capacity summary.
+12. Block validation for typed-in data: end after start, at most 24 hours, minute precision, `localDate` matches `startsAt` in `timeZone` (T-030, proposed), live task link; violations are refused with no change.
+13. Edit, move, resize, cancel, restore, and quick add (inbox task + block in one transaction, T-032) work offline and persist after a restart; there is no delete.
+14. A block crossing midnight appears on both dates, clipped; overlapping blocks are both shown and neither is moved.
+15. Day, week, and month views show the right blocks, unscheduled items, and indicators for the range; navigation and "go to date" work; search by task title and filters (project incl. inbox, workstream, cancelled, only unscheduled) return the expected items; labels use the current task title, and the snapshot when the task is absent (T-036).
+16. Changing the configured zone writes no block: every block's `startsAt`, `endsAt`, `occurrenceDate`, other fields, content hash, and version vector are unchanged; blocks display at their fixed instants in the new zone (D-022). Settings shows, next to the time-zone setting, the explanation that changing it may change the displayed time or date of existing blocks (English and Persian).
+17. Time-zone change across a date boundary (D-022): a task recurs on Monday and Tuesday; with zone `Asia/Tehran`, its Monday 2026-11-02 occurrence is scheduled 23:00–23:45 (19:30–20:15 UTC). After changing the zone to `Asia/Tokyo`, the block is displayed on Tuesday 2026-11-03, 04:30–05:15, and counts toward that date's planned minutes; its stored `occurrenceDate` is still 2026-11-02; Monday 2026-11-02 shows **no** unscheduled item for the task (no duplicate); Tuesday 2026-11-03 still shows that task's own Tuesday item as unscheduled (the moved display does not schedule it). The reverse direction is checked too: a block at 00:30 on 2026-11-02 in `Asia/Tehran` displays on Sunday 2026-11-01 in `America/New_York` and still schedules the 2026-11-02 occurrence. Changing back to `Asia/Tehran` restores the original display with no stored change.
+18. Today shows today's blocks, unscheduled items, and capacity summary.
 
 **Capacity (D-021, T-031)**
 
-17. Planned minutes per date = sum of planned (not cancelled) block durations within that date, overlaps counted, cross-midnight blocks split; warning exactly when planned minutes exceed capacity; notice when planned minutes do not exceed but planned plus unscheduled estimates do (items without estimates listed, not counted); no warning or notice without a set capacity.
-18. Saving a block that exceeds capacity is allowed after the warning; no block is ever changed, moved, cancelled, or deleted because of capacity (database unchanged apart from the explicit save).
+19. Planned minutes per date = sum of planned (not cancelled) block durations within that date, overlaps counted, cross-midnight blocks split; warning exactly when planned minutes exceed capacity; notice when planned minutes do not exceed but planned plus unscheduled estimates do (items without estimates listed, not counted); no warning or notice without a set capacity.
+20. Saving a block that exceeds capacity is allowed after the warning; no block is ever changed, moved, cancelled, or deleted because of capacity (database unchanged apart from the explicit save).
 
-**Backup and merge (T-025; BACKUP_FORMAT "Data schema version 3")**
+**Backup and merge (T-025, D-022, D-023; BACKUP_FORMAT "Data schema version 3")**
 
-19. Round-trip of blocks, recurrence, and capacity into an empty device (identical IDs, hashes, versions); merge, idempotent re-import, older copy, newer-with-confirmation, and deletion cases with blocks; a block moved on both devices is a conflict with keep/use only (no "keep both"); a task with live blocks cannot be deleted by a conflict choice.
-20. Upgrade without loss: a Stage 2 database opened by the Stage 3 app keeps every task and preference record byte-identical (data, content hash, version vector); exporting it and importing into a device that still holds a Stage 2 backup gives "already here", not conflicts.
-21. Versioning: the committed version-1 and version-2 samples import unchanged; a new fabricated version-3 sample imports; a version-2 file containing `recurrence`, `dailyCapacityMinutes`, or `calendarBlocks` is refused with no change; version 4 is refused as newer; `null` for the optional new fields is refused.
-22. Validation of every block version in a file (records, carried conflicts, archive): bad times, wrong `localDate`, unknown zone, inconsistent snapshot, or an unknown task → refused with no change.
+21. Round-trip of blocks, recurrence, and capacity into an empty device (identical IDs, hashes, versions); merge, idempotent re-import, older copy, newer-with-confirmation, and deletion cases with blocks; a block moved on both devices is a conflict with keep/use only (no "keep both"); a task with live blocks cannot be deleted by a conflict choice. After a merge, an occurrence with two blocks where the chosen version cancels only one stays scheduled (D-023); importing preferences with a different time zone changes no stored block field and no `occurrenceDate` (D-022).
+22. Upgrade without loss: a Stage 2 database opened by the Stage 3 app keeps every task and preference record byte-identical (data, content hash, version vector); exporting it and importing into a device that still holds a Stage 2 backup gives "already here", not conflicts.
+23. Versioning: the committed version-1 and version-2 samples import unchanged; a new fabricated version-3 sample imports; a version-2 file containing `recurrence`, `dailyCapacityMinutes`, or `calendarBlocks` is refused with no change; version 4 is refused as newer; `null` for the optional new fields is refused.
+24. Validation of every block version in a file (records, carried conflicts, archive): bad times, wrong `localDate`, unknown zone, inconsistent snapshot, or an unknown task → refused with no change.
 
 **End-to-end (Playwright, Edge) and manual**
 
-23. Offline in Edge: set zone and capacity, make a task recurring, schedule an item, quick-add a block, see the capacity warning, reload offline, export, import into a fresh profile, and see the same plan.
-24. Persian RTL with Jalali display: calendar navigation and forms usable; dates and weekdays correct.
-25. Manual on the owner's Windows laptop and Android phone: the Stage 3 flow offline, and moving a plan in both directions by backup.
+25. Offline in Edge: set zone and capacity, make a task recurring, schedule an item, quick-add a block, see the capacity warning, reload offline, export, import into a fresh profile, and see the same plan.
+26. Persian RTL with Jalali display: calendar navigation and forms usable; dates and weekdays correct.
+27. Manual on the owner's Windows laptop and Android phone: the Stage 3 flow offline, and moving a plan in both directions by backup.
 
 ## Release gate
 

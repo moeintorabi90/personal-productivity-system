@@ -74,9 +74,9 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Today view shows today's plan, actual work, habits/core activities, goal progress, and remaining capacity. (Stage 3: plan, unscheduled items, and capacity; the other parts arrive with their stages.)
 - [ ] A minimum-viable-day option identifies essential activities without forcing every flexible item into the schedule. (Stage 8)
 
-### Stage 3 planning contract (approved decisions D-019 to D-021; proposals awaiting approval are marked)
+### Stage 3 planning contract (approved decisions D-019 to D-023; proposals awaiting approval are marked)
 
-Status: **specified, not implemented.** Items marked *(proposed: T-0xx)* are defaults recorded in DECISIONS as **awaiting owner approval**; they are not approved decisions. Everything else follows from D-019 to D-021 and earlier recorded decisions. Data shapes: DATA_MODEL "Stage 3 record types and fields".
+Status: **specified, not implemented.** Items marked *(proposed: T-0xx)* are defaults recorded in DECISIONS as **awaiting owner approval**; they are not approved decisions. Everything else follows from D-019 to D-023 and earlier recorded decisions. Data shapes: DATA_MODEL "Stage 3 record types and fields".
 
 **Time zone, dates, and display (D-020, T-028)**
 
@@ -84,12 +84,15 @@ Status: **specified, not implemented.** Items marked *(proposed: T-0xx)* are def
 - While no time zone is set, calendar views, Today, and scheduling show a prompt to set one; the device's zone may be offered as a one-tap suggestion but is never applied silently; no planning data is written until a zone is set.
 - Display calendar: Gregorian (default), Jalali, or Both. Stored dates are always ISO Gregorian (`YYYY-MM-DD`) and instants are UTC; the display calendar never changes stored data or calculations.
 - Week start: Saturday by default, configurable (Settings). The week view always starts on it. Month view follows the display calendar *(proposed: T-035)*.
-- Blocks keep fixed instants; changing the configured zone changes how they are displayed, never the stored block. A non-existent wall time (daylight-saving gap) is refused with a message; an ambiguous one uses the earlier instant *(proposed: T-030)*.
+- A planned block represents a **fixed instant** (D-022). Changing the configured zone never edits a block's stored instants or its occurrence link (`occurrenceDate`); blocks are always displayed in the currently configured zone, so an existing block's displayed local time or calendar date may change. A block made for a recurring occurrence keeps scheduling that occurrence even when it is now displayed on another local date; no duplicate unscheduled item appears for it.
+- Settings explains, next to the time-zone setting, that changing the time zone may change the displayed time or date of existing planned blocks (D-022).
+- Entering a wall time that does not exist (daylight-saving gap) is refused with a message; an ambiguous wall time (clocks going back) uses the earlier instant *(proposed: T-030, not approved)*.
 
 **Recurring tasks and unscheduled items (D-019, T-026)**
 
 - A task definition may have a recurrence: the selected active weekdays (1–7), a start date, and an optional end date *(shape proposed: T-029)*. Turning recurrence off removes the field; no blocks change.
 - For a local date D, a recurring task has an **unscheduled item** on D when: the task exists on this device and is not archived; D is within its start and end dates; D's weekday is selected; and no planned (not cancelled) block exists for that task with occurrence date D. Items are computed when shown, not stored.
+- An occurrence is **scheduled while at least one** of its blocks (same task, occurrence date D) is planned, wherever those blocks are displayed (D-022, D-023). Cancelling one of several blocks leaves the occurrence scheduled while another planned block remains; cancelling the last planned block makes it unscheduled again; restoring any of its blocks makes it scheduled again.
 - The app never gives an unscheduled item a time, never creates a block on its own, and never moves or shortens other blocks to make room (D-019).
 - An unscheduled item of a past date stays on that date; it is never carried forward to today or later (principle 5). There is no skip/dismiss in Stage 3 *(proposed: T-034)*.
 - Editing a task's recurrence, title, project, or archive state never changes existing blocks; it changes only which unscheduled items are computed.
@@ -99,7 +102,7 @@ Status: **specified, not implemented.** Items marked *(proposed: T-0xx)* are def
 - "Schedule" on an unscheduled item opens a form with the occurrence date pre-filled and, if the task has an estimate, the duration pre-filled; the user must enter the start time *(proposed: T-033)*. Saving creates a block linked to the task with that occurrence date; the item then shows as scheduled.
 - A block may also be created for any task (recurring or not) from the calendar or the task, and by **quick add** from a title, which creates an inbox task plus the block in one step *(proposed: T-032)*.
 - Blocks can be edited: date, start, end/duration ("move" and "resize"), done by forms that work with keyboard and screen readers; drag-and-drop is optional and never the only way.
-- Blocks are **cancelled, not deleted**, and can be restored. A cancelled block does not count toward capacity, and its occurrence becomes unscheduled again unless another planned block covers it.
+- Blocks are **cancelled, not deleted**, and can be restored. A cancelled block does not count toward capacity. Cancelling a block makes its occurrence unscheduled only when no other planned block for that occurrence remains (D-023).
 - Overlapping blocks are allowed and shown side by side with an overlap marker; the app never moves either block.
 - A block's end is after its start and at most 24 hours later; a block that crosses midnight appears on both days (clipped per day).
 - Blocks are plans only: there is no "done" state or actual time in Stage 3 (actual execution is Stage 5). Past blocks remain as planned.

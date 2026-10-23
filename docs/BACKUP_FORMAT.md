@@ -232,7 +232,7 @@ Export enforces the same limits: if a device's data would exceed them, export st
 
 ### Data schema version 3 (Stage 3 — specified, not implemented)
 
-Decisions: D-019 to D-021, T-025 to T-036 (DECISIONS); fields: DATA_MODEL "Stage 3 record types and fields". `formatVersion` stays 1.
+Decisions: D-019 to D-023, T-025 to T-036 (DECISIONS); fields: DATA_MODEL "Stage 3 record types and fields". `formatVersion` stays 1.
 
 **What version 3 adds** (additive only):
 
@@ -264,7 +264,8 @@ Decisions: D-019 to D-021, T-025 to T-036 (DECISIONS); fields: DATA_MODEL "Stage
 - Blocks follow the general rules: new blocks are added; identical and older copies are skipped; a block changed only elsewhere is "newer in backup" and applied only after confirmation; a block moved, resized, cancelled, or restored on both devices is a conflict with "keep this device's" or "use the backup's" version (linked type: no "keep both"); a block deleted in a backup (only possible through earlier conflict choices) is a deletion conflict.
 - A task deleted in the backup while live blocks here link to it: "Delete here" is refused (restrict); the user can keep it.
 - Recurrence and capacity are ordinary field edits: a recurrence edited on both devices is a task conflict; a capacity edited on both devices is a preferences conflict (singleton, no "keep both").
-- Unscheduled items are derived, so they are never exported, imported, or in conflict; after an import they are recomputed from the merged tasks and blocks.
+- Unscheduled items are derived, so they are never exported, imported, or in conflict; after an import they are recomputed from the merged tasks and blocks: an occurrence is scheduled while at least one of its blocks is planned (D-023), so a conflict choice that cancels one of several blocks of an occurrence leaves it scheduled.
+- The configured time zone is a shared preference: importing a different zone changes only how blocks are displayed, never their stored instants or `occurrenceDate` (D-022).
 - Import never creates, moves, or cancels a block except as the rules above allow, and capacity warnings never cause any change (D-021).
 
 ## Import flow
