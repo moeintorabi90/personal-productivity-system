@@ -108,6 +108,31 @@ Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-023, T-
 26. Persian RTL with Jalali display: calendar navigation and forms usable; dates and weekdays correct.
 27. Manual on the owner's Windows laptop and Android phone: the Stage 3 flow offline, and moving a plan in both directions by backup.
 
+## Stage 4 acceptance tests (goals and milestones)
+
+Contract: PRODUCT_SPEC "Goals and measures" and "Stage 4 goal and milestone rules"; decisions T-037 to T-065, T-077 to T-080 (owner), T-081 to T-087 (derived). Fixed dates are used.
+
+**Goals and milestones (local commands; T-038 to T-045, T-050 to T-065, T-077 to T-086)**
+
+1. A goal needs a name; description, project, and deadline are optional; the start date defaults to today (configured zone, else device date) and may be past or future; a deadline before the start date is refused.
+2. Each kind stores its target: numeric output with whole numbers and a required unit label; time as whole minutes from hours and minutes; task count as a whole number. Decimal, zero, negative, and out-of-range targets are refused; the kind cannot change, while target and unit can.
+3. Status changes: pause, resume, complete from active and from paused, reopen to active; disallowed changes are refused; pausing or resuming never changes the dates.
+4. Archive keeps the status and restore returns to it (active, paused, completed); while archived the goal and its milestones cannot be edited.
+5. A milestone needs a name and belongs to one goal; description and deadline are optional; a deadline before the goal's start or after its deadline is refused; milestones complete and reopen independently; reopening a goal keeps every milestone's completion; a milestone can be deleted (tombstone kept).
+6. A goal date change that would put a milestone deadline outside the range is refused and names that milestone; nothing is written.
+7. No progress value is computed or stored; the UI shows the target and the "progress arrives with Stage 5" note.
+
+**Backup (T-081, T-084)**
+
+8. Round-trip: an empty device receives goals and milestones with identical IDs, hashes, and versions (`dataSchemaVersion` 4); re-import is idempotent; a goal edited on two devices is a conflict with keep/use only; a deleted milestone is not restored by an older backup.
+9. Upgrade: Stage 3 records are unchanged under the Stage 4 app and a re-import of a version-3 backup is "already here"; the committed version-1 to version-3 samples import; a fabricated version-4 sample imports.
+10. Versioning and validation: a version-3 file containing goals or milestones is refused as unknown data; version 5 is refused as newer; invalid goals or milestones (bad dates, unit rules, kind, status, target) are refused in records, carried conflicts, and the archive; unknown `projectId` or `goalId` is refused; a milestone whose `goalId` differs between versions is refused; a merged milestone outside its goal's dates is imported and flagged.
+
+**UI (component and end-to-end)**
+
+11. Goals screen in English and Persian (RTL, Jalali dates): create each kind, edit, pause/resume/complete/reopen, archive/restore, milestones with complete/reopen/delete-with-confirmation, and the date-clash message; every control is reachable by keyboard and labelled.
+12. Manual on the owner's Windows laptop and Android phone: the Stage 4 flow offline, and moving goals in both directions by backup.
+
 ## Calendar interaction, project color, and streak acceptance tests (specified 2026-10-25; not implemented)
 
 Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-076. Tests depending on an open detail (DECISIONS, open details 2–7) follow the owner's answer. The project color arrives in data version 5, after Stage 4's version 4 (T-076). Fixed dates and zones as in Stage 3.

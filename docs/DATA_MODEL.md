@@ -124,6 +124,20 @@ Invariants added in Stage 3:
 - Nothing in the app creates, moves, shortens, cancels, or deletes a block except an explicit user action on that block (D-019, D-021); imports follow the backup rules (only new blocks are added automatically).
 - No IndexedDB schema version change is required: blocks are stored in `records` like other types. An index for date-range queries may be added as an implementation detail (a Dexie version step that rewrites no data); Stage 3 does not add one (blocks are read by type).
 
+### Stage 4 record types (`dataSchemaVersion` 4)
+
+Decisions: T-037 to T-065 and T-077 to T-080 (owner), T-081 to T-087 (derived). Field names and encodings are technical choices.
+
+| Type | Data fields | Links | Rules |
+|---|---|---|---|
+| `goals` | `name` (1–200, not blank), `description` (≤ 20,000), `projectId` (or null), `startDate` (`YYYY-MM-DD`), `deadline` (`YYYY-MM-DD` or null), `kind` (`output`, `time`, or `taskCount`), `target` (whole number, see T-085), `unit` (1–50 characters, not blank; present **only** for `output`), `status` (`active`, `paused`, `completed`), `archivedAt` (UTC instant or null) | `projectId` → `projects` | `deadline` ≥ `startDate`; `kind` never changes (T-079); `target` is whole minutes for `time` |
+| `milestones` | `goalId`, `name` (1–200, not blank), `description` (≤ 20,000), `deadline` (`YYYY-MM-DD` or null), `completedAt` (UTC instant or null) | `goalId` → `goals` | `goalId` never changes; a deadline lies within the goal's range for the owner's edits (T-084) |
+
+- **No progress fields** (T-037, T-087): progress and pacing are derived from Stage 5 records later; nothing is cached now. No attribution records exist yet (T-047 to T-049 apply from Stage 5).
+- **Archive, not delete, for goals** (T-063): `archivedAt` set; `status` is kept, so restore returns to it (T-065, T-082). An archived goal and its milestones are read-only. Milestones can be deleted (tombstone, T-080).
+- Both types are **linked**: conflicts offer "keep this device's" or "use the backup's" version, never "keep both". A goal with live milestones cannot be deleted by a conflict choice (restrict).
+- No IndexedDB schema change: both types are stored in `records`.
+
 ### Stage 3 follow-up: project color (approved 2026-10-25; not implemented)
 
 Built after Stage 4 and before Stage 5 (T-076). Decisions: T-068 to T-070 (owner) and the derived technical choices in DECISIONS ("Calendar interaction, project color, and streak decisions"). Field name and encoding are technical choices.

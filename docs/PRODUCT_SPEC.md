@@ -81,7 +81,17 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] An output record may contribute to multiple goals only when the owner explicitly attributes it to each one (T-049).
 - [ ] One streak per goal, counting consecutive scheduled goal-work opportunities with attributed recorded work (T-073; "Streaks" below). (Stage 6)
 
-**Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037, T-076):** define and build goals and milestones in Stage 4 first; the Stage 3 calendar follow-up (time grid, project colors) comes next, then Stage 5. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. Exact goal and milestone behavior remains to be specified with the owner before implementation.
+**Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037, T-076):** define and build goals and milestones in Stage 4 first; the Stage 3 calendar follow-up (time grid, project colors) comes next, then Stage 5. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. The Stage 4 behavior is specified by T-037 to T-065 and the owner's answers of 2026-10-25 (T-077 to T-080), with derived technical choices T-081 to T-087; see "Stage 4 goal and milestone rules" below.
+
+**Stage 4 goal and milestone rules (owner-approved 2026-10-25; DECISIONS T-077 to T-080, derived T-081 to T-087):**
+
+- A time goal's target is entered as hours and minutes and stored as whole minutes (T-077).
+- The target type is chosen when the goal is created and never changes; the amount and the unit label stay editable (T-079).
+- A goal's deadline, when set, is on or after its start date. Changing a goal's dates so that a milestone deadline would fall outside them is refused, naming the milestones to adjust first; a milestone that a backup merge leaves outside the dates is shown with a warning (T-078, T-084).
+- Goal statuses: active, paused, completed; pause, resume, complete (also from paused), and reopen. Archiving keeps the status, and restoring returns to it. An archived goal and its milestones are read-only until restored (T-082).
+- A milestone can be completed, reopened, edited, or deleted (after a confirmation) while its goal is not archived; completing or reopening the goal never changes its milestones (T-080, T-083).
+- The start date defaults to today in the configured time zone, or on the device's calendar when no zone is set (T-086).
+- No progress, percentage, or pacing is shown in Stage 4; goal screens say that progress arrives with recorded work in Stage 5 (T-087).
 
 **Milestone completion (owner-approved 2026-10-25; DECISIONS T-038):** the owner manually marks a milestone complete. The app does not infer milestone completion from work sessions or output records.
 
