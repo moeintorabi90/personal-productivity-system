@@ -120,6 +120,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-052 | **Overall target first:** the initial goal setup has an overall target only. Weekly objectives are deferred until after Stage 5. | Keeps Stage 4 focused on goals while progress and pacing await actual records. | **Approved by the owner (2026-10-25)** |
 | T-053 | **Goal active days:** choosing which days of the week the owner plans to work toward a goal is not required in the initial goal setup; defer this choice until after Stage 5. | Keeps initial goal setup simple; active days are useful when progress and pacing can be calculated from actual records. | **Approved by the owner (2026-10-25)** |
 | T-054 | **Goal name and description:** every goal requires a name; its description is optional. | The name identifies the goal, while extra detail is useful only when the owner wants to provide it. | **Approved by the owner (2026-10-25)** |
+| T-055 | **Milestone name and description:** every milestone requires a name; its description is optional. | A clear name identifies each checkpoint, while extra detail is optional. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 
