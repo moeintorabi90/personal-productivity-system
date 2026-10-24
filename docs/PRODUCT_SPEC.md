@@ -66,6 +66,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] The owner may reopen a completed goal to make it active again (T-060).
 - [ ] Reopening a goal preserves each milestone's current completion status (T-061).
 - [ ] The owner can pause a goal and resume it later without completing or deleting it (T-044).
+- [ ] The owner may complete a paused goal without first resuming it (T-062).
 - [ ] Pausing or resuming a goal does not change its start date or deadline (T-045).
 - [ ] Actual work or output explicitly attributed to a paused goal still counts toward its progress (T-046).
 - [ ] Goal progress is derived from actual execution/output records.
