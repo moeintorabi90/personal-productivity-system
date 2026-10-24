@@ -57,6 +57,7 @@ A private, offline-first personal productivity app that helps one person set goa
 
 - [ ] Goals support numeric output, time, and task-count targets, and may contain milestones (T-040).
 - [ ] Numeric output goals use a custom unit label entered by the owner (T-050).
+- [ ] Numeric output goal targets are whole numbers in the initial release; decimal targets are deferred to a later, fuller version (T-051).
 - [ ] A goal may optionally link to a project (T-041) and has a date range whose start date defaults to today but can be changed to the past or future (T-042), a target, optional deadline (T-039), status, weekly objective, and active-day schedule.
 - [ ] The owner manually marks a goal complete; reaching its target does not automatically change its status (T-043).
 - [ ] The owner can pause a goal and resume it later without completing or deleting it (T-044).
