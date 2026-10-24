@@ -114,6 +114,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-046 | **Contributions while paused:** actual work or output explicitly attributed to a paused goal still counts toward its progress. Pausing does not erase or suppress attributed records. | Preserves the meaning of work the owner deliberately links to the goal. | **Approved by the owner (2026-10-25)** |
 | T-047 | **Session-time attribution:** the duration of one work session may be attributed to at most one goal. | Prevents the same time from being counted toward multiple goals. | **Approved by the owner (2026-10-25)** |
 | T-048 | **Task-count attribution:** one completed task may count toward at most one task-count goal. | Prevents the same task completion from being counted toward multiple goals. | **Approved by the owner (2026-10-25)** |
+| T-049 | **Output attribution:** an output record may contribute to multiple goals only when the owner explicitly attributes it to each goal. | Lets one real output support related goals without hidden or automatic double counting. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 

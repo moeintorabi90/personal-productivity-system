@@ -66,7 +66,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] The UI explains the assumptions behind pacing.
 - [ ] The duration of one work session may contribute to at most one goal (T-047).
 - [ ] One completed task may count toward at most one task-count goal (T-048).
-- [ ] Whether an output record may contribute to multiple goals remains to be decided.
+- [ ] An output record may contribute to multiple goals only when the owner explicitly attributes it to each one (T-049).
 
 **Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037):** define and build goals and milestones in Stage 4 first. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. Exact goal and milestone behavior remains to be specified with the owner before implementation.
 
