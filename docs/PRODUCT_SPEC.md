@@ -87,6 +87,8 @@ A private, offline-first personal productivity app that helps one person set goa
 
 **Independent milestone completion (owner-approved 2026-10-25; DECISIONS T-058):** each milestone can be marked complete independently; other milestones under the same goal are not prerequisites.
 
+**Milestone reopening (owner-approved 2026-10-25; DECISIONS T-059):** the owner may change a completed milestone back to incomplete.
+
 ### Planning and calendar
 
 - [ ] Calendar supports day, week, and month views, navigation, search, and filters. (Stage 3)
