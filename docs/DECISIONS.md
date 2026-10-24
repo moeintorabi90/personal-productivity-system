@@ -125,6 +125,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-057 | **Milestone date range:** when a milestone has a deadline, it must be on or after its goal's start date and, if that goal has a deadline, on or before the goal's deadline. | Keeps checkpoint dates within the period of the goal they belong to. | **Approved by the owner (2026-10-25)** |
 | T-058 | **Independent milestone completion:** completing one milestone does not require any other milestone under the same goal to be complete; the owner may mark each milestone complete independently. | Milestones can represent distinct checkpoints that do not always happen in a fixed sequence. | **Approved by the owner (2026-10-25)** |
 | T-059 | **Reopen milestone:** the owner may change a completed milestone back to incomplete. | Allows correction if it was completed by mistake or the work needs to be done again. | **Approved by the owner (2026-10-25)** |
+| T-060 | **Reopen goal:** the owner may change a completed goal back to active. | Goals remain under the owner's control if circumstances change or completion was recorded by mistake. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 
