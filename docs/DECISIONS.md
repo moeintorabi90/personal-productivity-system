@@ -106,6 +106,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-038 | **Milestone completion:** the owner manually marks a milestone as complete; the app does not infer completion from work sessions or output records. | Milestones can be tracked before Stage 5's actual-work and output records exist. | **Approved by the owner (2026-10-25)** |
 | T-039 | **Goal deadline:** deadlines are optional; a goal may be created without a deadline. | Supports ongoing goals that do not have a fixed end date. | **Approved by the owner (2026-10-25)** |
 | T-040 | **Milestone relationship:** a milestone must belong to a parent goal and cannot exist as a standalone item. | Keeps each checkpoint connected to the outcome it helps achieve. | **Approved by the owner (2026-10-25)** |
+| T-041 | **Goal project link:** linking a goal to a project is optional; goals may be general or project-specific. | Allows life-wide goals as well as goals tied to one project. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 

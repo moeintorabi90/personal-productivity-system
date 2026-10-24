@@ -59,7 +59,7 @@ After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offlin
 
 ## Stage 4 — Goals and milestones
 
-**Deliverables:** numeric/time/task-count goals and their setup; each goal may contain milestones, which cannot exist independently (T-040) and are manually marked complete by the owner (T-038). Goal deadlines are optional (T-039). **Owner-approved sequence (2026-10-25; T-037):** goal and milestone work comes first; calculated progress and pacing that depend on actual execution/output records are deferred until Stage 5 supplies those records. Do not show fabricated progress before then.
+**Deliverables:** numeric/time/task-count goals and their setup; a goal may optionally link to a project (T-041) and may contain milestones, which cannot exist independently (T-040) and are manually marked complete by the owner (T-038). Goal deadlines are optional (T-039). **Owner-approved sequence (2026-10-25; T-037):** goal and milestone work comes first; calculated progress and pacing that depend on actual execution/output records are deferred until Stage 5 supplies those records. Do not show fabricated progress before then.
 
 **Acceptance:** goal and milestone behavior is specified and approved before implementation. The shared-domain attribution checks, computed progress, and pacing based on actual execution/output records are accepted after Stage 5; pacing must honor active days, timezone, deadline, and explicit weekly objective, with assumptions shown.
 
