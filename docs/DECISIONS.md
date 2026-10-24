@@ -130,6 +130,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-062 | **Complete paused goal:** the owner may mark a paused goal complete directly, without resuming it first. | A goal can be finished even when it had been temporarily paused. | **Approved by the owner (2026-10-25)** |
 | T-063 | **Archive a goal:** the owner may archive a goal they no longer intend to pursue; archiving preserves the goal and its history rather than deleting them. | Keeps past goal and contribution records available without treating the goal as current. | **Approved by the owner (2026-10-25)** |
 | T-064 | **Restore archived goal:** the owner may restore an archived goal at any time. | Allows the owner to resume tracking a goal if priorities change. | **Approved by the owner (2026-10-25)** |
+| T-065 | **Goal status after restore:** restoring an archived goal returns it to the status it had immediately before archiving. | Preserves whether the goal was active, paused, or complete when it was archived. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 

@@ -66,6 +66,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] The owner may reopen a completed goal to make it active again (T-060).
 - [ ] The owner may archive a goal they no longer intend to pursue; its history is preserved (T-063).
 - [ ] The owner may restore an archived goal at any time (T-064).
+- [ ] Restoring an archived goal returns it to the status it had before archiving (T-065).
 - [ ] Reopening a goal preserves each milestone's current completion status (T-061).
 - [ ] The owner can pause a goal and resume it later without completing or deleting it (T-044).
 - [ ] The owner may complete a paused goal without first resuming it (T-062).
