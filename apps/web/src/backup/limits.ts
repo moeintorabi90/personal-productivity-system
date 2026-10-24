@@ -3,11 +3,12 @@ export const BACKUP_FORMAT = "pps-backup";
 export const FORMAT_VERSION = 1;
 /**
  * Record types and fields (docs/BACKUP_FORMAT.md, "Versioning and upgrades"). 1: shared
- * preferences (Stage 1B). 2: adds projects, workstreams, and task definitions (Stage 2).
- * Readers accept every version from 1 to this one; each record type declares the version that
- * introduced it.
+ * preferences (Stage 1B). 2: adds projects, workstreams, and task definitions (Stage 2). 3: adds
+ * calendar blocks and the optional fields task `recurrence` and preference `dailyCapacityMinutes`
+ * (Stage 3, T-025). Readers accept every version from 1 to this one; each record type declares the
+ * version that introduced it, and types whose fields changed keep the schema of older versions.
  */
-export const DATA_SCHEMA_VERSION = 2;
+export const DATA_SCHEMA_VERSION = 3;
 
 export const MIB = 1024 * 1024;
 export const MAX_FILE_BYTES = 32 * MIB;

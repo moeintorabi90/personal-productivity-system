@@ -258,10 +258,11 @@ function validateEntry(raw: z.infer<typeof entryShape>, type: string, id: string
  * Validates the (decrypted) payload: entry count first, then shapes, record types, schemas,
  * sizes, content hashes, and uniqueness. Throws BackupError; never touches the database.
  *
- * Upgrades (docs/BACKUP_FORMAT.md, "Versioning and upgrades"): dataSchemaVersion 1 → 2 only adds
- * record types, so a version-1 payload is already a valid version-2 payload. The payload is
- * checked against the types of ITS version: a version-1 file containing a version-2 type is
- * refused as an unknown record type.
+ * Upgrades (docs/BACKUP_FORMAT.md, "Versioning and upgrades"): 1 → 2 adds record types and 2 → 3
+ * adds a type and optional fields (absent, never null), so every upgrade is the identity. The
+ * payload is checked against the types AND fields of ITS version: a version-1 file containing a
+ * version-2 type is refused as an unknown record type, and a version-2 task with `recurrence` is
+ * refused as invalid data.
  */
 export function validatePayload(raw: unknown, fullRegistry: Registry, dataSchemaVersion = DATA_SCHEMA_VERSION): BackupPayload {
   const registry = registryForDataSchemaVersion(fullRegistry, dataSchemaVersion);

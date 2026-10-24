@@ -1,5 +1,6 @@
-import { CALENDAR_DISPLAYS, timeZoneSchema } from "@pps/shared";
+import { CALENDAR_DISPLAYS, isValidTimeZone, timeZoneSchema } from "@pps/shared";
 import { z } from "zod";
+import { isLocalDate, localDateOf } from "../planning/time.ts";
 import { SHARED_PREFERENCES_ID } from "./limits.ts";
 
 /** A reference from one record type to another, e.g. a task's `projectId`. */
@@ -24,6 +25,12 @@ export interface RecordTypeDef {
   appendOnly?: boolean;
   /** `dataSchemaVersion` that introduced this type (default 1); older files may not contain it. */
   sinceDataSchemaVersion?: number;
+  /**
+   * Schemas of older `dataSchemaVersion`s whose fields differ (T-025): a file is validated against
+   * the fields of ITS version, so a version-2 task containing `recurrence` is refused. Keyed by
+   * the last version that used the schema; `schema` is the current one.
+   */
+  olderSchemas?: { untilDataSchemaVersion: number; schema: z.ZodType<Record<string, unknown>> }[];
   /**
    * Fields that never change after creation (e.g. a workstream's project). Every version of one
    * ID — on the device and in a backup — must agree on them; otherwise the file is refused.
@@ -64,18 +71,53 @@ export function createRegistry(defs: RecordTypeDef[]): Registry {
   };
 }
 
-/** The registry as seen by a file of `dataSchemaVersion`: types introduced later are unknown. */
+/**
+ * The registry as seen by a file of `dataSchemaVersion`: types introduced later are unknown, and
+ * types whose fields changed use the schema of that version.
+ */
 export function registryForDataSchemaVersion(registry: Registry, dataSchemaVersion: number): Registry {
-  const defs = [...registry.types.values()].filter((def) => (def.sinceDataSchemaVersion ?? 1) <= dataSchemaVersion);
-  return defs.length === registry.types.size ? registry : createRegistry(defs);
+  let changed = false;
+  const defs: RecordTypeDef[] = [];
+  for (const def of registry.types.values()) {
+    if ((def.sinceDataSchemaVersion ?? 1) > dataSchemaVersion) {
+      changed = true;
+      continue;
+    }
+    const older = (def.olderSchemas ?? [])
+      .filter((o) => dataSchemaVersion <= o.untilDataSchemaVersion)
+      .sort((a, b) => a.untilDataSchemaVersion - b.untilDataSchemaVersion)[0];
+    if (older) changed = true;
+    defs.push(older ? { ...def, schema: older.schema } : def);
+  }
+  return changed ? createRegistry(defs) : registry;
 }
 
-/** Shared, transferable preferences (D-017). Language and theme are device-local and not here. */
+/* ---------- Stage 3 value formats (DATA_MODEL "Stage 3 record types and fields") ---------- */
+
+/** ISO Gregorian `YYYY-MM-DD`, a real calendar date. */
+export const localDateSchema = z.string().refine(isLocalDate, { message: "must be a calendar date YYYY-MM-DD" });
+
+/** Whole minutes of daily capacity (T-031): one value for every day. */
+export const CAPACITY_MAX_MINUTES = 24 * 60;
+
+const sharedPreferencesV1Shape = {
+  timeZone: timeZoneSchema.nullable(),
+  weekStart: z.number().int().min(0).max(6),
+  calendarDisplay: z.enum(CALENDAR_DISPLAYS),
+};
+
+/** Shared preferences as written by data schema versions 1 and 2 (no capacity). */
+const sharedPreferencesV1Schema = z.object(sharedPreferencesV1Shape).strict();
+
+/**
+ * Shared, transferable preferences (D-017). Language and theme are device-local and not here.
+ * `dailyCapacityMinutes` (version 3) is absent when not set — never null — so existing records
+ * keep their content hash (T-025).
+ */
 export const sharedPreferencesSchema = z
   .object({
-    timeZone: timeZoneSchema.nullable(),
-    weekStart: z.number().int().min(0).max(6),
-    calendarDisplay: z.enum(CALENDAR_DISPLAYS),
+    ...sharedPreferencesV1Shape,
+    dailyCapacityMinutes: z.number().int().min(1).max(CAPACITY_MAX_MINUTES).optional(),
   })
   .strict();
 
@@ -93,6 +135,7 @@ export const preferencesType: RecordTypeDef = {
   links: [],
   singletonId: SHARED_PREFERENCES_ID,
   singletonDefault: DEFAULT_SHARED_PREFERENCES,
+  olderSchemas: [{ untilDataSchemaVersion: 2, schema: sharedPreferencesV1Schema as unknown as z.ZodType<Record<string, unknown>> }],
 };
 
 /* ---------- Stage 2: organization (dataSchemaVersion 2) ---------- */
@@ -118,21 +161,45 @@ export const workstreamSchema = z
   .strict();
 export type WorkstreamData = z.infer<typeof workstreamSchema>;
 
+const taskDefinitionV2Shape = {
+  title: nameSchema,
+  notes: textSchema,
+  projectId: z.uuid().nullable(),
+  workstreamId: z.uuid().nullable(),
+  nextAction: z.string().max(NEXT_ACTION_MAX),
+  estimateMinutes: z.number().int().min(1).max(ESTIMATE_MAX_MINUTES).nullable(),
+  archivedAt: archivedAtSchema,
+};
+
+/** A task definition as written by data schema version 2 (no recurrence). */
+const taskDefinitionV2Schema = z.object(taskDefinitionV2Shape).strict();
+
+/**
+ * Weekly recurrence on selected weekdays (T-029): 1–7 distinct weekdays (0 = Sunday … 6 =
+ * Saturday) in ascending order, a required start date, and an optional inclusive end date.
+ */
+export const recurrenceSchema = z
+  .object({
+    kind: z.literal("weekdays"),
+    weekdays: z
+      .array(z.number().int().min(0).max(6))
+      .min(1)
+      .max(7)
+      .refine((days) => days.every((d, i) => i === 0 || d > days[i - 1]!), { message: "weekdays must be distinct and ascending" }),
+    startDate: localDateSchema,
+    endDate: localDateSchema.nullable(),
+  })
+  .strict()
+  .refine((r) => r.endDate === null || r.endDate >= r.startDate, { message: "endDate must not be before startDate" });
+export type Recurrence = z.infer<typeof recurrenceSchema>;
+
 /**
  * A task definition: reusable task details, not evidence that work happened. Without a project it
- * is in the quick-capture inbox. Recurrence, active weekdays, and output metrics belong to later
- * stages (calendar, outputs) and are not fields yet.
+ * is in the quick-capture inbox. `recurrence` (Stage 3, data schema version 3) is absent for a
+ * task that does not recur — never null (T-025). Output metrics belong to Stage 5.
  */
 export const taskDefinitionSchema = z
-  .object({
-    title: nameSchema,
-    notes: textSchema,
-    projectId: z.uuid().nullable(),
-    workstreamId: z.uuid().nullable(),
-    nextAction: z.string().max(NEXT_ACTION_MAX),
-    estimateMinutes: z.number().int().min(1).max(ESTIMATE_MAX_MINUTES).nullable(),
-    archivedAt: archivedAtSchema,
-  })
+  .object({ ...taskDefinitionV2Shape, recurrence: recurrenceSchema.optional() })
   .strict();
 export type TaskDefinitionData = z.infer<typeof taskDefinitionSchema>;
 
@@ -175,13 +242,75 @@ export const taskDefinitionsType: RecordTypeDef = {
   ],
   sinceDataSchemaVersion: 2,
   rule: taskDefinitionRule,
+  olderSchemas: [{ untilDataSchemaVersion: 2, schema: taskDefinitionV2Schema as unknown as RecordTypeDef["schema"] }],
+};
+
+/* ---------- Stage 3: calendar and planning (dataSchemaVersion 3) ---------- */
+
+export const CALENDAR_BLOCKS = "calendarBlocks";
+export const BLOCK_MAX_MINUTES = 24 * 60;
+
+/** A UTC instant at minute precision, exactly as `Date.prototype.toISOString` writes it. */
+const minuteInstantSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/, "must be a UTC instant at whole minutes")
+  .refine((s) => new Date(s).toISOString() === s, { message: "must be a real instant" });
+
+/** Names and IDs at the time the block was created or last edited (T-036). History, not links. */
+const blockSnapshotSchema = z
+  .object({
+    taskTitle: nameSchema,
+    projectId: z.uuid().nullable(),
+    projectName: z.string().max(NAME_MAX).nullable(),
+    workstreamId: z.uuid().nullable(),
+    workstreamName: z.string().max(NAME_MAX).nullable(),
+  })
+  .strict()
+  .refine((s) => (s.projectId === null) === (s.projectName === null) && (s.workstreamId === null) === (s.workstreamName === null), {
+    message: "a snapshot name is present exactly when its ID is",
+  })
+  .refine((s) => s.workstreamId === null || s.projectId !== null, { message: "a snapshot workstream needs a project" });
+
+/**
+ * A planned block (T-027, T-030, D-022): fixed UTC instants, the zone it was planned in and its
+ * local date there, the recurring occurrence it schedules (if any), and planned/cancelled status.
+ * Plans only: no completion or actual time (Stage 5).
+ */
+export const calendarBlockSchema = z
+  .object({
+    taskId: z.uuid(),
+    startsAt: minuteInstantSchema,
+    endsAt: minuteInstantSchema,
+    timeZone: timeZoneSchema,
+    localDate: localDateSchema,
+    occurrenceDate: localDateSchema.nullable(),
+    status: z.enum(["planned", "cancelled"]),
+    snapshot: blockSnapshotSchema,
+  })
+  .strict()
+  .superRefine((b, ctx) => {
+    const minutes = (Date.parse(b.endsAt) - Date.parse(b.startsAt)) / 60_000;
+    if (!(minutes > 0)) ctx.addIssue({ code: "custom", message: "endsAt must be after startsAt" });
+    else if (minutes > BLOCK_MAX_MINUTES) ctx.addIssue({ code: "custom", message: "a block lasts at most 24 hours" });
+    if (isValidTimeZone(b.timeZone) && isLocalDate(b.localDate) && localDateOf(b.startsAt, b.timeZone) !== b.localDate) {
+      ctx.addIssue({ code: "custom", message: "localDate must be the local date of startsAt in timeZone" });
+    }
+  });
+export type CalendarBlockData = z.infer<typeof calendarBlockSchema>;
+
+/** Blocks link to a task definition; a task with live blocks cannot be deleted (restrict). */
+export const calendarBlocksType: RecordTypeDef = {
+  type: CALENDAR_BLOCKS,
+  schema: calendarBlockSchema as unknown as RecordTypeDef["schema"],
+  links: [{ field: "taskId", target: TASK_DEFINITIONS }],
+  sinceDataSchemaVersion: 3,
 };
 
 /**
  * Record types allowed in format version 1 product backups. Later stages add their types here
  * (with schemas, links, and a new `dataSchemaVersion` when exported data changes).
  */
-export const PRODUCT_REGISTRY = createRegistry([preferencesType, projectsType, workstreamsType, taskDefinitionsType]);
+export const PRODUCT_REGISTRY = createRegistry([preferencesType, projectsType, workstreamsType, taskDefinitionsType, calendarBlocksType]);
 
 /** Data of the frozen sync code; never exported, and a file containing it is refused. */
 export const EXCLUDED_RECORD_TYPES: ReadonlySet<string> = new Set(["sync_probe", "probes", "outbox", "session"]);

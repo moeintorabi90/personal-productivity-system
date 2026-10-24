@@ -12,6 +12,7 @@ import {
   PRODUCT_REGISTRY,
   PROJECTS,
   type ProjectData,
+  type Recurrence,
   TASK_DEFINITIONS,
   type TaskDefinitionData,
   type Registry,
@@ -19,6 +20,7 @@ import {
   type WorkstreamData,
 } from "../backup/registry.ts";
 import type { LocalDb, RecordRow } from "./db.ts";
+import { requireZone } from "./planning-error.ts";
 import { putRecord } from "./records.ts";
 
 export interface Item<T> {
@@ -148,16 +150,23 @@ export async function createTask(db: LocalDb, input: TaskInput, registry: Regist
 /**
  * Edits a task, including moving it: to another project (its workstream must then belong to that
  * project, or be cleared), into a workstream, or back to the inbox (no project, no workstream).
+ * `recurrence: null` turns recurrence off by removing the field (never stored as null, T-025);
+ * leaving `recurrence` out keeps it unchanged. Existing blocks are never changed.
  */
 export async function updateTask(
   db: LocalDb,
   id: string,
-  patch: Partial<Omit<TaskDefinitionData, "archivedAt">>,
+  patch: Partial<Omit<TaskDefinitionData, "archivedAt" | "recurrence">> & { recurrence?: Recurrence | null },
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<void> {
   await db.transaction("rw", [db.records, db.tombstones, db.meta], async () => {
     const data = await current<TaskDefinitionData>(db, TASK_DEFINITIONS, id);
-    await putRecord(db, registry, TASK_DEFINITIONS, id, { ...data, ...trimmed(patch) });
+    const { recurrence, ...rest } = patch;
+    if (recurrence) await requireZone(db); // planning data needs a configured zone (T-028)
+    const next: Record<string, unknown> = { ...data, ...trimmed(rest) };
+    if (recurrence === null) delete next.recurrence;
+    else if (recurrence !== undefined) next.recurrence = { ...recurrence, weekdays: [...new Set(recurrence.weekdays)].sort((a, b) => a - b) };
+    await putRecord(db, registry, TASK_DEFINITIONS, id, next);
   });
 }
 

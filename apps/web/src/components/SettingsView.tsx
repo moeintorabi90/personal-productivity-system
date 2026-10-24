@@ -7,9 +7,11 @@ import {
 } from "@pps/shared";
 import { useId, useMemo, useState } from "react";
 import { usePreferences, useServices, useT } from "../app-context.tsx";
+import { CAPACITY_MAX_MINUTES } from "../backup/registry.ts";
 import { formatDateTime } from "../i18n/index.ts";
 import { updateDeviceSettings } from "../local/records.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
+import { useSharedPreferences } from "./planning-ui.tsx";
 
 function deviceTimeZone(): string | null {
   try {
@@ -139,12 +141,56 @@ export function SettingsView() {
         <p id={`${ids.zone}-hint`} className={zoneInvalid ? "hint hint-error" : "hint"}>
           {zoneInvalid ? t("settings.timeZoneInvalid") : t("settings.timeZoneHint")}
         </p>
+        <p className="hint" data-testid="zone-change-note">
+          {t("settings.timeZoneBlocksNote")}
+        </p>
         {suggested && suggested !== prefs.timeZone ? (
           <button type="button" className="secondary" onClick={() => save({ timeZone: suggested })}>
             {t("settings.timeZoneSuggest", { zone: suggested })}
           </button>
         ) : null}
       </div>
+
+      <CapacityField />
     </section>
+  );
+}
+
+/** One shared daily capacity in whole minutes, for every day; empty = not set (T-031). */
+function CapacityField() {
+  const t = useT();
+  const { db } = useServices();
+  const shared = useSharedPreferences();
+  const id = useId();
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? (shared.dailyCapacityMinutes === undefined ? "" : String(shared.dailyCapacityMinutes));
+  const number = Number(value);
+  const invalid = value.trim() !== "" && !(Number.isInteger(number) && number >= 1 && number <= CAPACITY_MAX_MINUTES);
+  return (
+    <div className="field">
+      <label htmlFor={id}>{t("settings.capacity")}</label>
+      <input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={CAPACITY_MAX_MINUTES}
+        step={1}
+        value={value}
+        placeholder={t("settings.capacityNotSet")}
+        aria-invalid={invalid}
+        aria-describedby={`${id}-hint`}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={async () => {
+          if (draft === null || invalid) return;
+          const saved = draft;
+          await updateSharedPreferences(db, { dailyCapacityMinutes: saved.trim() === "" ? null : Number(saved) });
+          setDraft((current) => (current === saved ? null : current)); // keep anything typed meanwhile
+        }}
+      />
+      <p id={`${id}-hint`} className={invalid ? "hint hint-error" : "hint"}>
+        {invalid ? t("settings.capacityInvalid", { max: CAPACITY_MAX_MINUTES }) : t("settings.capacityHint")}
+      </p>
+    </div>
   );
 }

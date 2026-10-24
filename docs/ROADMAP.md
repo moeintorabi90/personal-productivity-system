@@ -55,7 +55,7 @@ After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offlin
 - Planned items remain separate from actual execution: blocks have no completion or actual-time data.
 - Manual (owner's devices): the Stage 3 flow offline on the Windows laptop and Android phone, and backup transfer of blocks in both directions.
 
-**Status (2026-10-24): contract specified and approved by the owner (D-019 to D-023, T-029 to T-036); implementation not started.** The contract is to be independently reviewed before implementation begins on its own feature branch.
+**Status (2026-10-24): implemented on branch `feat/stage-3-calendar-planning` (not merged, not deployed); automated acceptance passed; manual device checks open.** Contract approved by the owner (D-019 to D-023, T-029 to T-036). Today and Calendar screens (day/week/month, navigation, go to date, search and filters), weekly recurrence on tasks, unscheduled items, scheduling and quick add, block edit/cancel/restore, daily capacity with warning and notice, English and Persian (Jalali date entry), and backups with `dataSchemaVersion` 3. All automated items pass (`TESTING.md`, "Stage 3 test report"): `npm.cmd test` 228 passed, `npm.cmd run test:e2e` 8 passed in Edge, including the offline flow moved to a fresh profile by a real backup file. **Still open:** the owner's manual checks on the Windows laptop and Android phone (acceptance item above), iPhone, independent review of the branch, merge, and deployment. Presentation details chosen during implementation: PRODUCT_SPEC "Implementation notes (Stage 3)".
 
 ## Stage 4 — Goals and milestones
 

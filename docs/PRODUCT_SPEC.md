@@ -51,7 +51,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Workstreams belong to one project; tasks' project and workstream must agree.
 - [ ] Project detail shows its workstreams and grouped tasks, including direct-to-project tasks.
 - [ ] Task definitions support a title, descriptive notes, an estimate (whole minutes), a next action, and archiving; they belong to a project and optionally a workstream, or to the inbox (no project). Implemented in Stage 2; the `notes` field is the task's description (owner decision, 2026-10-21; DECISIONS T-024).
-- [ ] Deferred task-definition fields (not implemented): **recurrence and active weekdays** in Stage 3 (calendar and planning; contract below, "Stage 3 planning contract"); **relevant output metrics** in Stage 5 (actual execution and outputs); a task **type**, only once the owner defines a clear use case and meaningful categories (DECISIONS T-024).
+- [ ] Deferred task-definition fields: **recurrence and active weekdays** — implemented in Stage 3 (contract below, "Stage 3 planning contract"); **relevant output metrics** in Stage 5 (actual execution and outputs); a task **type**, only once the owner defines a clear use case and meaningful categories (DECISIONS T-024).
 
 ### Goals and measures
 
@@ -76,7 +76,7 @@ A private, offline-first personal productivity app that helps one person set goa
 
 ### Stage 3 planning contract (approved by the owner: D-019 to D-023, T-029 to T-036)
 
-Status: **specified and approved, not implemented.** The behavior below is owner-approved: D-019 to D-023 and T-029 to T-036 (2026-10-24); the rest follows from those and earlier recorded decisions (T-025 to T-028, adopted as derived). Storage encodings in DATA_MODEL are technical choices serving this behavior. Data shapes: DATA_MODEL "Stage 3 record types and fields".
+Status: **specified and approved; implemented on branch `feat/stage-3-calendar-planning` (2026-10-24), not yet merged or deployed.** Implementation choices that refine presentation details are listed under "Implementation notes (Stage 3)" at the end of this section. The behavior below is owner-approved: D-019 to D-023 and T-029 to T-036 (2026-10-24); the rest follows from those and earlier recorded decisions (T-025 to T-028, adopted as derived). Storage encodings in DATA_MODEL are technical choices serving this behavior. Data shapes: DATA_MODEL "Stage 3 record types and fields".
 
 **Time zone, dates, and display (D-020, T-028)**
 
@@ -132,6 +132,17 @@ Status: **specified and approved, not implemented.** The behavior below is owner
 - Calendar blocks, task recurrence, and daily capacity are included in backups (`dataSchemaVersion` 3, BACKUP_FORMAT). Import never creates, moves, or cancels a block by itself beyond the usual rules (new blocks are added; changed or deleted ones need the user's choice). A conflict on a block offers "keep this device's" or "use the backup's" version (blocks are linked records). Existing data and older backup files remain importable.
 
 **Acceptance criteria (Stage 3)** — see ROADMAP Stage 3 and TESTING "Stage 3 acceptance tests".
+
+**Implementation notes (Stage 3)** — presentation choices where the contract left details open; none changes an approved decision:
+
+- Navigation gains **Today** and **Calendar**. The calendar opens in the week view on today's week; day, week, and month are chosen from a "View" list. Opening a date in the month view shows that day.
+- Day and week views are lists per date (blocks in time order, then unscheduled items, with "Schedule"), not a time grid. Overlapping planned blocks are grouped **side by side** in one row, each marked "Overlaps"; on a narrow phone screen the row wraps. A block that crosses midnight is listed on both dates and says it continues from / into the other day; a block placed on another date than its occurrence names the occurrence date.
+- Planned blocks have a dashed edge (plans, not actual work); cancelled blocks are hidden unless "Show cancelled blocks" is on, and are shown struck through.
+- The block form is shared by "Add a planned block" (calendar day: pick an existing task or type a new title for quick add), "Plan" on a task row (date pre-filled with today), "Schedule" on an unscheduled item (occurrence date and estimate pre-filled), and "Edit". The start time is never pre-filled for a new block; editing shows the block's current time. Duration is entered in whole minutes (1–1,440). A daylight-saving gap is shown as an error and disables saving; an ambiguous time shows the offset that will be used; the capacity warning for the affected date(s) appears in the form before saving.
+- Date entry follows the display calendar: the browser's date field for Gregorian, the same field with the Jalali date shown below it for "Both", and year/month/day fields in Jalali for Jalali.
+- In the month view on a phone, each date shows compact marks (planned-block count, unscheduled count, "!" when over capacity); the full text is in the date button's accessible label.
+- Today invites setting a daily capacity when none is set; Settings has the capacity field (empty = not set) and, next to the time zone, the note that a zone change may change displayed block times or dates.
+- Without a configured zone, Today and Calendar show only the prompt (with the device-zone suggestion button); the recurrence checkbox in the task editor is disabled with a hint.
 
 ### Actual work and outputs
 

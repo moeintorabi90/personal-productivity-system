@@ -2,13 +2,15 @@ import { useState } from "react";
 import { usePreferences, useDocumentPreferences, useServices, useT } from "./app-context.tsx";
 import { AccountView } from "./components/AccountView.tsx";
 import { BackupView } from "./components/BackupView.tsx";
+import { CalendarView } from "./components/CalendarView.tsx";
 import { HomeView } from "./components/HomeView.tsx";
 import { InboxView } from "./components/InboxView.tsx";
 import { ProjectsView } from "./components/ProjectsView.tsx";
 import { SettingsView } from "./components/SettingsView.tsx";
 import { ConnectivityNotice, StatusBar } from "./components/StatusBar.tsx";
+import { TodayView } from "./components/TodayView.tsx";
 
-type View = "home" | "inbox" | "projects" | "settings" | "backup" | "account";
+type View = "home" | "today" | "calendar" | "inbox" | "projects" | "settings" | "backup" | "account";
 
 export function App() {
   const prefs = usePreferences();
@@ -19,6 +21,8 @@ export function App() {
 
   const navItems: { id: View; label: string }[] = [
     { id: "home", label: t("nav.home") },
+    { id: "today", label: t("nav.today") },
+    { id: "calendar", label: t("nav.calendar") },
     { id: "inbox", label: t("nav.inbox") },
     { id: "projects", label: t("nav.projects") },
     { id: "settings", label: t("nav.settings") },
@@ -53,6 +57,10 @@ export function App() {
         <ConnectivityNotice />
         {view === "home" ? (
           <HomeView onOpenBackup={() => setView("backup")} />
+        ) : view === "today" ? (
+          <TodayView onOpenSettings={() => setView("settings")} />
+        ) : view === "calendar" ? (
+          <CalendarView onOpenSettings={() => setView("settings")} />
         ) : view === "inbox" ? (
           <InboxView />
         ) : view === "projects" ? (

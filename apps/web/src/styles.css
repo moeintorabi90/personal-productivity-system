@@ -499,6 +499,211 @@ textarea {
   }
 }
 
+/* ---------- Stage 3: calendar and planning ---------- */
+
+.calendar-toolbar {
+  align-items: end;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checkbox-field input {
+  width: auto;
+  min-height: auto;
+}
+
+.day-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  margin-block: 0.75rem;
+  background: var(--surface);
+}
+
+.day-panel h2,
+.day-panel h3 {
+  margin-block: 0 0.5rem;
+  font-size: 1rem;
+}
+
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.week-grid .day-panel {
+  margin: 0;
+}
+
+/* Planned blocks are plans, not actual work: a dashed accent edge marks them (Stage 5 adds actual work). */
+.item.block {
+  border-inline-start: 4px dashed var(--accent);
+}
+
+.item.block-cancelled {
+  opacity: 0.65;
+  border-inline-start-style: dotted;
+}
+
+.item.block-cancelled .item-title {
+  text-decoration: line-through;
+}
+
+.overlap-group {
+  list-style: none;
+}
+
+.overlap-row {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.overlap-row > .item {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.block-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.item.unscheduled {
+  border-inline-start: 4px solid var(--border);
+}
+
+.today-date {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.month-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.month-weekday {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.month-cell {
+  min-height: 4.5rem;
+}
+
+.month-day {
+  width: 100%;
+  height: 100%;
+  min-height: 4.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 0.35rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-align: start;
+  font-size: 0.8rem;
+}
+
+.month-over .month-day {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.month-number {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.month-alt,
+.month-count {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.month-compact {
+  display: none;
+  font-weight: 600;
+}
+
+.date-parts {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.date-parts legend {
+  padding: 0;
+  margin-bottom: 0.25rem;
+}
+
+.date-parts-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.date-parts-row input {
+  width: 5rem;
+}
+
+.recurrence {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+}
+
+.weekday-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-block: 0.5rem;
+}
+
+.weekday-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.weekday-pick input {
+  width: auto;
+  min-height: auto;
+}
+
+@media (max-width: 560px) {
+  .month-day {
+    min-height: 3.5rem;
+    padding: 0.2rem;
+    font-size: 0.7rem;
+  }
+  .month-count,
+  .month-over-pill {
+    display: none;
+  }
+  .month-compact {
+    display: block;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

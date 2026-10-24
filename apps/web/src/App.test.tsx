@@ -70,13 +70,13 @@ async function goTo(name: string) {
 }
 
 describe("v1 app shell (sync frozen and hidden, D-016)", () => {
-  it("renders English LTR with Home, Inbox, Projects, Settings, Backup only; no sync UI; engine not started", async () => {
+  it("renders English LTR with Home, Today, Calendar, Inbox, Projects, Settings, Backup only; no sync UI; engine not started", async () => {
     const start = vi.spyOn((await import("./sync/sync-engine.ts")).SyncEngine.prototype, "start");
     renderApp();
     expect(await screen.findByRole("heading", { level: 1, name: "Welcome" })).toBeTruthy();
     await waitFor(() => expect(document.documentElement.dir).toBe("ltr"));
     const nav = screen.getByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Home", "Inbox", "Projects", "Settings", "Backup"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Home", "Today", "Calendar", "Inbox", "Projects", "Settings", "Backup"]);
     expect(screen.queryByTestId("sync-status")).toBeNull();
     expect(screen.queryByText("Sync check notes")).toBeNull();
     expect((await screen.findByTestId("last-backup")).textContent).toBe("No backup yet");
@@ -413,10 +413,195 @@ describe("Stage 2: inbox, projects, workstreams, tasks", () => {
     fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
     await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
     const nav = screen.getByRole("navigation", { name: "اصلی" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["خانه", "صندوق ورودی", "پروژه‌ها", "تنظیمات", "پشتیبان"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["خانه", "امروز", "تقویم", "صندوق ورودی", "پروژه‌ها", "تنظیمات", "پشتیبان"]);
     fireEvent.click(within(nav).getByRole("button", { name: "صندوق ورودی" }));
     expect(await screen.findByLabelText("ثبت سریع کار یا ایده")).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "پروژه‌ها" }));
     expect(await screen.findByRole("heading", { level: 1, name: "پروژه‌ها" })).toBeTruthy();
+  });
+});
+
+describe("Stage 3: calendar, Today, recurrence, capacity", () => {
+  const field = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
+  // Monday 2026-11-02, 09:30 in Tehran. Only Date is faked; timers and IndexedDB stay real.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T06:00:00.000Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  async function blocks() {
+    return services.db.records.where("type").equals("calendarBlocks").toArray();
+  }
+
+  it("6. without a time zone the planning screens ask for one, write nothing, and only suggest the device zone", async () => {
+    renderApp();
+    await goTo("Calendar");
+    expect(await screen.findByTestId("zone-prompt")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Add a planned block/ })).toBeNull();
+    await goTo("Today");
+    expect(await screen.findByTestId("zone-prompt")).toBeTruthy();
+    expect((await getSharedPreferences(services.db)).timeZone).toBeNull();
+    expect(await blocks()).toHaveLength(0);
+    await goTo("Inbox");
+    const task = await createTask(services.db, { title: "Gym" });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit task: Gym" }));
+    expect(field("Repeats every week on selected days").disabled).toBe(true);
+    expect(screen.getByText(/Set a time zone in Settings to make a task repeat/)).toBeTruthy();
+    expect((await services.db.records.get(["taskDefinitions", task]))!.data).not.toHaveProperty("recurrence");
+  });
+
+  it("16. Settings explains that a zone change may move displayed block times or dates (English and Persian); capacity is optional", async () => {
+    renderApp();
+    await goTo("Settings");
+    expect((await screen.findByTestId("zone-change-note")).textContent).toContain("may change the displayed time or date of existing planned blocks");
+    fireEvent.change(field("Daily capacity (minutes)"), { target: { value: "1441" } });
+    expect(screen.getByText(/Enter whole minutes from 1 to/)).toBeTruthy();
+    fireEvent.change(field("Daily capacity (minutes)"), { target: { value: "300" } });
+    fireEvent.blur(field("Daily capacity (minutes)"));
+    await waitFor(async () => expect((await getSharedPreferences(services.db)).dailyCapacityMinutes).toBe(300));
+    await waitFor(() => expect(field("Daily capacity (minutes)").value).toBe("300"));
+    fireEvent.change(field("Daily capacity (minutes)"), { target: { value: "" } });
+    fireEvent.blur(field("Daily capacity (minutes)"));
+    await waitFor(async () => expect(await getSharedPreferences(services.db)).not.toHaveProperty("dailyCapacityMinutes"));
+    fireEvent.change(field("Language"), { target: { value: "fa" } });
+    await waitFor(() => expect(screen.getByTestId("zone-change-note").textContent).toContain("تغییر منطقهٔ زمانی ممکن است ساعت یا تاریخ"));
+  });
+
+  it("7–8, 18. a recurring task appears on Today; scheduling needs a user-entered start time; cancel and restore", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    await createTask(services.db, { title: "Gym", estimateMinutes: 45 });
+
+    await goTo("Inbox");
+    fireEvent.click(await screen.findByRole("button", { name: "Edit task: Gym" }));
+    await waitFor(() => expect(field("Repeats every week on selected days").disabled).toBe(false)); // zone loaded
+    fireEvent.click(field("Repeats every week on selected days"));
+    expect(field("Starts on").value).toBe("2026-11-02"); // today in the configured zone
+    expect(field("Ends on (optional)").value).toBe("");
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true); // no weekday yet
+    fireEvent.click(field("Monday"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/Repeats: Mon · from/)).toBeTruthy();
+
+    await goTo("Today");
+    const today = await screen.findByTestId("day-panel");
+    expect(screen.getByTestId("today-date").textContent).toContain("Monday");
+    expect(within(today).getByTestId("unscheduled-row").textContent).toContain("Gym");
+    fireEvent.click(within(today).getByRole("button", { name: "Schedule: Gym" }));
+    const form = await screen.findByRole("form", { name: "Schedule: Gym" });
+    expect((within(form).getByLabelText("Start time") as HTMLInputElement).value).toBe(""); // never pre-filled
+    expect((within(form).getByLabelText("Date") as HTMLInputElement).value).toBe("2026-11-02");
+    expect((within(form).getByLabelText("Duration (minutes)") as HTMLInputElement).value).toBe("45");
+    expect(within(form).getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(within(form).getByLabelText("Start time"), { target: { value: "18:30" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+
+    const row = await screen.findByTestId("block-row");
+    expect(row.textContent).toContain("18:30–19:15");
+    expect(screen.queryByTestId("unscheduled-row")).toBeNull();
+    const [stored] = await blocks();
+    expect(stored!.data).toMatchObject({ startsAt: "2026-11-02T15:00:00.000Z", occurrenceDate: "2026-11-02", status: "planned" });
+
+    fireEvent.click(within(row).getByRole("button", { name: "Cancel planned block: Gym" }));
+    expect(await screen.findByTestId("unscheduled-row")).toBeTruthy(); // cancelled blocks are hidden; the item is back
+    await goTo("Calendar");
+    fireEvent.change(await screen.findByLabelText("View"), { target: { value: "day" } });
+    fireEvent.click(screen.getByLabelText("Show cancelled blocks"));
+    const cancelled = await screen.findByTestId("block-row");
+    expect(cancelled.textContent).toContain("Cancelled");
+    fireEvent.click(within(cancelled).getByRole("button", { name: "Restore planned block: Gym" }));
+    await waitFor(() => expect(screen.queryByTestId("unscheduled-row")).toBeNull());
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("13, 15, 19–20. quick add, week and month views, navigation, go to date, filters, capacity warning that never blocks saving", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran", dailyCapacityMinutes: 60 });
+    const project = await createProject(services.db, { name: "Thesis" });
+    await createTask(services.db, { title: "Draft chapter", projectId: project });
+
+    await goTo("Calendar");
+    const week = await screen.findByTestId("week-view");
+    expect(within(week).getAllByTestId("day-panel").map((p) => p.dataset.date)).toEqual([
+      "2026-10-31", "2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06",
+    ]); // Saturday week start
+    const monday = within(week).getAllByTestId("day-panel")[2]!;
+    fireEvent.click(within(monday).getByRole("button", { name: /Add a planned block on/ }));
+    const form = await within(monday).findByRole("form", { name: "New planned block" });
+    fireEvent.change(within(form).getByLabelText("Title of the new task"), { target: { value: "Call the bank" } });
+    fireEvent.change(within(form).getByLabelText("Start time"), { target: { value: "10:00" } });
+    fireEvent.change(within(form).getByLabelText("Duration (minutes)"), { target: { value: "90" } });
+    expect((await within(form).findByTestId("form-capacity-warning")).textContent).toContain("more than your capacity");
+    fireEvent.click(within(form).getByRole("button", { name: "Save" })); // allowed after the warning
+    await waitFor(() => expect(within(monday).getByTestId("block-row").textContent).toContain("Call the bank"));
+    expect(within(monday).getByTestId("capacity").dataset.capacity).toBe("warning");
+    expect((await loadOrganization(services.db)).tasks.find((t) => t.data.title === "Call the bank")!.data.projectId).toBeNull();
+
+    // A second block for an existing task, then filters.
+    fireEvent.click(within(monday).getByRole("button", { name: /Add a planned block on/ }));
+    const second = await within(monday).findByRole("form", { name: "New planned block" });
+    const draft = (await loadOrganization(services.db)).tasks.find((t) => t.data.title === "Draft chapter")!;
+    fireEvent.change(within(second).getByLabelText("Task"), { target: { value: draft.id } });
+    fireEvent.change(within(second).getByLabelText("Start time"), { target: { value: "14:00" } });
+    fireEvent.change(within(second).getByLabelText("Duration (minutes)"), { target: { value: "30" } });
+    fireEvent.click(within(second).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(within(monday).getAllByTestId("block-row")).toHaveLength(2));
+    fireEvent.change(screen.getByLabelText("Project"), { target: { value: project } });
+    await waitFor(() => expect(within(monday).getAllByTestId("block-row").map((r) => r.textContent)).toEqual([expect.stringContaining("Draft chapter")]));
+    fireEvent.change(screen.getByLabelText("Project"), { target: { value: "inbox" } });
+    await waitFor(() => expect(within(monday).getAllByTestId("block-row").map((r) => r.textContent)).toEqual([expect.stringContaining("Call the bank")]));
+    fireEvent.change(screen.getByLabelText("Project"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Search by task title"), { target: { value: "bank" } });
+    await waitFor(() => expect(within(monday).getAllByTestId("block-row")).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText("Search by task title"), { target: { value: "" } });
+
+    // Month view (Gregorian display): November 2026, with counts and the over-capacity marker.
+    fireEvent.change(screen.getByLabelText("View"), { target: { value: "month" } });
+    const month = await screen.findByTestId("month-view");
+    expect(within(month).getByRole("heading", { level: 2 }).textContent).toBe("November 2026");
+    const cell = month.querySelector('[data-date="2026-11-02"]')!;
+    expect(cell.textContent).toContain("2 planned");
+    expect(cell.textContent).toContain("Over capacity");
+    expect(month.querySelectorAll(".month-cell")).toHaveLength(30);
+    const navigation = screen.getByRole("group", { name: "Move through the calendar" });
+    fireEvent.click(within(navigation).getByRole("button", { name: "Next" }));
+    expect(await within(screen.getByTestId("month-view")).findByText("December 2026")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Go to date"), { target: { value: "2027-02-14" } });
+    fireEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(await within(screen.getByTestId("month-view")).findByText("February 2027")).toBeTruthy();
+    fireEvent.click(within(navigation).getByRole("button", { name: "Today" }));
+    expect(await within(screen.getByTestId("month-view")).findByText("November 2026")).toBeTruthy();
+    // Opening a day from the month view.
+    fireEvent.click(within(screen.getByTestId("month-view")).getByRole("button", { name: /Monday,? 2 November 2026: 2 planned block/ }));
+    expect((await screen.findByTestId("day-panel")).dataset.date).toBe("2026-11-02");
+    expect(await blocks()).toHaveLength(2);
+  });
+
+  it("26. Persian RTL with Jalali display: Jalali month, Jalali date entry, correct weekdays", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran", calendarDisplay: "jalali" });
+    await goTo("Settings");
+    fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
+    await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+    await goTo("تقویم");
+    fireEvent.change(await screen.findByLabelText("نما"), { target: { value: "month" } });
+    const month = await screen.findByTestId("month-view");
+    expect(within(month).getByRole("heading", { level: 2 }).textContent).toContain("آبان"); // 2 Nov 2026 = 11 Aban 1405
+    const cells = [...month.querySelectorAll<HTMLElement>(".month-cell")];
+    expect(cells[0]!.dataset.date).toBe("2026-10-23"); // 1 Aban 1405
+    expect(cells).toHaveLength(30);
+    // Jalali date entry in "go to date": 1 Farvardin 1406 = 21 March 2027.
+    const goTo2 = await screen.findByRole("group", { name: "رفتن به تاریخ" }); // after the display preference loads
+    fireEvent.change(within(goTo2).getByLabelText("سال"), { target: { value: "1406" } });
+    fireEvent.change(within(goTo2).getByLabelText("ماه"), { target: { value: "1" } });
+    fireEvent.change(within(goTo2).getByLabelText("روز"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "برو" }));
+    await waitFor(() => expect(screen.getByTestId("month-view").querySelector(".month-cell")!.getAttribute("data-date")).toBe("2027-03-21"));
+    fireEvent.change(screen.getByLabelText("نما"), { target: { value: "day" } });
+    expect((await screen.findByTestId("day-panel")).textContent).toContain("یکشنبه"); // 21 March 2027 is a Sunday
   });
 });

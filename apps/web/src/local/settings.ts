@@ -32,11 +32,22 @@ export async function getSharedPreferences(db: LocalDb): Promise<SharedPreferenc
   return row ? sharedPreferencesSchema.parse(row.data) : { ...DEFAULT_SHARED_PREFERENCES };
 }
 
-/** A local edit of shared preferences (time zone, week start, calendar display). */
-export async function updateSharedPreferences(db: LocalDb, patch: Partial<SharedPreferences>): Promise<void> {
+/**
+ * A local edit of shared preferences (time zone, week start, calendar display, daily capacity).
+ * `dailyCapacityMinutes: null` removes the capacity (the field is absent when not set, never
+ * null, T-025). Changing the time zone writes no block (D-022).
+ */
+export async function updateSharedPreferences(
+  db: LocalDb,
+  patch: Partial<Omit<SharedPreferences, "dailyCapacityMinutes">> & { dailyCapacityMinutes?: number | null },
+): Promise<void> {
   await db.transaction("rw", [db.records, db.tombstones, db.meta], async () => {
     const current = await ensureSharedPreferences(db);
-    await putRecord(db, PRODUCT_REGISTRY, "preferences", SHARED_PREFERENCES_ID, { ...current.data, ...patch });
+    const { dailyCapacityMinutes, ...rest } = patch;
+    const next: Record<string, unknown> = { ...current.data, ...rest };
+    if (dailyCapacityMinutes === null) delete next.dailyCapacityMinutes;
+    else if (dailyCapacityMinutes !== undefined) next.dailyCapacityMinutes = dailyCapacityMinutes;
+    await putRecord(db, PRODUCT_REGISTRY, "preferences", SHARED_PREFERENCES_ID, next);
   });
 }
 

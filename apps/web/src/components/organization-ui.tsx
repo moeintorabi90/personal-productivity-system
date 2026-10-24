@@ -1,20 +1,19 @@
 /** Shared pieces of the Stage 2 screens (Inbox, Projects): task editing, task rows, filters. */
-import { useLiveQuery } from "dexie-react-hooks";
 import { type FormEvent, useId, useState } from "react";
-import { useServices, useT } from "../app-context.tsx";
-import { ESTIMATE_MAX_MINUTES, NAME_MAX, NEXT_ACTION_MAX, TASK_DEFINITIONS, TEXT_MAX } from "../backup/registry.ts";
-import type { MessageKey, Translate } from "../i18n/index.ts";
-import { loadOrganization, type Organization, setArchived, type StatusFilter, type TaskDefinition, updateTask } from "../local/organization.ts";
+import { usePreferences, useServices, useT } from "../app-context.tsx";
+import { ESTIMATE_MAX_MINUTES, NAME_MAX, NEXT_ACTION_MAX, type Recurrence, TASK_DEFINITIONS, TEXT_MAX } from "../backup/registry.ts";
+import { formatLocalDate, formatWeekdayShort, type MessageKey, type Translate } from "../i18n/index.ts";
+import { type Organization, setArchived, type StatusFilter, type TaskDefinition, updateTask } from "../local/organization.ts";
+import { PlanningError } from "../local/planning.ts";
 import { RecordRuleError } from "../local/records.ts";
+import { isLocalDate, localDateOf } from "../planning/time.ts";
+import { BlockForm, DateField, usePlanning, useSharedPreferences } from "./planning-ui.tsx";
 
-/** All projects, workstreams, and task definitions on this device, kept live. */
-export function useOrganization(): Organization | undefined {
-  const { db } = useServices();
-  return useLiveQuery(() => loadOrganization(db), [db]);
-}
+export { useOrganization } from "./data-hooks.ts";
 
 export function organizationError(t: Translate, error: unknown): string {
   if (error instanceof RecordRuleError) return t(`org.error.${error.code}` as MessageKey);
+  if (error instanceof PlanningError) return t(`plan.error.${error.code}` as MessageKey);
   return t("org.error.generic");
 }
 
@@ -59,7 +58,9 @@ export function TaskEditor({ task, org, onDone }: { task: TaskDefinition; org: O
   const [nextAction, setNextAction] = useState(task.data.nextAction);
   const [estimate, setEstimate] = useState(task.data.estimateMinutes === null ? "" : String(task.data.estimateMinutes));
   const [notes, setNotes] = useState(task.data.notes);
+  const [recurrence, setRecurrence] = useState<RecurrenceDraft>(() => draftOf(task.data.recurrence));
   const [error, setError] = useState<string | null>(null);
+  const recurrenceProblem = recurrenceError(recurrence);
 
   // Active choices, plus the current ones even if archived (so editing never silently moves a task).
   const projects = org.projects.filter((p) => p.data.archivedAt === null || p.id === task.data.projectId);
@@ -81,6 +82,8 @@ export function TaskEditor({ task, org, onDone }: { task: TaskDefinition; org: O
         estimateMinutes: estimateValue,
         projectId: projectId || null,
         workstreamId: projectId && workstreamId ? workstreamId : null,
+        // Unchanged recurrence is left out, so the record is not rewritten for it.
+        ...recurrencePatch(task.data.recurrence, recurrence),
       });
       onDone();
     } catch (e) {
@@ -148,13 +151,14 @@ export function TaskEditor({ task, org, onDone }: { task: TaskDefinition; org: O
         <label htmlFor={ids.notes}>{t("org.task.notes")}</label>
         <textarea id={ids.notes} value={notes} maxLength={TEXT_MAX} rows={3} onChange={(e) => setNotes(e.target.value)} />
       </div>
+      <RecurrenceFields draft={recurrence} onChange={setRecurrence} problem={recurrenceProblem} />
       {error ? (
         <p className="notice notice-error" role="alert">
           {error}
         </p>
       ) : null}
       <div className="button-row">
-        <button type="submit" disabled={!title.trim() || estimateInvalid}>
+        <button type="submit" disabled={!title.trim() || estimateInvalid || recurrenceProblem !== null}>
           {t("org.save")}
         </button>
         <button type="button" className="secondary" onClick={onDone}>
@@ -165,16 +169,140 @@ export function TaskEditor({ task, org, onDone }: { task: TaskDefinition; org: O
   );
 }
 
-/** One task in a list: title, next action, estimate, and edit/archive actions. */
+/* ---------- recurrence (Stage 3, T-029) ---------- */
+
+interface RecurrenceDraft {
+  enabled: boolean;
+  weekdays: number[];
+  startDate: string;
+  endDate: string;
+}
+
+function draftOf(recurrence: Recurrence | undefined): RecurrenceDraft {
+  return recurrence
+    ? { enabled: true, weekdays: [...recurrence.weekdays], startDate: recurrence.startDate, endDate: recurrence.endDate ?? "" }
+    : { enabled: false, weekdays: [], startDate: "", endDate: "" };
+}
+
+function recurrenceOf(draft: RecurrenceDraft): Recurrence | null {
+  if (!draft.enabled) return null;
+  return { kind: "weekdays", weekdays: [...draft.weekdays].sort((a, b) => a - b), startDate: draft.startDate, endDate: draft.endDate || null };
+}
+
+function recurrenceError(draft: RecurrenceDraft): MessageKey | null {
+  if (!draft.enabled) return null;
+  if (draft.weekdays.length === 0) return "recurrence.error.weekdays";
+  if (!isLocalDate(draft.startDate)) return "recurrence.error.start";
+  if (draft.endDate && draft.endDate < draft.startDate) return "recurrence.error.end";
+  return null;
+}
+
+/** The `recurrence` part of a task edit: left out when unchanged, null to turn it off. */
+function recurrencePatch(before: Recurrence | undefined, draft: RecurrenceDraft): { recurrence?: Recurrence | null } {
+  const next = recurrenceOf(draft);
+  if (JSON.stringify(next) === JSON.stringify(before ?? null)) return {};
+  return { recurrence: next };
+}
+
+/**
+ * Weekly recurrence on selected weekdays, a required start date (pre-filled with today's date in
+ * the configured zone when turned on), and an optional inclusive end date. No other patterns in
+ * Stage 3 (T-029). Turning it on needs a configured time zone (T-028).
+ */
+function RecurrenceFields({ draft, onChange, problem }: { draft: RecurrenceDraft; onChange: (draft: RecurrenceDraft) => void; problem: MessageKey | null }) {
+  const t = useT();
+  const prefs = usePreferences();
+  const shared = useSharedPreferences();
+  const id = useId();
+  const zone = shared.timeZone;
+  const weekdays = Array.from({ length: 7 }, (_, i) => (prefs.weekStart + i) % 7);
+  return (
+    <fieldset className="field recurrence">
+      <legend>{t("recurrence.title")}</legend>
+      <div className="checkbox-field">
+        <input
+          id={id}
+          type="checkbox"
+          checked={draft.enabled}
+          disabled={!zone && !draft.enabled}
+          onChange={(e) =>
+            onChange(
+              e.target.checked
+                ? { ...draft, enabled: true, startDate: draft.startDate || (zone ? localDateOf(Date.now(), zone) : "") }
+                : { ...draft, enabled: false },
+            )
+          }
+        />
+        <label htmlFor={id}>{t("recurrence.enable")}</label>
+      </div>
+      {!zone && !draft.enabled ? <p className="hint">{t("recurrence.needsZone")}</p> : null}
+      {draft.enabled ? (
+        <>
+          <div className="weekday-picks" role="group" aria-label={t("recurrence.weekdays")}>
+            {weekdays.map((day) => (
+              <label key={day} className="weekday-pick">
+                <input
+                  type="checkbox"
+                  checked={draft.weekdays.includes(day)}
+                  onChange={(e) =>
+                    onChange({ ...draft, weekdays: e.target.checked ? [...draft.weekdays, day] : draft.weekdays.filter((d) => d !== day) })
+                  }
+                />
+                {t(`weekday.${day}` as MessageKey)}
+              </label>
+            ))}
+          </div>
+          <DateField label={t("recurrence.start")} value={draft.startDate} onChange={(startDate) => onChange({ ...draft, startDate })} required />
+          <DateField
+            label={t("recurrence.end")}
+            value={draft.endDate}
+            onChange={(endDate) => onChange({ ...draft, endDate })}
+            hint={t("recurrence.endHint")}
+          />
+          {problem ? <p className="hint hint-error">{t(problem)}</p> : null}
+        </>
+      ) : null}
+    </fieldset>
+  );
+}
+
+function recurrenceSummary(t: Translate, recurrence: Recurrence, prefs: ReturnType<typeof usePreferences>): string {
+  const ordered = [...recurrence.weekdays].sort((a, b) => ((a - prefs.weekStart + 7) % 7) - ((b - prefs.weekStart + 7) % 7));
+  const days = ordered.map((d) => formatWeekdayShort(d, prefs.language)).join(prefs.language === "fa" ? "، " : ", ");
+  const from = formatLocalDate(recurrence.startDate, prefs, "medium");
+  return recurrence.endDate
+    ? t("recurrence.summaryUntil", { days, from, until: formatLocalDate(recurrence.endDate, prefs, "medium") })
+    : t("recurrence.summary", { days, from });
+}
+
+/** "Plan" on a task: a block for this task at a time the user enters (PRODUCT_SPEC "Scheduling"). */
+function PlanTask({ taskId, onDone }: { taskId: string; onDone: () => void }) {
+  const { ctx, zone } = usePlanning();
+  const t = useT();
+  if (!zone) return <p className="hint">{t("plan.zonePrompt")}</p>;
+  if (!ctx) return null;
+  return <BlockForm ctx={ctx} mode={{ kind: "task", taskId, date: localDateOf(Date.now(), ctx.zone) }} onDone={onDone} />;
+}
+
+/** One task in a list: title, next action, estimate, recurrence, and edit/plan/archive actions. */
 export function TaskRow({ task, org, context }: { task: TaskDefinition; org: Organization; context?: string }) {
   const t = useT();
+  const prefs = usePreferences();
   const { db } = useServices();
   const [editing, setEditing] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const archived = task.data.archivedAt !== null;
   if (editing) {
     return (
       <li className="item">
         <TaskEditor task={task} org={org} onDone={() => setEditing(false)} />
+      </li>
+    );
+  }
+  if (planning) {
+    return (
+      <li className="item">
+        <PlanTask taskId={task.id} onDone={() => setPlanning(false)} />
       </li>
     );
   }
@@ -185,11 +313,17 @@ export function TaskRow({ task, org, context }: { task: TaskDefinition; org: Org
         {context ? <span className="hint"> · {context}</span> : null}
         {task.data.nextAction ? <p className="hint">{t("org.task.nextShort", { action: task.data.nextAction })}</p> : null}
         {task.data.estimateMinutes !== null ? <p className="hint">{t("org.task.estimateShort", { minutes: task.data.estimateMinutes })}</p> : null}
+        {task.data.recurrence ? <p className="hint">{recurrenceSummary(t, task.data.recurrence, prefs)}</p> : null}
       </div>
       <div className="button-row">
         <button type="button" className="secondary" aria-label={t("org.task.editLabel", { title: task.data.title })} onClick={() => setEditing(true)}>
           {t("org.edit")}
         </button>
+        {!archived ? (
+          <button type="button" className="secondary" aria-label={t("plan.planLabel", { title: task.data.title })} onClick={() => setPlanning(true)}>
+            {t("plan.plan")}
+          </button>
+        ) : null}
         <button
           type="button"
           className="secondary"

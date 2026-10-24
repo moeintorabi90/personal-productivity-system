@@ -167,15 +167,25 @@ Known limitations of the frozen Stage 1 server code, to address before it is eve
 - **Domain module:** `local/organization.ts` — commands (capture, create, edit, move, archive/restore) and pure queries (inbox, search across all three types with Persian/Arabic letter folding, active/archived filter, project outline grouped by workstream).
 - **UI:** Inbox (quick capture, search, filter, edit/organize, archive) and Projects (list, search across projects/workstreams/tasks, filter, create; project detail with workstreams, tasks grouped by workstream, and tasks directly in the project). The Backup screen labels the new types and fields and shows project/workstream names instead of IDs in conflicts.
 
-## Stage 3 design outline (specified, not implemented)
+## Stage 3 design and implementation notes (implemented on `feat/stage-3-calendar-planning`, 2026-10-24)
 
 Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-023 and T-025 to T-036 (T-029 to T-036 approved by the owner, 2026-10-24). The components below are technical design choices, not owner decisions.
 
+Where it lives:
+
+- **Date/time module** `apps/web/src/planning/time.ts` (pure, `Intl` only; no new dependency): local date and wall time of an instant in a zone, UTC offset, `resolveWallTime` (gap refused, ambiguous → earlier instant with its offset), local-day bounds by a minute-precision search (handles 23/25-hour days and days that start after midnight), week dates, Gregorian and Jalali month dates, Jalali conversion (ICU's Persian calendar).
+- **Derived planning** `apps/web/src/planning/planning.ts` (pure): recurrence on a date, unscheduled items, "scheduled" (at least one planned block with that task and `occurrenceDate`), blocks displayed on a date, day clipping, planned minutes, overlaps and side-by-side groups, capacity status, search and filters.
+- **Commands** `apps/web/src/local/planning.ts`: create block, schedule an occurrence, quick add (inbox task + block in one transaction), edit (move/resize), cancel/restore; recurrence is set through `updateTask` (`recurrence: null` removes the field). `local/planning-error.ts` refuses planning writes without a configured zone. Capacity is a shared preference (`updateSharedPreferences`, `null` removes the field).
+- **Registry:** `calendarBlocks` (since data version 3; link `taskId` → `taskDefinitions`; block rules in its schema, so they apply to every version in a file) and per-version field schemas (`olderSchemas`) for `taskDefinitions` and `preferences`, used by `registryForDataSchemaVersion`. `DATA_SCHEMA_VERSION` = 3. No IndexedDB schema change and no date index (blocks are read from `records` by type).
+- **UI:** `Today` and `Calendar` screens (`TodayView.tsx`, `CalendarView.tsx`), shared pieces in `planning-ui.tsx` (block form, rows, capacity summary, day panel, date entry in the display calendar, zone prompt); recurrence fields and a "Plan" action in the task editor/rows; capacity and the zone-change note in Settings; Backup screen labels for the new type and fields.
+
+Design:
+
 - **Planning stays local and separate from execution:** one new record type, `calendarBlocks` (plans only), plus optional fields on task definitions (`recurrence`) and shared preferences (`dailyCapacityMinutes`). No server, sync, or account is involved; the frozen sync code is untouched (D-016).
 - **No scheduler component.** Nothing runs in the background to place, move, or cancel work. Unscheduled items and capacity are **pure, derived computations** over tasks, blocks, preferences, and a date range, recomputed on display (D-019, D-021, T-026). Only explicit user actions write blocks. Whether an occurrence is scheduled is computed from its blocks' `occurrenceDate` and status (at least one planned block; D-023), never from the date on which a block is displayed, so a time-zone change (which writes no block; D-022) cannot create a duplicate unscheduled item.
-- **Date/time module** (pure functions, unit-tested; in `packages/shared` or the web app's domain layer): local date of an instant in a zone, the instants of a local wall time (refusing daylight-saving gaps, choosing the earlier instant for overlaps and reporting its offset; T-030), weekday of a local date, week range from the configured week start, month ranges in the Gregorian and Jalali display calendars (T-035), day clipping of blocks for capacity. Built on the platform's `Intl` time-zone data; any new date library would be a dependency decision to raise first.
+- **Date/time module** (pure functions, unit-tested; in the web app's domain layer): local date of an instant in a zone, the instants of a local wall time (refusing daylight-saving gaps, choosing the earlier instant for overlaps and reporting its offset; T-030), weekday of a local date, week range from the configured week start, month ranges in the Gregorian and Jalali display calendars (T-035), day clipping of blocks for capacity. Built on the platform's `Intl` time-zone data; any new date library would be a dependency decision to raise first.
 - **Calculations read only the shared time zone** (D-020, T-028); language and display calendar affect formatting only.
-- **Backup:** registry entries for the new type and version-aware schemas for `taskDefinitions` and `preferences` (version 2 vs 3); validation, links, and relationship rules as in BACKUP_FORMAT "Data schema version 3". No IndexedDB data rewrite; an optional date index for blocks would be a schema step without data changes.
+- **Backup:** registry entries for the new type and version-aware schemas for `taskDefinitions` and `preferences` (version 2 vs 3); validation, links, and relationship rules as in BACKUP_FORMAT "Data schema version 3". No IndexedDB data rewrite; an optional date index for blocks would be a schema step without data changes (not needed so far).
 - **UI:** Calendar (day/week/month, navigation, search/filters), Today, block forms (create/schedule/quick add/edit/cancel/restore), capacity setting in Settings, warnings in views. All forms keyboard- and screen-reader-accessible, English and Persian, LTR/RTL.
 
 ### Platform feasibility (Stage 1 findings)
@@ -205,7 +215,7 @@ Not used: Docker (T-005), Prisma (T-006), npm workspaces (T-014), i18next (T-009
 
 ### Candidates for later stages (not yet selected)
 
-FullCalendar or a lighter calendar component for planning (Stage 3), a charting library such as Recharts for metrics (Stage 6), and a Jalali date utility for the date/time package. Verify current versions, licensing, bundle size, accessibility, RTL support, and offline fit when each stage starts. TanStack Query is no longer relevant to v1 (no remote data).
+A charting library such as Recharts for metrics (Stage 6). Stage 3 needed no calendar component or Jalali date library: the calendar views are plain React and dates use the platform's `Intl` (including its Persian calendar). Verify current versions, licensing, bundle size, accessibility, RTL support, and offline fit when each stage starts. TanStack Query is no longer relevant to v1 (no remote data).
 
 ### History (Stage 0 proposal, superseded)
 

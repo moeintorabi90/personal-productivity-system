@@ -17,7 +17,7 @@ import { createBackup, type ExportResult, markBackupExported } from "../backup/e
 import { applyImport, type ImportPreview, type ImportResult, previewImport } from "../backup/merge.ts";
 import { type CheckedBackup, checkBackupFile, type OpenedBackup, openCheckedBackup } from "../backup/read.ts";
 import { PRODUCT_REGISTRY } from "../backup/registry.ts";
-import { formatDateTime, type MessageKey, type Translate } from "../i18n/index.ts";
+import { formatDateTime, formatLocalDate, type MessageKey, type Translate } from "../i18n/index.ts";
 import type { DeviceIdentity, VersionEntry } from "../local/db.ts";
 import { getMeta } from "../local/db.ts";
 import { renameDevice } from "../local/repository.ts";
@@ -421,6 +421,7 @@ const TYPE_LABELS: Record<string, MessageKey> = {
   projects: "backup.type.projects",
   workstreams: "backup.type.workstreams",
   taskDefinitions: "backup.type.taskDefinitions",
+  calendarBlocks: "backup.type.calendarBlocks",
 };
 
 function typeLabel(t: Translate, type: string): string {
@@ -440,6 +441,15 @@ const FIELD_LABELS: Record<string, MessageKey> = {
   nextAction: "org.task.nextAction",
   estimateMinutes: "org.task.estimate",
   archivedAt: "org.field.archivedAt",
+  recurrence: "recurrence.title",
+  dailyCapacityMinutes: "settings.capacity",
+  taskId: "plan.form.task",
+  startsAt: "plan.field.startsAt",
+  endsAt: "plan.field.endsAt",
+  localDate: "plan.field.localDate",
+  occurrenceDate: "plan.field.occurrenceDate",
+  status: "plan.field.status",
+  snapshot: "plan.field.snapshot",
 };
 
 function formatValue(t: Translate, type: string, field: string, value: unknown, names: Map<string, string>, prefs: PreferenceFields): string {
@@ -447,6 +457,23 @@ function formatValue(t: Translate, type: string, field: string, value: unknown, 
     if (field === "timeZone") return value ? String(value) : t("settings.timeZoneNotSet");
     if (field === "weekStart") return t(`weekday.${value}` as MessageKey);
     if (field === "calendarDisplay") return t(`settings.calendar.${value}` as MessageKey);
+    if (field === "dailyCapacityMinutes") return t("plan.minutes", { m: Number(value) });
+  }
+  if (type === "calendarBlocks") {
+    if (field === "taskId") return names.get(String(value)) ?? t("org.unknownItem");
+    if (field === "startsAt" || field === "endsAt") return formatDateTime(String(value), prefs);
+    if (field === "localDate") return formatLocalDate(String(value), prefs, "medium");
+    if (field === "occurrenceDate") return value ? formatLocalDate(String(value), prefs, "medium") : "—";
+    if (field === "status") return t(value === "cancelled" ? "plan.cancelled" : "plan.planned");
+    if (field === "snapshot") {
+      const s = value as { taskTitle: string; projectName: string | null; workstreamName: string | null };
+      return [s.taskTitle, s.projectName, s.workstreamName].filter(Boolean).join(" · ");
+    }
+  }
+  if (field === "recurrence") {
+    const r = value as { weekdays: number[]; startDate: string; endDate: string | null };
+    const days = r.weekdays.map((d) => t(`weekday.${d}` as MessageKey)).join(", ");
+    return `${days} · ${formatLocalDate(r.startDate, prefs, "medium")}${r.endDate ? ` – ${formatLocalDate(r.endDate, prefs, "medium")}` : ""}`;
   }
   if (field === "projectId" || field === "workstreamId") {
     // Links show the item's name on this device; an item not here shows as unknown (never a guess).
@@ -467,6 +494,7 @@ function EntryView({ type, entry, other, missingLabel }: { type: string; entry: 
   const names = new Map<string, string>([
     ...(org?.projects.map((p) => [p.id, p.data.name] as const) ?? []),
     ...(org?.workstreams.map((w) => [w.id, w.data.name] as const) ?? []),
+    ...(org?.tasks.map((task) => [task.id, task.data.title] as const) ?? []),
   ]);
   const otherData = other && !other.deleted ? other.envelope.data : {};
   return (
