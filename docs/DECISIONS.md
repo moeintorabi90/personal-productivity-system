@@ -98,6 +98,12 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-035 | **Views by display calendar:** the week view always starts on the configured week start; month boundaries follow the selected display calendar — Gregorian months for "Gregorian", Jalali months for "Jalali", and Gregorian months with Jalali day labels for "Both". Stored dates remain ISO Gregorian (`YYYY-MM-DD`). | D-020 makes Jalali a display choice; month boundaries are a presentation question. | **Approved by the owner (2026-10-24)** |
 | T-036 | **Block snapshots:** each block stores a snapshot (task title, project and workstream IDs and names) taken when it is created and refreshed when the **block itself** is edited — not merely because a task, project, or workstream name later changes. Calendar views show the task's **current** title; the snapshot is used when the task is unavailable on that device and for historical context (reviews, sessions in later stages). | DATA_MODEL "historical snapshots"; current names avoid stale titles in upcoming plans. | **Approved by the owner (2026-10-24)** |
 
+## Goal and milestone sequencing
+
+| ID | Decision | Reason | Status |
+|---|---|---|---|
+| T-037 | **Stage 4/5 sequence:** define and build goals and milestones first in Stage 4. Calculated progress and pacing that depend on actual execution or output records are delivered only after Stage 5 provides those records. Goal progress must not be fabricated before its source records exist. | Stage 4's current progress and pacing requirements depend on actual work and output data, which Stage 5 introduces. | **Approved by the owner (2026-10-25)** |
+
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 
 | Criterion | Prisma 7.10.1 (latest stable; `latest` tag is 8.0.0-rc.23) | Plain SQL + `pg` 8.23 |

@@ -62,6 +62,8 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] The UI explains the assumptions behind pacing.
 - [ ] Time/task-count contribution links to at most one goal per task/session as specified by the domain rules; output metrics may contribute to multiple goals.
 
+**Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037):** define and build goals and milestones in Stage 4 first. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. Exact goal and milestone behavior remains to be specified with the owner before implementation.
+
 ### Planning and calendar
 
 - [ ] Calendar supports day, week, and month views, navigation, search, and filters. (Stage 3)
