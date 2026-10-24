@@ -87,7 +87,7 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 - **PendingConflict / ReplacedVersion / ImportLog (v1, local only):** both versions of an unresolved import conflict; versions replaced by a user's choice (for undo); and the record of each import (backup ID, source device, counts). See `BACKUP_FORMAT.md`.
 - **SyncDevice / ChangeLog (after v1, server):** enrolled device cursor and accepted change stream; implemented in the frozen Stage 1 code.
 
-### Stage 3 record types and fields (implemented on `feat/stage-3-calendar-planning`, not merged; `dataSchemaVersion` 3)
+### Stage 3 record types and fields (implemented and merged into `main`; `dataSchemaVersion` 3)
 
 Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-023, T-025 to T-036 in DECISIONS. The behavior behind each field is owner-approved (D-022, D-023, T-029 to T-036, 2026-10-24); field names and value encodings below are technical implementation choices serving that behavior.
 

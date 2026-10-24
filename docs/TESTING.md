@@ -59,7 +59,7 @@ Until later stages add real product types, items 1–9, 14, 15, and 17 use test-
 
 Manual on real devices (record versions): export on Windows → import on Android, and the reverse; file picker/share sheet behavior; iPhone (Safari Home Screen app) export/import with `.json`; install and offline relaunch of the PWA on each platform (D-013).
 
-## Stage 3 acceptance tests (implemented on `feat/stage-3-calendar-planning`; results in "Stage 3 test report")
+## Stage 3 acceptance tests (implemented and merged into `main`; results in "Stage 3 test report")
 
 Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-023, T-025 to T-036. Tests are marked with the decision IDs they check (all approved by the owner, 2026-10-24). Fixed dates and zones are used so results do not depend on the test machine's clock or zone.
 
@@ -136,7 +136,20 @@ Coverage by acceptance item ("Stage 3 acceptance tests" above):
 
 Fixes found while testing: (1) the capacity field could drop an edit typed while the previous save was finishing (it now clears its draft only if unchanged); (2) month cells on a phone wrapped "Over capacity" letter by letter (now compact marks with the full text in the label); (3) two component tests clicked before shared preferences had loaded (now they wait). Overlapping blocks were first listed one under another; they are now grouped side by side as PRODUCT_SPEC says.
 
-Not tested yet: **item 27** (manual on the owner's Windows laptop and Android phone — the Stage 3 flow offline and moving a plan by backup in both directions); iPhone; a screen-reader pass of the new forms; behavior across a real midnight with the app left open (covered only by the pure functions and the per-minute clock re-read).
+### Owner Stage 3 device checks (2026-10-25)
+
+Reported by the owner; not run by the implementer. Build: `main` at `fe83acf`, published as version 0.4.0. Devices: the owner's Windows laptop and Android phone; device models, OS versions, and browser names/versions unspecified.
+
+| Check | Result (owner report) |
+|---|---|
+| Stage 3 planning flow works offline on Windows | Passed |
+| Stage 3 planning flow works offline on Android | Passed |
+| Backup transfer Windows → Android | Passed |
+| Backup transfer Android → Windows | Passed |
+
+This completes manual acceptance item 27 as reported by the owner. No claim is made about device or browser versions. Still not tested: iPhone; a screen-reader pass of the new forms; behavior across a real midnight with the app left open (covered only by the pure functions and the per-minute clock re-read).
+
+**Deployment check (2026-10-25):** the GitHub Actions workflow for `fe83acf` completed successfully (run [40087458776](https://github.com/moeintorabi90/personal-productivity-system/actions/runs/40087458776)). From the development PC, the app URL and `manifest.webmanifest` returned HTTP 200; the served JavaScript bundle identified version 0.4.0. This verifies the deployment and static assets from this PC, not reachability from every network or region.
 
 ## Stage 2 test report (2026-10-21)
 
@@ -176,7 +189,7 @@ Reported by the owner; not run by the implementer. Build: `main` with Stage 2, p
 
 Still open (not in the report): iPhone (Safari Home Screen app) install, offline use, and export/import; a conflict from the same project edited independently on both devices, then merged by backup; other on-device items not listed above (e.g. encrypted backups, the share sheet, refused files, persistent-storage grant and eviction, update after a new build).
 
-Hosting note: on 2026-10-23 the app URL `https://moeintorabi90.github.io/personal-productivity-system/`, its `manifest.webmanifest`, and the GitHub Pages API for the repository returned HTTP 404 from the development PC (`Invoke-WebRequest` / `Invoke-RestMethod`), while the repository is public and the Actions API lists the deployment runs as successful. The site therefore does not appear to be served at that time; GitHub Pages may need to be turned on again (Settings → Pages → Source: GitHub Actions) and the workflow re-run. Not changed by the implementer.
+Historical hosting note: on 2026-10-23 the app URL, its manifest, and the GitHub Pages API returned HTTP 404 from the development PC even though earlier Actions runs had succeeded. The site was restored by the successful deployment for `fe83acf`; see the Deployment check above.
 
 ## Stage 1B test report (2026-10-21)
 
@@ -217,7 +230,7 @@ Not tested in Stage 1B (remaining manual items):
 
 Production builds and `vite preview` now serve the app under `/personal-productivity-system/`, and the E2E suite runs there. New E2E test "the app works under the GitHub Pages subpath": the service worker's scope is `http://localhost:4173/personal-productivity-system/` and its script is `<base>sw.js`; the manifest link, and the manifest's `id`, `start_url`, and `scope`, resolve to the base URL; every manifest icon returns 200. All E2E tests now also fail on any same-origin request outside the base path. Verified on Windows 11 with Edge (headless): `npm.cmd run typecheck` passed; `npm.cmd test` **147 passed, 0 failed** in 18 files; `npm.cmd run test:e2e` (production build + Playwright) **5 passed, 0 failed**; the build emits hashed assets under `/personal-productivity-system/assets/` and `sw.js` precaches 11 files relative to its scope.
 
-Not verified yet at that time: the workflow `.github/workflows/deploy-pages.yml` had not run. **Update (2026-10-21):** `main` at `6055bf7` was pushed and deployed by the owner; `https://moeintorabi90.github.io/personal-productivity-system/` and its `manifest.webmanifest` returned HTTP 200 when fetched from the development PC (`Invoke-WebRequest`). The owner reports installing the app on a Windows laptop and an Android phone. **Later status:** on 2026-10-23 the same URLs and the GitHub Pages API returned HTTP 404 (live site unavailable), and the owner reported the Windows/Android offline and backup-transfer checks as passed; see "Owner device checks (2026-10-23)". iPhone is still not verified.
+Not verified yet at that time: the workflow `.github/workflows/deploy-pages.yml` had not run. **Update (2026-10-21):** `main` at `6055bf7` was pushed and deployed by the owner; the app and manifest returned HTTP 200 from the development PC. The owner reports installing the app on a Windows laptop and an Android phone. **Later status (2026-10-23):** the URLs and Pages API returned HTTP 404; the site was restored by the successful `fe83acf` deployment on 2026-10-25 (see the Deployment check under Stage 3). iPhone is still not verified.
 
 ## Stage 1 test report (2026-10-20)
 

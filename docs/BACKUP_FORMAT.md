@@ -230,7 +230,7 @@ Export enforces the same limits: if a device's data would exceed them, export st
 - A file with a **newer** version than the app understands is refused with a clear message ("This backup was made by a newer version; update the app first"). It is never partially imported.
 - Every format change ships with a stored sample file of the previous version and a test that the new app imports it.
 
-### Data schema version 3 (Stage 3 — implemented on `feat/stage-3-calendar-planning`, not merged)
+### Data schema version 3 (Stage 3 — implemented and merged into `main`)
 
 Decisions: D-019 to D-023, T-025 to T-036 (DECISIONS); fields: DATA_MODEL "Stage 3 record types and fields". `formatVersion` stays 1.
 
