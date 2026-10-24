@@ -40,7 +40,7 @@ After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offlin
 
 **Deliverables:** day/week/month calendar, block editing, recurrence, quick add, search/filter, capacity cues, Today screen. Includes the task-definition fields deferred from Stage 2: recurrence and active weekdays (DECISIONS T-024; new `dataSchemaVersion` with an upgrade step). Contract: PRODUCT_SPEC "Stage 3 planning contract", DATA_MODEL "Stage 3 record types and fields", BACKUP_FORMAT "Data schema version 3", TESTING "Stage 3 acceptance tests".
 
-**Owner decisions (2026-10-24):** D-019 (recurring tasks appear as unscheduled items on their active weekdays; never given a time automatically; other planned work never moved), D-020 (Gregorian display by default, Jalali selectable; Saturday week start by default, configurable; calculations in the explicitly configured time zone; language never changes calendar or calculations), D-021 (configurable daily capacity; warnings only; nothing rescheduled, changed, or deleted automatically), D-022 (blocks are fixed instants shown in the configured zone; a zone change edits no block and keeps each block scheduling its original occurrence), D-023 (an occurrence stays scheduled while at least one of its blocks is planned).
+**Owner decisions (2026-10-24):** D-019 (recurring tasks appear as unscheduled items on their active weekdays; never given a time automatically; other planned work never moved), D-020 (Gregorian display by default, Jalali selectable; Saturday week start by default, configurable; calculations in the explicitly configured time zone; language never changes calendar or calculations), D-021 (configurable daily capacity; warnings only; nothing rescheduled, changed, or deleted automatically), D-022 (blocks are fixed instants shown in the configured zone; a zone change edits no block and keeps each block scheduling its original occurrence), D-023 (an occurrence stays scheduled while at least one of its blocks is planned). The owner also approved the contract details T-029 to T-036 (DECISIONS): weekly-by-weekday recurrence with start and optional end date; block time zone, local date, and daylight-saving input rules; one shared daily capacity, unset by default; quick add; the scheduling form; no skip/dismiss; month boundaries by display calendar; block snapshots.
 
 **Acceptance:**
 
@@ -55,7 +55,7 @@ After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offlin
 - Planned items remain separate from actual execution: blocks have no completion or actual-time data.
 - Manual (owner's devices): the Stage 3 flow offline on the Windows laptop and Android phone, and backup transfer of blocks in both directions.
 
-**Status (2026-10-24): contract specified; implementation not started.** The fixed-instant time model and occurrence counting are approved (D-022, D-023). Before implementation, the owner should approve or change the remaining proposed defaults T-029 to T-036 (DECISIONS); T-029 (recurrence shape), the still-proposed part of T-030 (stored `timeZone`/`localDate` fields), T-031 (capacity shape and default), and T-036 (block snapshot) affect the stored data and must be settled first; the others, including T-030's daylight-saving input rules, affect only behavior and screens.
+**Status (2026-10-24): contract specified and approved by the owner (D-019 to D-023, T-029 to T-036); implementation not started.** The contract is to be independently reviewed before implementation begins on its own feature branch.
 
 ## Stage 4 — Goals and milestones
 

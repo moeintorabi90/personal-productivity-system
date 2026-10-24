@@ -89,32 +89,32 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 
 ### Stage 3 record types and fields (specified, not implemented; `dataSchemaVersion` 3)
 
-Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-023, T-025 to T-036 in DECISIONS. Fields whose shape depends on a proposal awaiting owner approval are marked *(proposed: T-0xx)*; their final shape must be approved before implementation.
+Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-023, T-025 to T-036 in DECISIONS. The behavior behind each field is owner-approved (D-022, D-023, T-029 to T-036, 2026-10-24); field names and value encodings below are technical implementation choices serving that behavior.
 
 Common value formats: **local date** = ISO Gregorian `YYYY-MM-DD` (a real calendar date); **instant** = UTC ISO-8601 timestamp; **weekday** = integer 0 (Sunday) … 6 (Saturday), the same numbering as `weekStart`; **zone** = valid IANA time zone name.
 
 | Type / field | Shape | Rules |
 |---|---|---|
-| `taskDefinitions.recurrence` (new, optional) | absent = not recurring; otherwise `{ kind: "weekdays", weekdays, startDate, endDate }` *(proposed: T-029)* | `weekdays`: 1–7 distinct weekdays, stored in ascending order; `startDate`: local date; `endDate`: local date ≥ `startDate`, or null. Never stored as `null` (absent instead). |
-| `preferences.dailyCapacityMinutes` (new, optional) | absent = not set; otherwise whole minutes 1–1,440 *(proposed: T-031)* | Shared preference (D-017): travels in backups, merges as the preferences singleton. |
-| `calendarBlocks` (new type) | `taskId`, `startsAt`, `endsAt`, `timeZone`, `localDate`, `occurrenceDate`, `status`, `snapshot` *(fixed instants approved: D-022; `timeZone`/`localDate` proposed: T-030; snapshot proposed: T-036)* | see below |
+| `taskDefinitions.recurrence` (new, optional) | absent = not recurring; otherwise `{ kind: "weekdays", weekdays, startDate, endDate }` (T-029) | `weekdays`: 1–7 distinct weekdays (0 = Sunday … 6 = Saturday), stored in ascending order; `startDate`: local date (required; defaults in the UI to the current local date when recurrence is enabled); `endDate`: local date ≥ `startDate` (inclusive), or null. Never stored as `null` (absent instead). |
+| `preferences.dailyCapacityMinutes` (new, optional) | absent = not set; otherwise whole minutes 1–1,440, applying to every day (T-031) | Shared preference (D-017): travels in backups, merges as the preferences singleton. |
+| `calendarBlocks` (new type) | `taskId`, `startsAt`, `endsAt`, `timeZone`, `localDate`, `occurrenceDate`, `status`, `snapshot` (time model: D-022, T-030; snapshot: T-036) | see below |
 
 `calendarBlocks` fields and rules:
 
 - `taskId` — link → `taskDefinitions` (required). The only link of a block; blocks are therefore **linked** records (keep/use, never "keep both").
 - `startsAt`, `endsAt` — fixed UTC instants (D-022), minute precision (seconds and milliseconds zero); `endsAt` > `startsAt`; duration ≤ 24 hours. Displayed in the currently configured zone; a zone change never rewrites them.
-- `timeZone` — the zone the block was planned in (the configured zone at creation or last edit) *(proposed: T-030)*.
-- `localDate` — the local date of `startsAt` in `timeZone`; must match it exactly *(proposed: T-030)*. It is not the display date: after a zone change, views place the block by `startsAt` in the configured zone.
+- `timeZone` — the zone the block was planned in (the configured zone at creation or last edit), as an IANA zone name (T-030).
+- `localDate` — the local date of `startsAt` in `timeZone`; must match it exactly (T-030). It is not the display date: after a zone change, views place the block by `startsAt` in the configured zone.
 - `occurrenceDate` — local date of the recurring item this block schedules, or null for a block not made from an unscheduled item. Changing the configured zone never changes it (D-022), even when the block is then displayed on another date. Not checked against the task's current recurrence (the recurrence may have changed since; plans are not rewritten).
 - `status` — `"planned"` or `"cancelled"`. Cancel and restore are ordinary edits; there is no deletion in the UI (T-027).
-- `snapshot` — `{ taskTitle (1–200), projectId (or null), projectName (≤ 200, or null), workstreamId (or null), workstreamName (≤ 200, or null) }`, taken when the block is created or edited; `workstreamId` requires `projectId`; names are null exactly when their ID is null. Snapshot IDs are history, **not links** (they may refer to items deleted later).
+- `snapshot` — `{ taskTitle (1–200), projectId (or null), projectName (≤ 200, or null), workstreamId (or null), workstreamName (≤ 200, or null) }`, taken when the block is created and refreshed when the block itself is edited, never because a task, project, or workstream is renamed (T-036); `workstreamId` requires `projectId`; names are null exactly when their ID is null. Snapshot IDs are history, **not links** (they may refer to items deleted later).
 - No completion, actual time, or output fields (planning only; Stage 5 adds execution sessions that may reference a block).
 
 Derived, not stored (T-026):
 
 - **Unscheduled item** of task T on local date D: T exists and is not archived; T has a recurrence; `startDate` ≤ D and (`endDate` null or D ≤ `endDate`); weekday(D) ∈ `weekdays`; and no block with `taskId` = T, `occurrenceDate` = D, `status` = planned exists. Weekday(D) comes from the Gregorian date and does not depend on the zone; which date is "today" does (configured zone).
 - **Scheduled occurrence** (D-022, D-023): the occurrence (T, D) is scheduled while **at least one** block with `taskId` = T, `occurrenceDate` = D has `status` = planned, regardless of the date on which that block is displayed in the configured zone. Cancelling one such block leaves it scheduled while another planned one remains; it becomes unscheduled only when the last one is cancelled, and scheduled again when any one is restored. A block displayed on date D′ never schedules task T's occurrence on D′ unless its `occurrenceDate` is D′.
-- **Planned minutes** of local date D in the configured zone: the sum, over blocks with `status` = planned, of the part of [`startsAt`, `endsAt`) that falls inside D (overlapping blocks are each counted) *(proposed: T-031)*.
+- **Planned minutes** of local date D in the configured zone: the sum, over blocks with `status` = planned, of the part of [`startsAt`, `endsAt`) that falls inside D (overlapping blocks are each counted) (T-031).
 
 Invariants added in Stage 3:
 

@@ -74,33 +74,33 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Today view shows today's plan, actual work, habits/core activities, goal progress, and remaining capacity. (Stage 3: plan, unscheduled items, and capacity; the other parts arrive with their stages.)
 - [ ] A minimum-viable-day option identifies essential activities without forcing every flexible item into the schedule. (Stage 8)
 
-### Stage 3 planning contract (approved decisions D-019 to D-023; proposals awaiting approval are marked)
+### Stage 3 planning contract (approved by the owner: D-019 to D-023, T-029 to T-036)
 
-Status: **specified, not implemented.** Items marked *(proposed: T-0xx)* are defaults recorded in DECISIONS as **awaiting owner approval**; they are not approved decisions. Everything else follows from D-019 to D-023 and earlier recorded decisions. Data shapes: DATA_MODEL "Stage 3 record types and fields".
+Status: **specified and approved, not implemented.** The behavior below is owner-approved: D-019 to D-023 and T-029 to T-036 (2026-10-24); the rest follows from those and earlier recorded decisions (T-025 to T-028, adopted as derived). Storage encodings in DATA_MODEL are technical choices serving this behavior. Data shapes: DATA_MODEL "Stage 3 record types and fields".
 
 **Time zone, dates, and display (D-020, T-028)**
 
 - All calendar calculations — "today", the days of a view, week ranges, recurrence dates, and capacity per day — use the shared time zone set in Settings. Language (English/Persian) changes only labels and direction, never the calendar display, the week start, or any calculation.
 - While no time zone is set, calendar views, Today, and scheduling show a prompt to set one; the device's zone may be offered as a one-tap suggestion but is never applied silently; no planning data is written until a zone is set.
 - Display calendar: Gregorian (default), Jalali, or Both. Stored dates are always ISO Gregorian (`YYYY-MM-DD`) and instants are UTC; the display calendar never changes stored data or calculations.
-- Week start: Saturday by default, configurable (Settings). The week view always starts on it. Month view follows the display calendar *(proposed: T-035)*.
+- Week start: Saturday by default, configurable (Settings). The week view always starts on it. Month boundaries follow the display calendar: Gregorian months for Gregorian, Jalali months for Jalali, Gregorian months with Jalali day labels for Both (T-035).
 - A planned block represents a **fixed instant** (D-022). Changing the configured zone never edits a block's stored instants or its occurrence link (`occurrenceDate`); blocks are always displayed in the currently configured zone, so an existing block's displayed local time or calendar date may change. A block made for a recurring occurrence keeps scheduling that occurrence even when it is now displayed on another local date; no duplicate unscheduled item appears for it.
 - Settings explains, next to the time-zone setting, that changing the time zone may change the displayed time or date of existing planned blocks (D-022).
-- Entering a wall time that does not exist (daylight-saving gap) is refused with a message; an ambiguous wall time (clocks going back) uses the earlier instant *(proposed: T-030, not approved)*.
+- Each block also keeps the time zone it was planned in and its local date there (T-030). Entering a wall time that does not exist (daylight-saving gap) is refused with a message, never shifted; an ambiguous wall time (clocks going back) uses the earlier instant and shows its offset (T-030).
 
 **Recurring tasks and unscheduled items (D-019, T-026)**
 
-- A task definition may have a recurrence: the selected active weekdays (1–7), a start date, and an optional end date *(shape proposed: T-029)*. Turning recurrence off removes the field; no blocks change.
+- A task definition may have a weekly recurrence (T-029): the selected active weekdays (1–7); a required start date, defaulting to the current local date when recurrence is enabled; and an optional inclusive end date. No every-N-weeks, monthly, or yearly patterns in Stage 3. Turning recurrence off removes the field; no blocks change.
 - For a local date D, a recurring task has an **unscheduled item** on D when: the task exists on this device and is not archived; D is within its start and end dates; D's weekday is selected; and no planned (not cancelled) block exists for that task with occurrence date D. Items are computed when shown, not stored.
 - An occurrence is **scheduled while at least one** of its blocks (same task, occurrence date D) is planned, wherever those blocks are displayed (D-022, D-023). Cancelling one of several blocks leaves the occurrence scheduled while another planned block remains; cancelling the last planned block makes it unscheduled again; restoring any of its blocks makes it scheduled again.
 - The app never gives an unscheduled item a time, never creates a block on its own, and never moves or shortens other blocks to make room (D-019).
-- An unscheduled item of a past date stays on that date; it is never carried forward to today or later (principle 5). There is no skip/dismiss in Stage 3 *(proposed: T-034)*.
+- An unscheduled item of a past date stays on that date; it is never carried forward to today or later (principle 5). There is no skip/dismiss action in Stage 3 (T-034).
 - Editing a task's recurrence, title, project, or archive state never changes existing blocks; it changes only which unscheduled items are computed.
 
 **Scheduling into explicit planned blocks (T-027)**
 
-- "Schedule" on an unscheduled item opens a form with the occurrence date pre-filled and, if the task has an estimate, the duration pre-filled; the user must enter the start time *(proposed: T-033)*. Saving creates a block linked to the task with that occurrence date; the item then shows as scheduled.
-- A block may also be created for any task (recurring or not) from the calendar or the task, and by **quick add** from a title, which creates an inbox task plus the block in one step *(proposed: T-032)*.
+- "Schedule" on an unscheduled item opens a form with the occurrence date pre-filled and, if the task has an estimate, the duration pre-filled; the user must enter the start time (T-033). The user may change the date, so the block may lie on a different date from the occurrence; it still schedules that occurrence. One occurrence may have several blocks (D-023). Saving creates a block linked to the task with that occurrence date; the item then shows as scheduled.
+- A block may also be created for any task (recurring or not) from the calendar or the task, and by **quick add** from a title, which creates an inbox task and its block in one transaction; the user may instead select an existing task (T-032).
 - Blocks can be edited: date, start, end/duration ("move" and "resize"), done by forms that work with keyboard and screen readers; drag-and-drop is optional and never the only way.
 - Blocks are **cancelled, not deleted**, and can be restored. A cancelled block does not count toward capacity. Cancelling a block makes its occurrence unscheduled only when no other planned block for that occurrence remains (D-023).
 - Overlapping blocks are allowed and shown side by side with an overlap marker; the app never moves either block.
@@ -111,10 +111,10 @@ Status: **specified, not implemented.** Items marked *(proposed: T-0xx)* are def
 
 - Day view: the date's blocks in time order, its unscheduled items, and its capacity summary.
 - Week view: seven days from the configured week start containing the focus date; per day the blocks, unscheduled items, and a capacity indicator.
-- Month view: one cell per date with counts of blocks and unscheduled items and an over-capacity marker *(month boundaries proposed: T-035)*.
+- Month view: one cell per date with counts of blocks and unscheduled items and an over-capacity marker (month boundaries: T-035).
 - Navigation: previous / next / today, and go to a date (date entry follows the display calendar).
 - Search: by task title (current and snapshot); filters by project (including the inbox), workstream, "show cancelled", and "only unscheduled items". Search and filters apply to the range shown.
-- Block labels show the task's current title; the snapshot is used when the task is not on this device *(proposed: T-036)*.
+- Block labels show the task's current title; the block's snapshot (taken at creation, refreshed only when the block itself is edited) is used when the task is not on this device and for historical context (T-036).
 
 **Today screen (Stage 3 part)**
 
@@ -122,8 +122,8 @@ Status: **specified, not implemented.** Items marked *(proposed: T-0xx)* are def
 
 **Capacity (D-021)**
 
-- Daily capacity is set in Settings *(shape and default proposed: T-031 — one value in whole minutes, not set by default)*.
-- For each local date: planned minutes = durations of planned (not cancelled) blocks within that date. If planned minutes exceed capacity, a **warning** shows the planned time, the capacity, and the excess. If not, but planned minutes plus the estimates of that date's unscheduled items exceed capacity, a softer **notice** says the remaining items may not fit (items without estimates are listed, not counted) *(proposed: T-031)*.
+- Daily capacity is set in Settings: one shared value in whole minutes (1–1,440) that applies equally to every day, unset by default (T-031). No per-weekday capacity or days-off settings in Stage 3.
+- For each local date: planned minutes = durations of planned (not cancelled) blocks within that date. If planned minutes exceed capacity, a **warning** shows the planned time, the capacity, and the excess. If not, but planned minutes plus the estimates of that date's unscheduled items exceed capacity, a softer **notice** says the remaining items may not fit (items without estimates are not counted and are identified as having no estimate) (T-031).
 - Warnings and notices only inform: saving a block that exceeds capacity is allowed after the warning, and no block is ever changed, moved, cancelled, or deleted because of capacity.
 - Without a set capacity, no warning or notice is shown.
 
