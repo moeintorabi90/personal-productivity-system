@@ -56,7 +56,7 @@ A private, offline-first personal productivity app that helps one person set goa
 ### Goals and measures
 
 - [ ] Goals support numeric output, time, and task-count targets, and may contain milestones (T-040).
-- [ ] A goal may optionally link to a project (T-041) and have a target, date range, optional deadline (T-039), status, weekly objective, and active-day schedule.
+- [ ] A goal may optionally link to a project (T-041) and has a date range whose start date defaults to today but can be changed to the past or future (T-042), a target, optional deadline (T-039), status, weekly objective, and active-day schedule.
 - [ ] Goal progress is derived from actual execution/output records.
 - [ ] Pacing considers timezone, deadline, active days, progress to date, and explicit weekly objectives.
 - [ ] The UI explains the assumptions behind pacing.

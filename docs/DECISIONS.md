@@ -98,7 +98,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-035 | **Views by display calendar:** the week view always starts on the configured week start; month boundaries follow the selected display calendar — Gregorian months for "Gregorian", Jalali months for "Jalali", and Gregorian months with Jalali day labels for "Both". Stored dates remain ISO Gregorian (`YYYY-MM-DD`). | D-020 makes Jalali a display choice; month boundaries are a presentation question. | **Approved by the owner (2026-10-24)** |
 | T-036 | **Block snapshots:** each block stores a snapshot (task title, project and workstream IDs and names) taken when it is created and refreshed when the **block itself** is edited — not merely because a task, project, or workstream name later changes. Calendar views show the task's **current** title; the snapshot is used when the task is unavailable on that device and for historical context (reviews, sessions in later stages). | DATA_MODEL "historical snapshots"; current names avoid stale titles in upcoming plans. | **Approved by the owner (2026-10-24)** |
 
-## Goal and milestone sequencing
+## Stage 4 goal and milestone decisions
 
 | ID | Decision | Reason | Status |
 |---|---|---|---|
@@ -107,6 +107,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-039 | **Goal deadline:** deadlines are optional; a goal may be created without a deadline. | Supports ongoing goals that do not have a fixed end date. | **Approved by the owner (2026-10-25)** |
 | T-040 | **Milestone relationship:** a milestone must belong to a parent goal and cannot exist as a standalone item. | Keeps each checkpoint connected to the outcome it helps achieve. | **Approved by the owner (2026-10-25)** |
 | T-041 | **Goal project link:** linking a goal to a project is optional; goals may be general or project-specific. | Allows life-wide goals as well as goals tied to one project. | **Approved by the owner (2026-10-25)** |
+| T-042 | **Goal start date:** every goal has a start date, defaulting to today when created. The owner may change it to a past or future date. | Supports both new goals and goals already underway or planned for later. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 
