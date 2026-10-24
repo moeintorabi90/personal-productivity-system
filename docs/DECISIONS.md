@@ -126,6 +126,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-058 | **Independent milestone completion:** completing one milestone does not require any other milestone under the same goal to be complete; the owner may mark each milestone complete independently. | Milestones can represent distinct checkpoints that do not always happen in a fixed sequence. | **Approved by the owner (2026-10-25)** |
 | T-059 | **Reopen milestone:** the owner may change a completed milestone back to incomplete. | Allows correction if it was completed by mistake or the work needs to be done again. | **Approved by the owner (2026-10-25)** |
 | T-060 | **Reopen goal:** the owner may change a completed goal back to active. | Goals remain under the owner's control if circumstances change or completion was recorded by mistake. | **Approved by the owner (2026-10-25)** |
+| T-061 | **Milestones when reopening a goal:** reopening a completed goal preserves the completion status of all its milestones. | Reopening the parent goal should not erase independently recorded milestone progress. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 

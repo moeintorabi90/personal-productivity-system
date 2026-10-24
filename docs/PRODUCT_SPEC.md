@@ -64,6 +64,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] A goal may optionally link to a project (T-041) and has a date range whose start date defaults to today but can be changed to the past or future (T-042), one overall target (T-052), optional deadline (T-039), and status. Weekly objectives and choosing goal workdays are deferred until after Stage 5 (T-052, T-053).
 - [ ] The owner manually marks a goal complete; reaching its target does not automatically change its status (T-043).
 - [ ] The owner may reopen a completed goal to make it active again (T-060).
+- [ ] Reopening a goal preserves each milestone's current completion status (T-061).
 - [ ] The owner can pause a goal and resume it later without completing or deleting it (T-044).
 - [ ] Pausing or resuming a goal does not change its start date or deadline (T-045).
 - [ ] Actual work or output explicitly attributed to a paused goal still counts toward its progress (T-046).
