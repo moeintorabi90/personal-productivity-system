@@ -126,11 +126,11 @@ Invariants added in Stage 3:
 
 ### Stage 3 follow-up: project color (approved 2026-10-25; not implemented)
 
-Decisions: T-068 to T-070 (owner) and the derived technical choices in DECISIONS ("Calendar interaction, project color, and streak decisions"). Field name and encoding are technical choices.
+Built after Stage 4 and before Stage 5 (T-076). Decisions: T-068 to T-070 (owner) and the derived technical choices in DECISIONS ("Calendar interaction, project color, and streak decisions"). Field name and encoding are technical choices.
 
 | Type / field | Shape | Rules |
 |---|---|---|
-| `projects.color` (new, optional) | absent = no color chosen; otherwise the identifier of a palette entry | Must be one of the palette identifiers of the file's data version; never stored as `null` (absent instead). Needs the next `dataSchemaVersion` (BACKUP_FORMAT "Project color"). |
+| `projects.color` (new, optional) | absent = no color chosen; otherwise the identifier of a palette entry | Must be one of the palette identifiers of the file's data version; never stored as `null` (absent instead). Arrives in `dataSchemaVersion` 5, after Stage 4's goal and milestone records take version 4 (approved order T-076; BACKUP_FORMAT "Project color"). |
 
 - **Default color (derived, not stored):** a project without `color` is shown in a default palette color computed deterministically from its project ID, the same on every device; nothing is written. Existing projects therefore keep their data, content hash, and version vector.
 - **Neutral color:** items without a project (inbox tasks and their blocks).

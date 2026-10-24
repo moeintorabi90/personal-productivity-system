@@ -81,7 +81,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] An output record may contribute to multiple goals only when the owner explicitly attributes it to each one (T-049).
 - [ ] One streak per goal, counting consecutive scheduled goal-work opportunities with attributed recorded work (T-073; "Streaks" below). (Stage 6)
 
-**Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037):** define and build goals and milestones in Stage 4 first. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. Exact goal and milestone behavior remains to be specified with the owner before implementation.
+**Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037, T-076):** define and build goals and milestones in Stage 4 first; the Stage 3 calendar follow-up (time grid, project colors) comes next, then Stage 5. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. Exact goal and milestone behavior remains to be specified with the owner before implementation.
 
 **Milestone completion (owner-approved 2026-10-25; DECISIONS T-038):** the owner manually marks a milestone complete. The app does not infer milestone completion from work sessions or output records.
 
@@ -113,7 +113,7 @@ A private, offline-first personal productivity app that helps one person set goa
 
 ### Stage 3 planning contract (approved by the owner: D-019 to D-023, T-029 to T-036)
 
-Status: **specified and approved; implemented, merged into `main`, and deployed (ROADMAP Stage 3).** A follow-up adds time-grid interactions and project colors ("Stage 3 follow-up" below; approved 2026-10-25, not implemented). Implementation choices that refine presentation details are listed under "Implementation notes (Stage 3)" at the end of this section. The behavior below is owner-approved: D-019 to D-023 and T-029 to T-036 (2026-10-24); the rest follows from those and earlier recorded decisions (T-025 to T-028, adopted as derived). Storage encodings in DATA_MODEL are technical choices serving this behavior. Data shapes: DATA_MODEL "Stage 3 record types and fields".
+Status: **specified and approved; implemented, merged into `main`, and deployed (ROADMAP Stage 3).** A follow-up adds time-grid interactions and project colors ("Stage 3 follow-up" below; approved 2026-10-25, not implemented; built after Stage 4, T-076). Implementation choices that refine presentation details are listed under "Implementation notes (Stage 3)" at the end of this section. The behavior below is owner-approved: D-019 to D-023 and T-029 to T-036 (2026-10-24); the rest follows from those and earlier recorded decisions (T-025 to T-028, adopted as derived). Storage encodings in DATA_MODEL are technical choices serving this behavior. Data shapes: DATA_MODEL "Stage 3 record types and fields".
 
 **Time zone, dates, and display (D-020, T-028)**
 
@@ -183,7 +183,7 @@ Status: **specified and approved; implemented, merged into `main`, and deployed 
 
 ### Stage 3 follow-up: calendar interactions and project colors (owner-approved 2026-10-25; not implemented)
 
-Decisions: DECISIONS T-066 to T-070 and T-075, with the derived technical choices and open details listed there. All Stage 3 rules above still apply; this follow-up changes how blocks are created and edited on the calendar, and how items are colored.
+Decisions: DECISIONS T-066 to T-070 and T-075, with the derived technical choices and open details listed there. **Order (T-076):** built after Stage 4 (goals and milestones) and before Stage 5 (actual execution and outputs); Stage 3 itself stays complete. All Stage 3 rules above still apply; this follow-up changes how blocks are created and edited on the calendar, and how items are colored.
 
 **Approved behavior**
 
@@ -202,7 +202,7 @@ Decisions: DECISIONS T-066 to T-070 and T-075, with the derived technical choice
 - Forms stay available for every action, so keyboard and screen-reader users never depend on dragging.
 - A color change writes only the project record; blocks and snapshots never store a color (DECISIONS, "Derived technical choices").
 
-**Not decided yet** (DECISIONS, open details 1–4): ordering relative to Stage 4, the palette and neutral color, the tap duration, drag snapping and the phone week layout, and whether drags offer undo.
+**Not decided yet** (DECISIONS, open details 2–4; detail 1, the ordering, is resolved by T-076): the palette and neutral color, the tap duration, drag snapping and the phone week layout, and whether drags offer undo.
 
 ### Actual work and outputs
 

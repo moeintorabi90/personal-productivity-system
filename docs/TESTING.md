@@ -110,7 +110,7 @@ Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-023, T-
 
 ## Calendar interaction, project color, and streak acceptance tests (specified 2026-10-25; not implemented)
 
-Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-075. Tests depending on an open detail (DECISIONS, open details 1–7) follow the owner's answer. Fixed dates and zones as in Stage 3.
+Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-076. Tests depending on an open detail (DECISIONS, open details 2–7) follow the owner's answer. The project color arrives in data version 5, after Stage 4's version 4 (T-076). Fixed dates and zones as in Stage 3.
 
 **Stage 3 follow-up: time grid and drag (T-066, T-067)**
 
@@ -124,7 +124,7 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Sta
 5. A project without a chosen color shows the same derived default on every device; a chosen palette color is shown; items without a project are neutral; a block whose task moved to another project shows the new project's color; a block whose task is not on the device uses its snapshot's project.
 6. Changing a project's color writes only the project record (blocks, snapshots, and other records unchanged by hash and version) and re-renders related items.
 7. Planned items always carry a visible non-color status cue (label or marker); contrast is checked in light and dark themes.
-8. Backup: color round-trips and merges as a project field (a color edited on two devices is a project conflict with keep/use only); existing projects without `color` keep their content hashes after the update and a re-import of an older backup is "already here"; the committed version-1 to version-3 samples import unchanged; a fabricated sample of the new version imports; an older-version file containing `color`, a `null` color, or an unknown palette identifier is refused with no change (also in carried conflicts and the archive); the previous app refuses the new version as newer.
+8. Backup: color round-trips and merges as a project field (a color edited on two devices is a project conflict with keep/use only); existing projects without `color` keep their content hashes after the update and a re-import of an older backup is "already here"; the committed version-1 to version-4 samples import unchanged; a fabricated version-5 sample imports; a version-4 or older file containing `color`, a `null` color, or an unknown palette identifier is refused with no change (also in carried conflicts and the archive); the Stage 4 app (data version 4) refuses version 5 as newer.
 
 **Stage 6: planned versus actual lanes and goal streaks (T-071 to T-073)**
 
