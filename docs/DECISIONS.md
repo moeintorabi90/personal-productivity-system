@@ -115,6 +115,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-047 | **Session-time attribution:** the duration of one work session may be attributed to at most one goal. | Prevents the same time from being counted toward multiple goals. | **Approved by the owner (2026-10-25)** |
 | T-048 | **Task-count attribution:** one completed task may count toward at most one task-count goal. | Prevents the same task completion from being counted toward multiple goals. | **Approved by the owner (2026-10-25)** |
 | T-049 | **Output attribution:** an output record may contribute to multiple goals only when the owner explicitly attributes it to each goal. | Lets one real output support related goals without hidden or automatic double counting. | **Approved by the owner (2026-10-25)** |
+| T-050 | **Numeric output goal units:** the owner may enter a custom unit label for a numeric output goal (for example, pages, words, or articles); units are not restricted to a fixed built-in list. | Different goals measure different outputs, and the owner should be able to name the relevant quantity. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 
