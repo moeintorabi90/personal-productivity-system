@@ -352,6 +352,21 @@ describe("14–15. midnight, overlaps, views, search and filters", () => {
     expect((await loadBlocks(d.db)).find((b) => b.id === over)!.data.startsAt).toBe("2026-11-02T21:00:00.000Z"); // not moved
   });
 
+  it("a cancelled block between overlapping planned blocks does not split their side-by-side group", async () => {
+    const d = await device();
+    const task = await createTask(d.db, { title: "Write" });
+    const first = await createBlock(d.db, { taskId: task, date: "2026-11-02", startTime: "10:00", durationMinutes: 120 });
+    const cancelled = await createBlock(d.db, { taskId: task, date: "2026-11-02", startTime: "10:30", durationMinutes: 30 });
+    const second = await createBlock(d.db, { taskId: task, date: "2026-11-02", startTime: "11:00", durationMinutes: 120 });
+    await setBlockCancelled(d.db, cancelled, true);
+    const { blocks } = await state(d.db);
+    const shown = blocksOn(filterBlocks(blocks, { ...NO_FILTER, showCancelled: true }, (await state(d.db)).map), "2026-11-02", "Asia/Tehran");
+    expect(shown.map((b) => b.id)).toEqual([first, cancelled, second]); // the cancelled block sorts between them
+    expect(overlapGroups(shown, "2026-11-02", "Asia/Tehran").map((g) => g.map((b) => b.id))).toEqual([[first, second], [cancelled]]);
+    expect([...overlappingBlockIds(blocks, "2026-11-02", "Asia/Tehran")].sort()).toEqual([first, second].sort()); // not the cancelled one
+    expect(plannedMinutesOn(blocks, "2026-11-02", "Asia/Tehran")).toBe(240);
+  });
+
   it("search by current and snapshot title; filters by project, inbox, workstream, cancelled, only unscheduled", async () => {
     const d = await device();
     const project = await createProject(d.db, { name: "Thesis" });

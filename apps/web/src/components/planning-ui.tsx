@@ -420,8 +420,7 @@ export function BlockRow({ ctx, block, date, overlaps }: { ctx: PlanningContext;
     <li className={`item block${cancelled ? " block-cancelled" : ""}`} data-testid="block-row">
       <div className="item-main">
         <span className="block-time">{time}</span> <span className="item-title">{label.title}</span>{" "}
-        <span className="pill">{t("plan.planned")}</span>
-        {cancelled ? <span className="pill pill-muted">{t("plan.cancelled")}</span> : null}
+        {cancelled ? <span className="pill pill-muted">{t("plan.cancelled")}</span> : <span className="pill">{t("plan.planned")}</span>}
         {overlaps && !cancelled ? <span className="pill pill-warn">{t("plan.overlap")}</span> : null}
         <p className="hint">
           {formatMinutes(t, minutes)}

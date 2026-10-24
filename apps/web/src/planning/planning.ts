@@ -98,21 +98,27 @@ export function overlappingBlockIds(blocks: readonly BlockItem[], date: string, 
 
 /**
  * Splits a date's displayed blocks (already in time order) into groups shown side by side: a
- * planned block joins the current group when it starts before a planned block of that group ends.
- * Cancelled blocks never overlap anything. Display only; nothing is moved.
+ * planned block joins the current planned group when it starts before a planned block of that
+ * group ends. Cancelled blocks never overlap anything: each stands alone in time order and does
+ * not interrupt a planned group (a group is placed where its first block is). Display only.
  */
 export function overlapGroups<T extends BlockItem>(blocks: readonly T[], date: string, zone: string): T[][] {
   const groups: T[][] = [];
+  let planned: T[] | null = null;
   let groupEnd = -Infinity;
   for (const block of blocks) {
     const seg = block.data.status === "planned" ? blockSegmentOn(block.data, date, zone) : null;
-    const current = groups.at(-1);
-    if (seg && current && seg[0] < groupEnd) {
-      current.push(block);
+    if (!seg) {
+      groups.push([block]);
+      continue;
+    }
+    if (planned && seg[0] < groupEnd) {
+      planned.push(block);
       groupEnd = Math.max(groupEnd, seg[1]);
     } else {
-      groups.push([block]);
-      groupEnd = seg ? seg[1] : -Infinity;
+      planned = [block];
+      groups.push(planned);
+      groupEnd = seg[1];
     }
   }
   return groups;

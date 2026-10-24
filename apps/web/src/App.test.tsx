@@ -511,6 +511,7 @@ describe("Stage 3: calendar, Today, recurrence, capacity", () => {
     fireEvent.click(screen.getByLabelText("Show cancelled blocks"));
     const cancelled = await screen.findByTestId("block-row");
     expect(cancelled.textContent).toContain("Cancelled");
+    expect(cancelled.textContent).not.toContain("Planned"); // one status label per block
     fireEvent.click(within(cancelled).getByRole("button", { name: "Restore planned block: Gym" }));
     await waitFor(() => expect(screen.queryByTestId("unscheduled-row")).toBeNull());
     expect(fetchSpy).not.toHaveBeenCalled();
