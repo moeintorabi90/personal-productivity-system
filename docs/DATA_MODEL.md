@@ -60,7 +60,7 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 - **User:** in v1 there is no account; "the owner" is whoever uses the device. (A future sync service would add an owner account.)
 - **Device:** local identity of each installation (UUID and editable name). Used in version vectors and to label backups; never sent anywhere in v1.
 - **UserPreference:** shared, transferable settings (explicit IANA time zone, week start, calendar display, later capacity preferences) as one singleton record with a reserved ID; plus device-local settings (language, theme) that stay on each device (decided split, D-017; `BACKUP_FORMAT.md`).
-- **Project / Workstream:** user-created organization. A workstream belongs to one project and is not nestable.
+- **Project / Workstream:** user-created organization. A workstream belongs to one project and is not nestable. A project has a color (chosen from a palette, or a derived default), approved for the Stage 3 follow-up (T-068; "Stage 3 follow-up: project color" below).
 - **TaskDefinition:** reusable task details (and, from Stage 3, recurrence configuration). It is not evidence that work occurred.
 
 ### Stage 2 record types (implemented; `dataSchemaVersion` 2)
@@ -123,6 +123,24 @@ Invariants added in Stage 3:
 - Changing the configured time zone writes no block: `startsAt`, `endsAt`, `occurrenceDate`, and every other block field, content hash, and version vector stay unchanged (D-022).
 - Nothing in the app creates, moves, shortens, cancels, or deletes a block except an explicit user action on that block (D-019, D-021); imports follow the backup rules (only new blocks are added automatically).
 - No IndexedDB schema version change is required: blocks are stored in `records` like other types. An index for date-range queries may be added as an implementation detail (a Dexie version step that rewrites no data); Stage 3 does not add one (blocks are read by type).
+
+### Stage 3 follow-up: project color (approved 2026-10-25; not implemented)
+
+Decisions: T-068 to T-070 (owner) and the derived technical choices in DECISIONS ("Calendar interaction, project color, and streak decisions"). Field name and encoding are technical choices.
+
+| Type / field | Shape | Rules |
+|---|---|---|
+| `projects.color` (new, optional) | absent = no color chosen; otherwise the identifier of a palette entry | Must be one of the palette identifiers of the file's data version; never stored as `null` (absent instead). Needs the next `dataSchemaVersion` (BACKUP_FORMAT "Project color"). |
+
+- **Default color (derived, not stored):** a project without `color` is shown in a default palette color computed deterministically from its project ID, the same on every device; nothing is written. Existing projects therefore keep their data, content hash, and version vector.
+- **Neutral color:** items without a project (inbox tasks and their blocks).
+- **Presentation only:** blocks, sessions, and snapshots store no color. An item uses the current color of its task's current project; when the task is not on this device, the project ID in the item's snapshot; with no project, neutral. Changing a color writes only the project record and rewrites no history (T-069).
+- The palette's identifiers and values are not defined yet (DECISIONS, open detail 2).
+
+### Streak data (approved 2026-10-25; not implemented)
+
+- **Goal streak (Stage 6, T-073):** derived, not stored. Computed per goal from its scheduled goal-work opportunities and the actual-work records attributed to the goal (T-047 to T-049), in the configured time zone. Current streak = consecutive past opportunities, each with at least one attributed attempt or work record, ending at the latest passed opportunity; longest = the maximum over the goal's history. Unscheduled days are skipped; an opportunity is missed only after its local day ends; a planned block alone never counts. The definition of an opportunity awaits the post-Stage-5 goal workday decision (T-053; DECISIONS, open detail 6).
+- **App-use streak (Stage 8, T-074):** device-local. The local dates on which the app was used are kept in device metadata (`meta`, like language and theme, D-017); current and longest streaks are computed from them. Never exported as mergeable data and never changed by an import; not a cross-device value in v1. What counts as use is open (DECISIONS, open detail 7).
 
 ## Core invariants
 

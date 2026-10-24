@@ -108,6 +108,34 @@ Contract: PRODUCT_SPEC "Stage 3 planning contract"; decisions D-019 to D-023, T-
 26. Persian RTL with Jalali display: calendar navigation and forms usable; dates and weekdays correct.
 27. Manual on the owner's Windows laptop and Android phone: the Stage 3 flow offline, and moving a plan in both directions by backup.
 
+## Calendar interaction, project color, and streak acceptance tests (specified 2026-10-25; not implemented)
+
+Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-075. Tests depending on an open detail (DECISIONS, open details 1–7) follow the owner's answer. Fixed dates and zones as in Stage 3.
+
+**Stage 3 follow-up: time grid and drag (T-066, T-067)**
+
+1. Tapping/clicking an empty slot and dragging across an empty range open block creation with that start (and end) pre-filled; no block is written until a task or quick-add title is chosen and saved; cancelling writes nothing.
+2. Drag-move and edge-resize of a planned block change only that block (same rules as a form edit: new instants, planning zone, refreshed snapshot; task and `occurrenceDate` unchanged); other blocks are never moved; cancelled blocks cannot be dragged.
+3. A drop or selection in a daylight-saving gap is refused, not shifted; a resize beyond 24 hours or to zero length is refused; a resulting over-capacity date shows the warning and the change is still allowed (D-021).
+4. Pointer input works with mouse and touch (touch scrolling still scrolls); every action remains possible with the forms and the keyboard; English/Persian, LTR/RTL.
+
+**Stage 3 follow-up: project colors (T-068 to T-070)**
+
+5. A project without a chosen color shows the same derived default on every device; a chosen palette color is shown; items without a project are neutral; a block whose task moved to another project shows the new project's color; a block whose task is not on the device uses its snapshot's project.
+6. Changing a project's color writes only the project record (blocks, snapshots, and other records unchanged by hash and version) and re-renders related items.
+7. Planned items always carry a visible non-color status cue (label or marker); contrast is checked in light and dark themes.
+8. Backup: color round-trips and merges as a project field (a color edited on two devices is a project conflict with keep/use only); existing projects without `color` keep their content hashes after the update and a re-import of an older backup is "already here"; the committed version-1 to version-3 samples import unchanged; a fabricated sample of the new version imports; an older-version file containing `color`, a `null` color, or an unknown palette identifier is refused with no change (also in carried conflicts and the archive); the previous app refuses the new version as newer.
+
+**Stage 6: planned versus actual lanes and goal streaks (T-071 to T-073)**
+
+9. Day and week time grids show planned and actual items in separate lanes on one time axis; the month view stays an overview; actual items use the stronger color treatment with a visible cue.
+10. Dragging an actual session creates an explicit correction only after the user confirms; the original record and the correction/audit history are preserved and survive a backup round-trip; nothing is changed by a cancelled drag.
+11. Goal streak on seeded cases: consecutive scheduled opportunities with attributed work count regardless of duration; unscheduled days neither add nor break; a missed opportunity resets the current streak only after its local day ends; the longest streak is kept; a planned block without recorded work never counts; one streak per goal, not per milestone; the result is identical after a backup round-trip. (Opportunity definition and paused/completed/archived handling: open detail 6.)
+
+**Stage 8: app-use streak (T-074, T-075)**
+
+12. Consecutive days of recorded app use (fixed dates) give the expected current and longest streaks; a day without use breaks the current streak and keeps the longest; the value is labelled as this device's, is not exported as mergeable data, and is unchanged by an import; no points, penalties, or pressure appear. (What counts as use and the day boundary: open detail 7.)
+
 ## Release gate
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.

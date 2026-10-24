@@ -27,7 +27,7 @@ Status: **decided design for v1** (owner decisions D-008 to D-017; technical dec
 
 - `sync_probe` (local table `probes`, shown as "Sync check notes"): a Stage 1 diagnostic record that proves the frozen sync engine (DECISIONS T-011). It is not product data, is never exported, and a file containing it is invalid.
 - Sync machinery of the frozen post-v1 code: session token, outbox, pull cursor, sync status.
-- Device-local settings (language and theme now; others later) as mergeable data. Only the exporting device's values travel, as informational `sourceDeviceSettings`. Each record type and setting declares whether it is exported.
+- Device-local settings (language and theme now; others later, such as the Stage 8 app-use streak days) as mergeable data. Only the exporting device's values travel, as informational `sourceDeviceSettings`. Each record type and setting declares whether it is exported.
 
 Format version 1 lists its allowed record types explicitly. An importer refuses a file with an unknown record type rather than ignoring it silently.
 
@@ -225,7 +225,7 @@ Export enforces the same limits: if a device's data would exceed them, export st
 ## Versioning and upgrades
 
 - `formatVersion` describes the container and envelope; `dataSchemaVersion` describes the record types and their fields.
-- **Data schema versions so far** (all with `formatVersion` 1): **1** — shared preferences (Stage 1B); **2** — adds `projects`, `workstreams`, and `taskDefinitions` (Stage 2; fields in DATA_MODEL "Stage 2 record types"). **3** — adds `calendarBlocks` and the optional fields task `recurrence` and preference `dailyCapacityMinutes` (Stage 3; "Data schema version 3" below). The Stage 3 app writes version 3 and reads 1, 2, and 3. The upgrade 1 → 2 changes nothing (types were only added), but a file is checked against the types of **its** version: a version-1 file containing a Stage 2 type is refused as unknown data. A Stage 1B app refuses a version-2 file, and a Stage 2 app a version-3 file, with "made by a newer version" before reading its contents. Samples: `apps/web/src/backup/samples/pps-backup-format-v1.json` (data version 1), `pps-backup-format-v1-data-v2.json` (data version 2), and `pps-backup-format-v1-data-v3.json` (data version 3), all fabricated.
+- **Data schema versions so far** (all with `formatVersion` 1): **1** — shared preferences (Stage 1B); **2** — adds `projects`, `workstreams`, and `taskDefinitions` (Stage 2; fields in DATA_MODEL "Stage 2 record types"). **3** — adds `calendarBlocks` and the optional fields task `recurrence` and preference `dailyCapacityMinutes` (Stage 3; "Data schema version 3" below). The Stage 3 app writes version 3 and reads 1, 2, and 3. The upgrade 1 → 2 changes nothing (types were only added), but a file is checked against the types of **its** version: a version-1 file containing a Stage 2 type is refused as unknown data. A Stage 1B app refuses a version-2 file, and a Stage 2 app a version-3 file, with "made by a newer version" before reading its contents. Samples: `apps/web/src/backup/samples/pps-backup-format-v1.json` (data version 1), `pps-backup-format-v1-data-v2.json` (data version 2), and `pps-backup-format-v1-data-v3.json` (data version 3), all fabricated. **Next version (approved, not implemented):** the optional project `color` (Stage 3 follow-up, "Project color" below); its number depends on whether it ships before Stage 4.
 - The importer contains a chain of upgrade functions (`v1 → v2 → …`). An older file is upgraded in memory, then validated against the current schema. Upgrades never lose fields; removed concepts are mapped or kept in an `extra` object.
 - A file with a **newer** version than the app understands is refused with a clear message ("This backup was made by a newer version; update the app first"). It is never partially imported.
 - Every format change ships with a stored sample file of the previous version and a test that the new app imports it.
@@ -267,6 +267,19 @@ Decisions: D-019 to D-023, T-025 to T-036 (DECISIONS); fields: DATA_MODEL "Stage
 - Unscheduled items are derived, so they are never exported, imported, or in conflict; after an import they are recomputed from the merged tasks and blocks: an occurrence is scheduled while at least one of its blocks is planned (D-023), so a conflict choice that cancels one of several blocks of an occurrence leaves it scheduled.
 - The configured time zone is a shared preference: importing a different zone changes only how blocks are displayed, never their stored instants or `occurrenceDate` (D-022).
 - Import never creates, moves, or cancels a block except as the rules above allow, and capacity warnings never cause any change (D-021).
+
+### Project color (Stage 3 follow-up — approved 2026-10-25, not implemented)
+
+Decisions: T-068 to T-070 (owner) and the derived technical choices in DECISIONS ("Calendar interaction, project color, and streak decisions"); field: DATA_MODEL "Stage 3 follow-up: project color". `formatVersion` stays 1.
+
+- **What changes:** one optional field on `projects` data, `color` (a palette identifier). It is absent when the owner has not chosen a color (never `null`); the default color is derived on display and never written.
+- **Version:** the **next `dataSchemaVersion`** after the latest released one. Today that is 3, so the field arrives as version 4 if this follow-up ships before Stage 4 adds its goal types; otherwise it takes the version after Stage 4's. Which comes first is not decided (DECISIONS, open detail 1).
+- **Upgrade path (no data loss):** no stored record is rewritten; existing projects keep their data, content hash, and version vector, so devices that update at different times see no false conflicts (T-025 reasoning). Older files upgrade by the identity. The committed samples for versions 1–3 keep importing; a fabricated sample of the new version (projects with and without `color`) is added.
+- **Validation per version:** a file is checked against the fields of its own version: a file of an older version containing `projects.color` is refused (`INVALID_PAYLOAD`), as is `null` or an identifier that is not in that version's palette, in every version in the file (records, carried conflicts, archive). Adding palette entries later is another data-version step.
+- **Older apps:** the Stage 3 app (data version 3) refuses a file of the new version as "made by a newer version"; every device must be updated before moving such backups to it.
+- **Merge and conflicts:** the color is an ordinary project field. A color changed only elsewhere is "newer in backup" and applied after confirmation; a color (or any other project field) edited on both devices is a project conflict with "keep this device's" or "use the backup's" version (linked type, no "keep both"). Blocks and snapshots carry no color, so no block changes when a color is imported or chosen.
+
+**Streaks in backups:** goal streaks (Stage 6) are derived from records that are already exported, so they add no backup data and are the same after a round-trip. The app-use streak (Stage 8) is device-local metadata like language and theme (D-017): it is not exported as mergeable data and is never changed by an import.
 
 ## Import flow
 

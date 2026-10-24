@@ -50,6 +50,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Projects, workstreams, and task definitions can be created, edited, archived, searched, and filtered.
 - [ ] Workstreams belong to one project; tasks' project and workstream must agree.
 - [ ] Project detail shows its workstreams and grouped tasks, including direct-to-project tasks.
+- [ ] Each project has a color chosen from a predefined palette or assigned by default; items without a project are neutral (T-068). (Stage 3 follow-up)
 - [ ] Task definitions support a title, descriptive notes, an estimate (whole minutes), a next action, and archiving; they belong to a project and optionally a workstream, or to the inbox (no project). Implemented in Stage 2; the `notes` field is the task's description (owner decision, 2026-10-21; DECISIONS T-024).
 - [ ] Deferred task-definition fields: **recurrence and active weekdays** — implemented in Stage 3 (contract below, "Stage 3 planning contract"); **relevant output metrics** in Stage 5 (actual execution and outputs); a task **type**, only once the owner defines a clear use case and meaningful categories (DECISIONS T-024).
 
@@ -78,6 +79,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] The duration of one work session may contribute to at most one goal (T-047).
 - [ ] One completed task may count toward at most one task-count goal (T-048).
 - [ ] An output record may contribute to multiple goals only when the owner explicitly attributes it to each one (T-049).
+- [ ] One streak per goal, counting consecutive scheduled goal-work opportunities with attributed recorded work (T-073; "Streaks" below). (Stage 6)
 
 **Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037):** define and build goals and milestones in Stage 4 first. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. Exact goal and milestone behavior remains to be specified with the owner before implementation.
 
@@ -102,14 +104,16 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] A recurring task appears as an unscheduled item on each selected active weekday; it is never given a time automatically and never moves other planned work (D-019). (Stage 3)
 - [ ] Recurrence is evaluated using local calendar dates in the configured timezone. (Stage 3)
 - [ ] Gregorian display by default, Jalali selectable; Saturday week start by default, configurable; calculations use the explicitly configured time zone; changing the language never changes the calendar or calculations (D-020). (Stage 3)
-- [ ] Planned work and actual work are visually distinct. (Planned blocks in Stage 3; actual work arrives in Stage 5.)
+- [ ] Planned work and actual work are visually distinct. (Planned blocks in Stage 3; actual work arrives in Stage 5.) Calendar items use their project's color, lighter for planned and stronger for actual work, never as the only cue (T-069; Stage 3 follow-up for planned blocks).
+- [ ] Day and week time-grid views: tap/click or drag on empty time to create a planned block; drag to move and resize blocks; mouse and touch (T-066, T-067). (Stage 3 follow-up)
+- [ ] Planned work and recorded actual sessions in two lanes on one time axis in day and week views; the month view stays an overview (T-071). Actual sessions move by drag only as an explicit, audited correction (T-072). (Stage 6)
 - [ ] Capacity warnings use user-configured daily capacity and never reschedule, change, or delete planned blocks (D-021). (Stage 3; evidence-based capacity suggestions belong to estimation learning, Stage 7.)
 - [ ] Today view shows today's plan, actual work, habits/core activities, goal progress, and remaining capacity. (Stage 3: plan, unscheduled items, and capacity; the other parts arrive with their stages.)
 - [ ] A minimum-viable-day option identifies essential activities without forcing every flexible item into the schedule. (Stage 8)
 
 ### Stage 3 planning contract (approved by the owner: D-019 to D-023, T-029 to T-036)
 
-Status: **specified and approved; implemented on branch `feat/stage-3-calendar-planning` (2026-10-24), not yet merged or deployed.** Implementation choices that refine presentation details are listed under "Implementation notes (Stage 3)" at the end of this section. The behavior below is owner-approved: D-019 to D-023 and T-029 to T-036 (2026-10-24); the rest follows from those and earlier recorded decisions (T-025 to T-028, adopted as derived). Storage encodings in DATA_MODEL are technical choices serving this behavior. Data shapes: DATA_MODEL "Stage 3 record types and fields".
+Status: **specified and approved; implemented, merged into `main`, and deployed (ROADMAP Stage 3).** A follow-up adds time-grid interactions and project colors ("Stage 3 follow-up" below; approved 2026-10-25, not implemented). Implementation choices that refine presentation details are listed under "Implementation notes (Stage 3)" at the end of this section. The behavior below is owner-approved: D-019 to D-023 and T-029 to T-036 (2026-10-24); the rest follows from those and earlier recorded decisions (T-025 to T-028, adopted as derived). Storage encodings in DATA_MODEL are technical choices serving this behavior. Data shapes: DATA_MODEL "Stage 3 record types and fields".
 
 **Time zone, dates, and display (D-020, T-028)**
 
@@ -134,7 +138,7 @@ Status: **specified and approved; implemented on branch `feat/stage-3-calendar-p
 
 - "Schedule" on an unscheduled item opens a form with the occurrence date pre-filled and, if the task has an estimate, the duration pre-filled; the user must enter the start time (T-033). The user may change the date, so the block may lie on a different date from the occurrence; it still schedules that occurrence. One occurrence may have several blocks (D-023). Saving creates a block linked to the task with that occurrence date; the item then shows as scheduled.
 - A block may also be created for any task (recurring or not) from the calendar or the task, and by **quick add** from a title, which creates an inbox task and its block in one transaction; the user may instead select an existing task (T-032).
-- Blocks can be edited: date, start, end/duration ("move" and "resize"), done by forms that work with keyboard and screen readers; drag-and-drop is optional and never the only way.
+- Blocks can be edited: date, start, end/duration ("move" and "resize"), done by forms that work with keyboard and screen readers; drag-and-drop is optional and never the only way (the Stage 3 follow-up adds dragging in time-grid views, T-067; the forms stay).
 - Blocks are **cancelled, not deleted**, and can be restored. A cancelled block does not count toward capacity. Cancelling a block makes its occurrence unscheduled only when no other planned block for that occurrence remains (D-023).
 - Overlapping blocks are allowed and shown side by side with an overlap marker; the app never moves either block.
 - A block's end is after its start and at most 24 hours later; a block that crosses midnight appears on both days (clipped per day).
@@ -169,13 +173,36 @@ Status: **specified and approved; implemented on branch `feat/stage-3-calendar-p
 **Implementation notes (Stage 3)** — presentation choices where the contract left details open; none changes an approved decision:
 
 - Navigation gains **Today** and **Calendar**. The calendar opens in the week view on today's week; day, week, and month are chosen from a "View" list. Opening a date in the month view shows that day.
-- Day and week views are lists per date (blocks in time order, then unscheduled items, with "Schedule"), not a time grid. Overlapping planned blocks are grouped **side by side** in one row, each marked "Overlaps"; on a narrow phone screen the row wraps. A block that crosses midnight is listed on both dates and says it continues from / into the other day; a block placed on another date than its occurrence names the occurrence date.
+- Day and week views are lists per date (blocks in time order, then unscheduled items, with "Schedule"), not a time grid (the approved follow-up adds time-grid day and week views, T-066). Overlapping planned blocks are grouped **side by side** in one row, each marked "Overlaps"; on a narrow phone screen the row wraps. A block that crosses midnight is listed on both dates and says it continues from / into the other day; a block placed on another date than its occurrence names the occurrence date.
 - Planned blocks have a dashed edge (plans, not actual work); cancelled blocks are hidden unless "Show cancelled blocks" is on, and are shown struck through.
 - The block form is shared by "Add a planned block" (calendar day: pick an existing task or type a new title for quick add), "Plan" on a task row (date pre-filled with today), "Schedule" on an unscheduled item (occurrence date and estimate pre-filled), and "Edit". The start time is never pre-filled for a new block; editing shows the block's current time. Duration is entered in whole minutes (1–1,440). A daylight-saving gap is shown as an error and disables saving; an ambiguous time shows the offset that will be used; the capacity warning for the affected date(s) appears in the form before saving.
 - Date entry follows the display calendar: the browser's date field for Gregorian, the same field with the Jalali date shown below it for "Both", and year/month/day fields in Jalali for Jalali.
 - In the month view on a phone, each date shows compact marks (planned-block count, unscheduled count, "!" when over capacity); the full text is in the date button's accessible label.
 - Today invites setting a daily capacity when none is set; Settings has the capacity field (empty = not set) and, next to the time zone, the note that a zone change may change displayed block times or dates.
 - Without a configured zone, Today and Calendar show only the prompt (with the device-zone suggestion button); the recurrence checkbox in the task editor is disabled with a hint.
+
+### Stage 3 follow-up: calendar interactions and project colors (owner-approved 2026-10-25; not implemented)
+
+Decisions: DECISIONS T-066 to T-070 and T-075, with the derived technical choices and open details listed there. All Stage 3 rules above still apply; this follow-up changes how blocks are created and edited on the calendar, and how items are colored.
+
+**Approved behavior**
+
+- The day, week, and month views stay. Day and week views gain a **time grid** (T-066).
+- In a time-grid view, tapping or clicking an **empty** time slot creates a planned block at that time; dragging across an empty time range creates a planned block with that start and end. Mouse and touch are both supported (T-066).
+- A planned block can be **dragged to move** it and **resized by dragging** its start or end edge (T-067).
+- Every project has a **color**: the owner chooses one from a predefined palette, or the app assigns a default. Items without a project use a **neutral** color (T-068).
+- Calendar items use their project's color. Changing a project's color changes how all related items look and rewrites none of their history (T-069).
+- Planned items use a **lighter** treatment of the project color; recorded actual work (from Stage 5) a **stronger** one. Color is never the only cue: each item also has a visible label (e.g. "Planned") or another distinguishable marker (T-069).
+- The color is part of the project record and travels in backups (T-070; BACKUP_FORMAT "Project color").
+
+**Rules carried over from Stage 3 (derived)**
+
+- Every block references a task (T-032): creating from a slot or range pre-fills the time and asks for an existing task or a quick-add title before saving. The selected slot is the user's explicit time choice (D-019, T-033).
+- Moving or resizing by drag is an edit of the block: it follows the daylight-saving rules (T-030), the 24-hour maximum, informational capacity warnings that never block (D-021), and allowed overlaps; it keeps the block's task and occurrence link (T-033) and refreshes its snapshot (T-036). Cancelled blocks are not dragged.
+- Forms stay available for every action, so keyboard and screen-reader users never depend on dragging.
+- A color change writes only the project record; blocks and snapshots never store a color (DECISIONS, "Derived technical choices").
+
+**Not decided yet** (DECISIONS, open details 1–4): ordering relative to Stage 4, the palette and neutral color, the tap duration, drag snapping and the phone week layout, and whether drags offer undo.
 
 ### Actual work and outputs
 
@@ -187,6 +214,24 @@ Status: **specified and approved; implemented on branch `feat/stage-3-calendar-p
 - [ ] Editing actual timestamps is explicit and audited; finished sessions are not silently reopened.
 - [ ] Measured outputs are recorded against a session and metric definition. Planned output is never assumed achieved.
 - [ ] Editing a session never implicitly creates or changes a planned block.
+- [ ] (Stage 6) In the day/week time grid, planned work and actual sessions are shown in two lanes on the same time axis; dragging an actual session is only an explicit correction that keeps the original record and its audit history (T-071, T-072).
+
+### Planned versus actual calendar (Stage 6; owner-approved 2026-10-25, not implemented)
+
+- Stage 5 introduces actual sessions and outputs; Stage 6 adds the dual-lane comparison and related planned-versus-actual views (T-071).
+- In the day and week time-grid views, a **planned lane** and an **actual lane** share one time axis. Planned items use the lighter project-color treatment, actual sessions the stronger one, each with a visible label or marker (T-069).
+- The month view stays a calendar overview.
+- Dragging an actual session is never a silent edit: it starts an explicit correction, and the original record and the correction/audit history are kept (T-072; principle 2). Whether a reason is required is open (DECISIONS, open detail 5).
+
+### Streaks (owner-approved 2026-10-25; not implemented)
+
+Decisions: T-073 (goal streaks, Stage 6), T-074 (app-use streak, Stage 8), T-075 (tone).
+
+- **Goal streak (Stage 6):** one streak per goal, never per milestone. It counts consecutive **scheduled goal-work opportunities**, not calendar days: unscheduled days neither add to nor break it. Any recorded attempt or work attributed to the goal on a scheduled opportunity counts, whatever its duration. A missed scheduled opportunity resets the current streak; the longest streak is kept. It needs Stage 5 actual-work records and the post-Stage-5 goal schedule/workday decisions (T-053); a planned block alone never counts.
+- **App-use streak (Stage 8):** consecutive days on which the app was used, separate from goal streaks. In v1 it belongs to one device (no automatic sync) and is never presented as a cross-device streak. A day without recorded app use breaks the current streak; the longest streak is kept.
+- **Tone:** streaks are simple, optional, supportive, and informational: no points, penalties, coercive pressure, or meaningless scores.
+- **Derived:** streaks are computed from existing records in the configured time zone (goal streaks) or from device-local usage days (app-use streak); a day's opportunity is missed only after that local day ends.
+- **Not decided yet** (DECISIONS, open details 6–7): what a scheduled goal-work opportunity is; how paused, completed, or archived goals and days before a goal's start are treated; what counts as "app use"; which day boundary applies without a configured time zone; whether streaks are shown by default.
 
 ### Offline use, backup, and recovery (v1)
 
@@ -218,7 +263,7 @@ Status: **specified and approved; implemented on branch `feat/stage-3-calendar-p
 
 - Team collaboration, shared workspaces, public profiles, social feeds, or role management.
 - Mandatory AI features, external calendar integration, email ingestion, or third-party automation.
-- Arbitrary-depth task trees, general workflow engines, streak pressure, points, or meaningless quality scores.
+- Arbitrary-depth task trees, general workflow engines, punitive or coercive streak mechanics (penalties, pressure to keep a streak alive), points, or meaningless quality scores. Simple, optional, informational streaks are allowed (T-073 to T-075).
 - Requiring internet for ordinary planning, logging, searching, or reviewing locally available data.
 - **In v1:** automatic sync, any server that stores user data, user accounts, and email or password-reset recovery (DECISIONS D-012). The data structure stays ready for sync later.
 

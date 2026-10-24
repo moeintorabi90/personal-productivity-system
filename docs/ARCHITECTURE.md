@@ -188,6 +188,15 @@ Design:
 - **Backup:** registry entries for the new type and version-aware schemas for `taskDefinitions` and `preferences` (version 2 vs 3); validation, links, and relationship rules as in BACKUP_FORMAT "Data schema version 3". No IndexedDB data rewrite; an optional date index for blocks would be a schema step without data changes (not needed so far).
 - **UI:** Calendar (day/week/month, navigation, search/filters), Today, block forms (create/schedule/quick add/edit/cancel/restore), capacity setting in Settings, warnings in views. All forms keyboard- and screen-reader-accessible, English and Persian, LTR/RTL.
 
+## Design outline: calendar interactions, project colors, streaks (approved 2026-10-25; not implemented)
+
+Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-075 and the derived technical choices and open details in DECISIONS. Everything below is a technical design choice, not an owner decision.
+
+- **Time grid (Stage 3 follow-up):** day and week views render a time grid in the configured zone, using the existing date/time module for day bounds (23/25-hour days, days starting after midnight) and day clipping. Mouse and touch go through Pointer Events; a gesture must distinguish page scrolling from drag-to-create on touch screens. A slot or range selection pre-fills the existing block form (task or quick add), and a drag-move or edge-resize calls the existing block update command, so every Stage 3 rule (daylight-saving gap, 24-hour maximum, capacity warning, snapshot refresh) has one implementation. Drop positions snap to a step not yet decided. No calendar library is planned; adding one would be a dependency decision to raise first. The list layouts and forms stay as the keyboard and screen-reader path.
+- **Project colors:** a fixed palette (identifiers mapped to light- and dark-theme values with adequate contrast; values not decided) and a pure resolver: chosen `color` → palette entry; absent → default entry derived from the project ID; no project → neutral. Views resolve colors on display from the current project record, so a color change re-renders items and writes nothing else. The backup registry adds `color` to the `projects` schema of the new data version, with the older schema kept for older files (`olderSchemas`).
+- **Dual lanes (Stage 6):** the time grid gets a planned lane and an actual lane per day on one axis. Dragging an actual session opens a correction flow that writes a correction record through the Stage 5 audit path; the session's original data is never edited in place.
+- **Streaks:** goal streaks are a pure, derived computation over goals, schedule opportunities, and attributed actual-work records (Stage 6), recomputed on display like capacity. The app-use streak records the local dates of use in device metadata (Stage 8) and computes current and longest from them; it is not part of the backup registry.
+
 ### Platform feasibility (Stage 1 findings)
 
 | Platform | Status |
