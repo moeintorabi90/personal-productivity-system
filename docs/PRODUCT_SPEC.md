@@ -55,7 +55,7 @@ A private, offline-first personal productivity app that helps one person set goa
 
 ### Goals and measures
 
-- [ ] Goals support numeric output, time, task count, and milestone types.
+- [ ] Goals support numeric output, time, and task-count targets, and may contain milestones (T-040).
 - [ ] A goal may link to a project and have a target, date range, optional deadline (T-039), status, weekly objective, and active-day schedule.
 - [ ] Goal progress is derived from actual execution/output records.
 - [ ] Pacing considers timezone, deadline, active days, progress to date, and explicit weekly objectives.
@@ -65,6 +65,8 @@ A private, offline-first personal productivity app that helps one person set goa
 **Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037):** define and build goals and milestones in Stage 4 first. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. Exact goal and milestone behavior remains to be specified with the owner before implementation.
 
 **Milestone completion (owner-approved 2026-10-25; DECISIONS T-038):** the owner manually marks a milestone complete. The app does not infer milestone completion from work sessions or output records.
+
+**Milestone relationship (owner-approved 2026-10-25; DECISIONS T-040):** each milestone belongs to a parent goal and cannot exist on its own.
 
 ### Planning and calendar
 
