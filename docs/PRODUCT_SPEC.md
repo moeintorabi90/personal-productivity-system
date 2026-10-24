@@ -85,6 +85,8 @@ A private, offline-first personal productivity app that helps one person set goa
 
 **Milestone date range (owner-approved 2026-10-25; DECISIONS T-057):** a milestone deadline must be on or after the parent goal's start date and, when the goal has a deadline, on or before that deadline.
 
+**Independent milestone completion (owner-approved 2026-10-25; DECISIONS T-058):** each milestone can be marked complete independently; other milestones under the same goal are not prerequisites.
+
 ### Planning and calendar
 
 - [ ] Calendar supports day, week, and month views, navigation, search, and filters. (Stage 3)
