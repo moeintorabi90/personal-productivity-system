@@ -56,6 +56,7 @@ A private, offline-first personal productivity app that helps one person set goa
 ### Goals and measures
 
 - [ ] Goals support numeric output, time, and task-count targets, and may contain milestones (T-040).
+- [ ] Every goal has a required name and an optional description (T-054).
 - [ ] Numeric output goals use a custom unit label entered by the owner (T-050).
 - [ ] Numeric output goal targets are whole numbers in the initial release; decimal targets are deferred to a later, fuller version (T-051).
 - [ ] A goal may optionally link to a project (T-041) and has a date range whose start date defaults to today but can be changed to the past or future (T-042), one overall target (T-052), optional deadline (T-039), and status. Weekly objectives and choosing goal workdays are deferred until after Stage 5 (T-052, T-053).
