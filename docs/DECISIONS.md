@@ -122,6 +122,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-054 | **Goal name and description:** every goal requires a name; its description is optional. | The name identifies the goal, while extra detail is useful only when the owner wants to provide it. | **Approved by the owner (2026-10-25)** |
 | T-055 | **Milestone name and description:** every milestone requires a name; its description is optional. | A clear name identifies each checkpoint, while extra detail is optional. | **Approved by the owner (2026-10-25)** |
 | T-056 | **Milestone deadline:** a milestone may have a deadline, but one is not required. | Checkpoints can be useful with or without a specific date. | **Approved by the owner (2026-10-25)** |
+| T-057 | **Milestone date range:** when a milestone has a deadline, it must be on or after its goal's start date and, if that goal has a deadline, on or before the goal's deadline. | Keeps checkpoint dates within the period of the goal they belong to. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 

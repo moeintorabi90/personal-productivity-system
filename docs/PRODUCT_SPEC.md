@@ -58,7 +58,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Goals support numeric output, time, and task-count targets, and may contain milestones (T-040).
 - [ ] Every goal has a required name and an optional description (T-054).
 - [ ] Every milestone has a required name and an optional description (T-055).
-- [ ] A milestone may have an optional deadline (T-056).
+- [ ] A milestone may have an optional deadline (T-056); if set, it must be on or after its goal's start date and no later than the goal's deadline when one exists (T-057).
 - [ ] Numeric output goals use a custom unit label entered by the owner (T-050).
 - [ ] Numeric output goal targets are whole numbers in the initial release; decimal targets are deferred to a later, fuller version (T-051).
 - [ ] A goal may optionally link to a project (T-041) and has a date range whose start date defaults to today but can be changed to the past or future (T-042), one overall target (T-052), optional deadline (T-039), and status. Weekly objectives and choosing goal workdays are deferred until after Stage 5 (T-052, T-053).
@@ -82,6 +82,8 @@ A private, offline-first personal productivity app that helps one person set goa
 **Milestone name and description (owner-approved 2026-10-25; DECISIONS T-055):** every milestone has a required name and an optional description.
 
 **Milestone deadline (owner-approved 2026-10-25; DECISIONS T-056):** a milestone may have a deadline, but one is not required.
+
+**Milestone date range (owner-approved 2026-10-25; DECISIONS T-057):** a milestone deadline must be on or after the parent goal's start date and, when the goal has a deadline, on or before that deadline.
 
 ### Planning and calendar
 
