@@ -60,6 +60,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] The owner manually marks a goal complete; reaching its target does not automatically change its status (T-043).
 - [ ] The owner can pause a goal and resume it later without completing or deleting it (T-044).
 - [ ] Pausing or resuming a goal does not change its start date or deadline (T-045).
+- [ ] Actual work or output explicitly attributed to a paused goal still counts toward its progress (T-046).
 - [ ] Goal progress is derived from actual execution/output records.
 - [ ] Pacing considers timezone, deadline, active days, progress to date, and explicit weekly objectives.
 - [ ] The UI explains the assumptions behind pacing.
