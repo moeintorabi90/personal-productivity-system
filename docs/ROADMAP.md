@@ -80,7 +80,7 @@ After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offlin
 
 ## Stage 5 — Actual execution and outputs
 
-**Deliverables:** running and backfilled sessions, explicit corrections, output metric definitions and records, planned/actual comparison. Includes the task-definition field deferred from Stage 2: relevant output metrics (DECISIONS T-024; new `dataSchemaVersion` with an upgrade step).
+**Deliverables:** running and backfilled sessions, explicit corrections, output metric definitions and records, planned/actual comparison. Includes the task-definition field deferred from Stage 2: relevant output metrics (DECISIONS T-024). Its new record types and fields go into backups together as **`dataSchemaVersion` 6**, the next after the project color's version 5 (T-076), with an upgrade step; if Stage 5 were released in more than one data-version step, they would take consecutive versions starting at 6.
 
 **Acceptance:** all state/chronology rules tested through the local repository/domain layer; unplanned session works; immutable snapshots survive edits and backup round-trips; output correction is auditable and imported corrections are appended, never merged into originals; session actions do not mutate planned blocks. Project colors exist by then (the Stage 3 follow-up is built before Stage 5, T-076): recorded actual work uses the stronger treatment of its project color with a visible non-color cue (T-069).
 
