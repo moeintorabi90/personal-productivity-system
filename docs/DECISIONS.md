@@ -109,6 +109,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-041 | **Goal project link:** linking a goal to a project is optional; goals may be general or project-specific. | Allows life-wide goals as well as goals tied to one project. | **Approved by the owner (2026-10-25)** |
 | T-042 | **Goal start date:** every goal has a start date, defaulting to today when created. The owner may change it to a past or future date. | Supports both new goals and goals already underway or planned for later. | **Approved by the owner (2026-10-25)** |
 | T-043 | **Goal completion:** reaching the target does not automatically complete a goal; the owner manually marks it complete. | Keeps the goal's status under the owner's control, including when targets or records later change. | **Approved by the owner (2026-10-25)** |
+| T-044 | **Pause and resume:** the owner may pause a goal and resume it later; pausing is not completion and does not delete the goal. | Supports temporary changes in focus while preserving the goal. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 
