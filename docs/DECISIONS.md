@@ -112,6 +112,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-044 | **Pause and resume:** the owner may pause a goal and resume it later; pausing is not completion and does not delete the goal. | Supports temporary changes in focus while preserving the goal. | **Approved by the owner (2026-10-25)** |
 | T-045 | **Dates while paused:** pausing or resuming a goal does not change its start date or deadline. The owner may edit those dates explicitly. | Avoids hidden date changes when a goal is paused. | **Approved by the owner (2026-10-25)** |
 | T-046 | **Contributions while paused:** actual work or output explicitly attributed to a paused goal still counts toward its progress. Pausing does not erase or suppress attributed records. | Preserves the meaning of work the owner deliberately links to the goal. | **Approved by the owner (2026-10-25)** |
+| T-047 | **Session-time attribution:** the duration of one work session may be attributed to at most one goal. | Prevents the same time from being counted toward multiple goals. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 

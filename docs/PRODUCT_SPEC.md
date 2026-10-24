@@ -64,7 +64,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Goal progress is derived from actual execution/output records.
 - [ ] Pacing considers timezone, deadline, active days, progress to date, and explicit weekly objectives.
 - [ ] The UI explains the assumptions behind pacing.
-- [ ] Time/task-count contribution links to at most one goal per task/session as specified by the domain rules; output metrics may contribute to multiple goals.
+- [ ] The duration of one work session may contribute to at most one goal (T-047). Task-count attribution and whether output metrics may contribute to multiple goals remain to be decided.
 
 **Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037):** define and build goals and milestones in Stage 4 first. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. Exact goal and milestone behavior remains to be specified with the owner before implementation.
 
