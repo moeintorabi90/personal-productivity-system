@@ -64,6 +64,8 @@ A private, offline-first personal productivity app that helps one person set goa
 
 **Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037):** define and build goals and milestones in Stage 4 first. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. Exact goal and milestone behavior remains to be specified with the owner before implementation.
 
+**Milestone completion (owner-approved 2026-10-25; DECISIONS T-038):** the owner manually marks a milestone complete. The app does not infer milestone completion from work sessions or output records.
+
 ### Planning and calendar
 
 - [ ] Calendar supports day, week, and month views, navigation, search, and filters. (Stage 3)
