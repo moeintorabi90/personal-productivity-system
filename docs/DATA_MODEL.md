@@ -162,7 +162,7 @@ Invariants added in Stage 3:
 - Goal progress is recomputed from underlying records and is rebuildable; cached totals are disposable.
 - A session's time/task-count contribution may be linked to at most one goal in the initial scope.
 - Output metric values may support multiple goals only through explicit compatible attribution records.
-- Pacing uses target, progress, deadline, timezone, active dates, and explicit weekly objective. Do not union multiple task schedules to invent a goal schedule.
+- After Stage 5, pacing uses target, progress, deadline, timezone, owner-chosen goal workdays, and explicit weekly objective. Choosing goal workdays is deferred until after Stage 5 (DECISIONS T-053). Do not union multiple task schedules to invent a goal schedule.
 
 ### Identity, versions, and merging (v1 backup; also the basis for later sync)
 

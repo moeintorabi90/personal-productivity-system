@@ -118,6 +118,7 @@ The behavior contract is in PRODUCT_SPEC "Stage 3 planning contract"; data in DA
 | T-050 | **Numeric output goal units:** the owner may enter a custom unit label for a numeric output goal (for example, pages, words, or articles); units are not restricted to a fixed built-in list. | Different goals measure different outputs, and the owner should be able to name the relevant quantity. | **Approved by the owner (2026-10-25)** |
 | T-051 | **Numeric output precision:** in the initial release, output goal targets use whole numbers. Decimal targets are deferred to a later, fuller version. | Keeps the first goal flow simple while preserving a planned path for more precise measures. | **Approved by the owner (2026-10-25)** |
 | T-052 | **Overall target first:** the initial goal setup has an overall target only. Weekly objectives are deferred until after Stage 5. | Keeps Stage 4 focused on goals while progress and pacing await actual records. | **Approved by the owner (2026-10-25)** |
+| T-053 | **Goal active days:** choosing which days of the week the owner plans to work toward a goal is not required in the initial goal setup; defer this choice until after Stage 5. | Keeps initial goal setup simple; active days are useful when progress and pacing can be calculated from actual records. | **Approved by the owner (2026-10-25)** |
 
 ### Prisma 7 versus plain SQL + `pg` (checked 2026-10-20)
 
