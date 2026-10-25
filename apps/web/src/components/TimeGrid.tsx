@@ -14,9 +14,21 @@ import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, 
 import { useServices, useT } from "../app-context.tsx";
 import { formatLocalDate, formatTime } from "../i18n/index.ts";
 import { type BlockTimeInput, dragBlockTimes } from "../local/planning.ts";
-import { DAY_MINUTES, type GridResult, laneLayout, moveTarget, rangeSelection, resizeTarget, segmentPlacement, tapSelection } from "../planning/grid.ts";
+import {
+  DAY_MINUTES,
+  type EditResult,
+  type GridResult,
+  isAmbiguousInstant,
+  laneLayout,
+  moveTarget,
+  rangeSelection,
+  resizeTarget,
+  segmentPlacement,
+  tapSelection,
+  wallMinutesOf,
+} from "../planning/grid.ts";
 import { blockLabel, type BlockItem, filterBlocks, type PlanFilter } from "../planning/planning.ts";
-import { MINUTE_MS } from "../planning/time.ts";
+import { formatOffset, localDateOf, MINUTE_MS, offsetMinutesAt } from "../planning/time.ts";
 import { blockColor, dayPlan, formatMinutes, planningError, type PlanningContext } from "./planning-ui.tsx";
 import type { UndoOffer } from "./UndoBar.tsx";
 
@@ -46,7 +58,9 @@ interface Preview {
   date: string;
   top: number;
   bottom: number;
-  result: GridResult;
+  /** Text inside the preview: start, length, and the offset of an ambiguous time (T-030); or why it is refused. */
+  label: string;
+  refused: boolean;
 }
 
 export function TimeGrid({
@@ -114,28 +128,33 @@ export function TimeGrid({
     return best;
   }
 
-  function evaluate(g: Gesture, clientX: number, clientY: number): Preview {
-    if (g.kind === "create") {
-      const now = minutesAt(g.date, clientY);
-      const result = rangeSelection(g.date, g.startMinutes, now, ctx.zone);
-      return placed(g.date, result);
-    }
+  /** The selection (create) or the block's new times (move, resize) under the pointer. */
+  function resultOf(g: Gesture, clientX: number, clientY: number): { result: GridResult | EditResult; date: string } {
+    if (g.kind === "create") return { result: rangeSelection(g.date, g.startMinutes, minutesAt(g.date, clientY), ctx.zone), date: g.date };
     if (g.kind === "move") {
       const to = dateAt(clientX);
       const deltaDays = dates.indexOf(to) - dates.indexOf(g.date);
-      const deltaMinutes = minutesAt(g.date, clientY) - g.startMinutes;
-      return placed(null, moveTarget(g.block.data, deltaDays, deltaMinutes, ctx.zone), to);
+      return { result: moveTarget(g.block.data, deltaDays, minutesAt(g.date, clientY) - g.startMinutes, ctx.zone), date: to };
     }
     const date = dateAt(clientX);
-    return placed(null, resizeTarget(g.block.data, g.edge, date, minutesAt(date, clientY), ctx.zone), date);
+    return { result: resizeTarget(g.block.data, g.edge, date, minutesAt(date, clientY), ctx.zone), date };
   }
 
-  /** Where a result is drawn: on its start date (or the given one) by wall minutes. */
-  function placed(date: string | null, result: GridResult, fallbackDate?: string): Preview {
-    if (result.kind !== "ok") return { date: date ?? fallbackDate ?? dates[0]!, top: 0, bottom: 0, result };
-    const [h, m] = result.input.startTime.split(":").map(Number) as [number, number];
-    const top = h * 60 + m;
-    return { date: result.input.date, top, bottom: Math.min(DAY_MINUTES, top + result.input.durationMinutes), result };
+  function evaluate(g: Gesture, clientX: number, clientY: number): Preview | null {
+    const { result, date } = resultOf(g, clientX, clientY);
+    if (result.kind === "unchanged") return null; // still where it was: nothing to show or write
+    if (result.kind === "gap" || result.kind === "invalid") return { date, top: 0, bottom: 15, label: refusal(result), refused: true };
+    if ("input" in result) {
+      const [h, m] = result.input.startTime.split(":").map(Number) as [number, number];
+      const top = h * 60 + m;
+      const label = `${result.input.startTime} · ${formatMinutes(t, result.input.durationMinutes)}`;
+      return { date: result.input.date, top, bottom: Math.min(DAY_MINUTES, top + result.input.durationMinutes), label, refused: false };
+    }
+    const top = wallMinutesOf(result.startsAt, ctx.zone);
+    const minutes = (Date.parse(result.endsAt) - Date.parse(result.startsAt)) / MINUTE_MS;
+    const time = formatTime(result.startsAt, ctx.zone, ctx.language);
+    const label = `${result.ambiguous ? `${time} (${formatOffset(result.offsetMinutes)})` : time} · ${formatMinutes(t, minutes)}`;
+    return { date: localDateOf(result.startsAt, ctx.zone), top, bottom: Math.min(DAY_MINUTES, top + minutes), label, refused: false };
   }
 
   function begin(event: ReactPointerEvent, gesture: Gesture) {
@@ -192,9 +211,9 @@ export function TimeGrid({
       else if (g.kind === "move") onOpenBlock(g.block);
       return;
     }
-    const final = evaluate(g, event.clientX, event.clientY);
-    if (g.kind === "create") commitCreate(final.result);
-    else await commitEdit(g.block, final.result);
+    const { result } = resultOf(g, event.clientX, event.clientY);
+    if (g.kind === "create") commitCreate(result as GridResult);
+    else await commitEdit(g.block, result as EditResult);
   }
 
   function cancel() {
@@ -205,7 +224,7 @@ export function TimeGrid({
     setDraggingId(null);
   }
 
-  function refusal(result: GridResult): string {
+  function refusal(result: { kind: "gap" | "invalid" }): string {
     return t(result.kind === "gap" ? "plan.error.DST_GAP" : "plan.error.INVALID_DURATION");
   }
 
@@ -214,14 +233,15 @@ export function TimeGrid({
     else onError(refusal(result));
   }
 
-  async function commitEdit(block: BlockItem, result: GridResult) {
+  async function commitEdit(block: BlockItem, result: EditResult) {
+    if (result.kind === "unchanged") return; // dropped where it was: no edit (the instant never shifts)
     if (result.kind !== "ok") {
       onError(refusal(result));
       return;
     }
     try {
-      const { previous, after, version } = await dragBlockTimes(db, block.id, result.input);
-      if (version) onMoved({ blockId: block.id, title: blockLabel(block.data, ctx.tasks).title, previous, after, version });
+      const { previous, after, previousVersion, version } = await dragBlockTimes(db, block.id, result);
+      if (version) onMoved({ blockId: block.id, title: blockLabel(block.data, ctx.tasks).title, previous, after, previousVersion, version });
     } catch (e) {
       onError(planningError(t, e));
     }
@@ -302,12 +322,12 @@ export function TimeGrid({
                 ))}
                 {preview && preview.date === date ? (
                   <div
-                    className={`tg-preview${preview.result.kind === "ok" ? "" : " tg-preview-refused"}`}
+                    className={`tg-preview${preview.refused ? " tg-preview-refused" : ""}`}
                     data-testid="grid-preview"
                     style={{ top: `${(preview.top / DAY_MINUTES) * 100}%`, height: `${(Math.max(preview.bottom - preview.top, 15) / DAY_MINUTES) * 100}%` }}
                     aria-hidden="true"
                   >
-                    {preview.result.kind === "ok" ? `${preview.result.input.startTime} · ${formatMinutes(t, preview.result.input.durationMinutes)}` : refusal(preview.result)}
+                    {preview.label}
                   </div>
                 ) : null}
               </div>
@@ -347,7 +367,10 @@ function GridBlock({
   const t = useT();
   const label = blockLabel(block.data, ctx.tasks);
   const planned = block.data.status === "planned";
-  const time = `${formatTime(block.data.startsAt, ctx.zone, ctx.language)}–${formatTime(block.data.endsAt, ctx.zone, ctx.language)}`;
+  // A time inside a repeated hour (clocks going back) shows its offset, so both occurrences are told apart (T-030).
+  const clock = (instant: string) =>
+    isAmbiguousInstant(instant, ctx.zone) ? `${formatTime(instant, ctx.zone, ctx.language)} (${formatOffset(offsetMinutesAt(instant, ctx.zone))})` : formatTime(instant, ctx.zone, ctx.language);
+  const time = `${clock(block.data.startsAt)}–${clock(block.data.endsAt)}`;
   const minutes = (Date.parse(block.data.endsAt) - Date.parse(block.data.startsAt)) / MINUTE_MS;
   const status = planned ? t("plan.planned") : t("plan.cancelled");
   const style = {

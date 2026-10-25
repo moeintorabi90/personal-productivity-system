@@ -8,7 +8,7 @@
 import type { BlockTimeInput } from "../local/planning.ts";
 import type { CalendarBlockData } from "../backup/registry.ts";
 import { blockSegmentOn } from "./planning.ts";
-import { addDays, localDateOf, localDayBounds, MINUTE_MS, resolveWallTime, wallTimeOf } from "./time.ts";
+import { addDays, localDateOf, localDayBounds, MINUTE_MS, offsetMinutesAt, resolveWallTime, wallTimeOf } from "./time.ts";
 
 export const SLOT_MINUTES = 15;
 export const TAP_MINUTES = 30;
@@ -72,22 +72,50 @@ export function blockStartWall(block: Pick<CalendarBlockData, "startsAt">, zone:
 }
 
 /**
+ * Result of moving or resizing a block: exact instants, so an edge that is not dragged keeps its
+ * instant. The dragged position resolves like any entered wall time (T-030): a gap is refused, an
+ * ambiguous time (clocks going back) takes the EARLIER instant, and `offsetMinutes` is shown.
+ * A drag that ends on the block's current snapped position is `unchanged` and writes nothing, so a
+ * block in the second occurrence of a repeated hour never shifts merely by being touched.
+ */
+export type EditResult =
+  | { kind: "ok"; startsAt: string; endsAt: string; ambiguous: boolean; offsetMinutes: number }
+  | { kind: "unchanged" }
+  | { kind: "gap" }
+  | { kind: "invalid" };
+
+/** Local date and wall time of an instant, normalized like `wallAt` (an end at midnight is 00:00 of the next date). */
+function wallOfInstant(instant: string | number, zone: string): { date: string; time: string } {
+  return { date: localDateOf(instant, zone), time: wallTimeOf(instant, zone) };
+}
+
+const sameWall = (a: { date: string; time: string }, b: { date: string; time: string }) => a.date === b.date && a.time === b.time;
+
+function edit(startsAt: number, endsAt: number, resolvedAt: number, zone: string, ambiguous: boolean): EditResult {
+  const duration = (endsAt - startsAt) / MINUTE_MS;
+  if (!(duration >= 1) || duration > DAY_MINUTES) return { kind: "invalid" };
+  return { kind: "ok", startsAt: new Date(startsAt).toISOString(), endsAt: new Date(endsAt).toISOString(), ambiguous, offsetMinutes: offsetMinutesAt(resolvedAt, zone) };
+}
+
+/**
  * Moving a block by drag: its start moves by the pointer's offset (minutes and whole days, e.g. to
  * another week column) and snaps to the nearest 15-minute boundary; the real duration is kept.
  */
-export function moveTarget(block: Pick<CalendarBlockData, "startsAt" | "endsAt">, deltaDays: number, deltaMinutes: number, zone: string): GridResult {
+export function moveTarget(block: Pick<CalendarBlockData, "startsAt" | "endsAt">, deltaDays: number, deltaMinutes: number, zone: string): EditResult {
   const start = blockStartWall(block, zone);
-  const duration = (Date.parse(block.endsAt) - Date.parse(block.startsAt)) / MINUTE_MS;
-  const minutes = roundToSlot(start.minutes + deltaMinutes);
-  const wall = wallAt(addDays(start.date, deltaDays), minutes);
-  if (resolveWallTime(wall.date, wall.time, zone).kind === "gap") return { kind: "gap" };
-  return { kind: "ok", input: { date: wall.date, startTime: wall.time, durationMinutes: duration } };
+  const target = wallAt(addDays(start.date, deltaDays), roundToSlot(start.minutes + deltaMinutes));
+  if (sameWall(target, wallOfInstant(block.startsAt, zone))) return { kind: "unchanged" };
+  const resolved = resolveWallTime(target.date, target.time, zone);
+  if (resolved.kind === "gap") return { kind: "gap" };
+  const startsAt = Date.parse(resolved.instant);
+  const duration = Date.parse(block.endsAt) - Date.parse(block.startsAt);
+  return edit(startsAt, startsAt + duration, startsAt, zone, resolved.ambiguous);
 }
 
 /**
  * Resizing a block by dragging its start or end edge to a wall position (snapped to the nearest
- * 15-minute boundary); the other edge stays at its instant. Zero or negative length and more than
- * 24 hours are refused.
+ * 15-minute boundary); the other edge keeps its exact instant. Zero or negative length and more
+ * than 24 hours are refused.
  */
 export function resizeTarget(
   block: Pick<CalendarBlockData, "startsAt" | "endsAt">,
@@ -95,23 +123,22 @@ export function resizeTarget(
   date: string,
   pointerMinutes: number,
   zone: string,
-): GridResult {
-  const minutes = roundToSlot(pointerMinutes);
-  if (edge === "end") {
-    const start = blockStartWall(block, zone);
-    const end = instantAt(date, minutes, zone);
-    if (end === null) return { kind: "gap" };
-    const duration = (end - Date.parse(block.startsAt)) / MINUTE_MS;
-    if (!(duration >= 1) || duration > DAY_MINUTES) return { kind: "invalid" };
-    const wall = wallAt(start.date, start.minutes);
-    return { kind: "ok", input: { date: wall.date, startTime: wall.time, durationMinutes: duration } };
-  }
-  const start = instantAt(date, minutes, zone);
-  if (start === null) return { kind: "gap" };
-  const duration = (Date.parse(block.endsAt) - start) / MINUTE_MS;
-  if (!(duration >= 1) || duration > DAY_MINUTES) return { kind: "invalid" };
-  const wall = wallAt(date, minutes);
-  return { kind: "ok", input: { date: wall.date, startTime: wall.time, durationMinutes: duration } };
+): EditResult {
+  const target = wallAt(date, roundToSlot(pointerMinutes));
+  if (sameWall(target, wallOfInstant(edge === "end" ? block.endsAt : block.startsAt, zone))) return { kind: "unchanged" };
+  const resolved = resolveWallTime(target.date, target.time, zone);
+  if (resolved.kind === "gap") return { kind: "gap" };
+  const at = Date.parse(resolved.instant);
+  return edge === "end"
+    ? edit(Date.parse(block.startsAt), at, at, zone, resolved.ambiguous)
+    : edit(at, Date.parse(block.endsAt), at, zone, resolved.ambiguous);
+}
+
+/** Whether an instant's wall time occurs twice in `zone` (clocks going back): its offset should be shown (T-030). */
+export function isAmbiguousInstant(instant: string, zone: string): boolean {
+  const wall = wallOfInstant(instant, zone);
+  const resolved = resolveWallTime(wall.date, wall.time, zone);
+  return resolved.kind === "ok" && resolved.ambiguous;
 }
 
 /** Where a block's part on `date` is drawn: wall minutes from the top and to the bottom of the column. */

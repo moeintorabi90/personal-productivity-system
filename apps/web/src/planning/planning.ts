@@ -15,6 +15,8 @@ export interface TaskItem {
 export interface BlockItem {
   id: string;
   data: CalendarBlockData;
+  /** The stored version (present for blocks read from the device; Undo compares it, T-090). */
+  version?: Record<string, number>;
 }
 
 /** Does the recurrence put an occurrence on local date `date`? */

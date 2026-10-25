@@ -1,11 +1,13 @@
 /**
  * Undo after a drag-move or resize on the time grid (DECISIONS T-090, "Derived technical choices"):
  * no confirmation dialog; the action stays for 5 seconds, and for as long as it has keyboard
- * focus. It disappears as soon as the block no longer has the times the drag wrote; the command
- * itself also refuses when the block's version changed (version guard).
+ * focus. It is offered only while the block is unchanged since the drag, judged by its stored
+ * VERSION (not only its times): any other edit closes it. The command keeps its own version guard
+ * as the final check.
  */
 import { useEffect, useRef, useState } from "react";
 import { useServices, useT } from "../app-context.tsx";
+import { canonicalize } from "../backup/jcs.ts";
 import type { VersionVector } from "../backup/versions.ts";
 import { type BlockTimes, undoBlockTimes } from "../local/planning.ts";
 import type { BlockItem } from "../planning/planning.ts";
@@ -18,7 +20,21 @@ export interface UndoOffer {
   title: string;
   previous: BlockTimes;
   after: BlockTimes;
+  /** The block's version before the drag (the live view may still show it right after the drag). */
+  previousVersion: VersionVector;
+  /** The version the drag wrote: Undo applies only to this one. */
   version: VersionVector;
+}
+
+/**
+ * Whether Undo still applies to the block as currently shown: it must be planned and show either
+ * the version the drag wrote, or — while the live view has not caught up yet — the version from
+ * before the drag. Any other version means another edit happened (even one that kept the times).
+ */
+export function undoApplies(offer: UndoOffer, block: Pick<BlockItem, "data" | "version"> | undefined): boolean {
+  if (!block?.version || block.data.status !== "planned") return false;
+  const shown = canonicalize(block.version);
+  return shown === canonicalize(offer.version) || shown === canonicalize(offer.previousVersion);
 }
 
 export function UndoBar({ offer, blocks, onClose, onError }: { offer: UndoOffer; blocks: readonly BlockItem[]; onClose: () => void; onError: (message: string) => void }) {
@@ -36,11 +52,8 @@ export function UndoBar({ offer, blocks, onClose, onError }: { offer: UndoOffer;
     };
   }, [offer, focused, onClose]);
 
-  // The block changed again (another edit, a cancel, an import): Undo no longer applies. Right
-  // after the drag the live data may still show the times from before it, which is not a change.
-  const current = blocks.find((b) => b.id === offer.blockId)?.data;
-  const has = (times: BlockTimes) => current?.startsAt === times.startsAt && current.endsAt === times.endsAt;
-  const unchanged = !!current && current.status === "planned" && (has(offer.after) || has(offer.previous));
+  // The block changed again (another edit, a cancel, an import): Undo no longer applies.
+  const unchanged = undoApplies(offer, blocks.find((b) => b.id === offer.blockId));
   useEffect(() => {
     if (!unchanged) onClose();
   }, [unchanged, onClose]);

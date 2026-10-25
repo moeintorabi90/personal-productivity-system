@@ -141,10 +141,10 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Sta
 
 1. Tapping/clicking an empty slot and dragging across an empty range open block creation with that start (and end) pre-filled; no block is written until a task or quick-add title is chosen and saved; cancelling writes nothing.
 2. Drag-move and edge-resize of a planned block change only that block (same rules as a form edit: new instants, planning zone, refreshed snapshot; task and `occurrenceDate` unchanged); other blocks are never moved; cancelled blocks cannot be dragged.
-3. A drop or selection in a daylight-saving gap is refused, not shifted; a resize beyond 24 hours or to zero length is refused; a resulting over-capacity date shows the warning and the change is still allowed (D-021).
+3. A drop or selection in a daylight-saving gap is refused, not shifted; a resize beyond 24 hours or to zero length is refused; a resulting over-capacity date shows the warning and the change is still allowed (D-021). On a fall-back date (e.g. `America/New_York`, 2026-11-01): a block in the second occurrence of the repeated hour is unchanged by a drag that stays in its snapped slot, and a resize keeps the instant of the edge not dragged; a move or resize to an ambiguous wall time takes the earlier instant and its offset is shown (T-030).
 4. Pointer input works with mouse and touch (touch scrolling still scrolls); every action remains possible with the forms and the keyboard; English/Persian, LTR/RTL.
 4a. Time-grid details (T-089): a tap at 09:07 pre-fills 09:00–09:30; drag selection, move, and resize land on 15-minute boundaries in the configured zone (including on a daylight-saving date); at 560 px or narrower the week grid shows two days and Previous/Next (and swipe) reach every day of the week.
-4b. Undo (T-090): after a drag-move or resize, Undo appears without any confirmation dialog, restores the previous start, end, zone, and local date as a new version (snapshot refreshed as for any block edit), and disappears after 5 seconds (unless it has keyboard focus) or when the block changes again; form edits show no Undo.
+4b. Undo (T-090): after a drag-move or resize, Undo appears without any confirmation dialog, restores the previous start, end, zone, and local date as a new version (snapshot refreshed as for any block edit), and disappears after 5 seconds (unless it has keyboard focus) or when the block changes again — judged by its version, so an edit that keeps the times (e.g. cancel and restore) also removes it; form edits show no Undo.
 
 **Stage 3 follow-up: project colors (T-068 to T-070)**
 
@@ -169,7 +169,7 @@ A stage is not complete while a critical acceptance item has an unexplained fail
 
 ## Stage 3 follow-up test report (2026-10-25, branch `feat/calendar-follow-up`)
 
-Commands run on the Windows development machine (Edge for end-to-end tests): `npm.cmd run typecheck` passed; `npm.cmd test` 29 files, 298 tests passed (260 before; new: `planning/colors.test.ts` 8, `planning/grid.test.ts` 10, `local/calendar-follow-up.test.ts` 6, `backup/colors-backup.test.ts` 9, follow-up component tests in `App.test.tsx` 5); `npm.cmd run test:e2e` 11 passed (2 new). Coverage per item:
+Commands run on the Windows development machine (Edge for end-to-end tests): `npm.cmd run typecheck` passed; `npm.cmd test` 29 files, 306 tests passed (260 before; new: `planning/colors.test.ts` 8, `planning/grid.test.ts` 15, `local/calendar-follow-up.test.ts` 7, `backup/colors-backup.test.ts` 9, follow-up component tests in `App.test.tsx` 7); `npm.cmd run test:e2e` 11 passed (2 new). Coverage per item:
 
 - Items 1, 4a (tap and range pre-fill, 15-minute snapping, daylight-saving gap refused): `planning/grid.test.ts`; `App.test.tsx` (tap at 09:07 → 09:00 for 30 minutes, drag selection, nothing written until Save) with jsdom pointer events; end-to-end with a real mouse and a touch tap.
 - Items 2, 3 (drag-move and edge-resize change only that block; cancelled blocks not dragged; DST gap, zero and over-24-hour durations refused): `planning/grid.test.ts`, `local/calendar-follow-up.test.ts`, `App.test.tsx`, and the end-to-end mouse drag and resize.
@@ -178,6 +178,8 @@ Commands run on the Windows development machine (Edge for end-to-end tests): `np
 - Item 4b (Undo without a dialog, restores as a new version, disappears after 5 seconds or when the block changes, stays while focused): `local/calendar-follow-up.test.ts` (version guard, refreshed snapshot), `App.test.tsx`, and end-to-end (hidden after 5 s; kept for 6 s while focused; Undo restores).
 - Items 5–7 (palette, derived default, item colors, color change writes only the project, non-color cue, contrast): `planning/colors.test.ts` (reads `styles.css`), `local/calendar-follow-up.test.ts`, `App.test.tsx`.
 - Item 8 (backup, data version 5): `backup/colors-backup.test.ts`; end-to-end color on a fresh device. New sample `apps/web/src/backup/samples/pps-backup-format-v1-data-v5.json` (fabricated, written by `PPS_WRITE_SAMPLE=1`).
+
+**Review fixes (same branch):** (1) daylight saving: drags resolve only the dragged position and keep the other edge's instant; a drag within the current snapped slot writes nothing; regression tests on New York's fall-back date (2026-11-01) and the spring gap (`planning/grid.test.ts`, `App.test.tsx`, where a second-occurrence block shows "01:30 (UTC−05:00)"). (2) Undo visibility follows the block's version: `undoApplies` (`local/calendar-follow-up.test.ts`) and a component test where cancel-and-restore after a drag closes the Undo bar; the command's version guard stays.
 
 Changed existing tests: exports are data version 5 and "newer" is version 6 (`organization-backup`, `planning-backup`, `goals-backup`, `validation`); three Stage 3 component tests and one Stage 3 end-to-end test choose Layout "List" before checking the list views, since day and week now open as the time grid. **Not yet tested:** manual checks on the owner's Windows laptop (mouse drags) and Android phone (long-press drag, swipe, both themes); touch drag-and-drop is not covered by an automated test (only the touch tap).
 

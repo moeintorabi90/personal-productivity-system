@@ -135,30 +135,44 @@ export type BlockTimes = Pick<CalendarBlockData, "startsAt" | "endsAt" | "timeZo
 const timesOf = (b: CalendarBlockData): BlockTimes => ({ startsAt: b.startsAt, endsAt: b.endsAt, timeZone: b.timeZone, localDate: b.localDate });
 
 /**
- * Moves or resizes a block by drag on the time grid (T-067, T-089): the same edit as `updateBlock`
- * (new instants from the snapped wall time in the configured zone, refreshed snapshot, task and
- * occurrence link kept), refused for a cancelled block. Returns the times before and after the drag
- * and the version this edit wrote, which guards Undo; `version` is null when nothing changed.
+ * Moves or resizes a block by drag on the time grid (T-067, T-089): an edit of the block with the
+ * EXACT instants the grid resolved (planning/grid.ts: snapped wall time; a gap refused; an
+ * ambiguous time on the earlier instant, T-030), so an edge that was not dragged keeps its instant.
+ * As with `updateBlock`, the configured zone becomes its planning zone and the snapshot is
+ * refreshed; task and occurrence link are kept; a cancelled block is refused. Returns the times
+ * before and after, the version before the drag, and the version it wrote (which guards Undo;
+ * null when nothing changed).
  */
 export async function dragBlockTimes(
   db: LocalDb,
   id: string,
-  input: BlockTimeInput,
+  instants: Pick<CalendarBlockData, "startsAt" | "endsAt">,
   registry: Registry = PRODUCT_REGISTRY,
-): Promise<{ previous: BlockTimes; after: BlockTimes; version: VersionVector | null }> {
+): Promise<{ previous: BlockTimes; after: BlockTimes; previousVersion: VersionVector; version: VersionVector | null }> {
   return db.transaction("rw", planningTables(db), async () => {
     const zone = await requireZone(db);
     const before = await db.records.get([CALENDAR_BLOCKS, id]);
     if (!before) throw new PlanningError("NOT_FOUND", `block ${id} is not on this device`);
     const current = before.data as CalendarBlockData;
     if (current.status === "cancelled") throw new PlanningError("CANCELLED", "a cancelled block cannot be dragged");
+    const minutes = (Date.parse(instants.endsAt) - Date.parse(instants.startsAt)) / MINUTE_MS;
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > BLOCK_MAX_MINUTES) {
+      throw new PlanningError("INVALID_DURATION", `duration must be 1–${BLOCK_MAX_MINUTES} whole minutes`);
+    }
     const row = await putRecord(db, registry, CALENDAR_BLOCKS, id, {
       ...current,
-      ...blockInstants(input, zone),
+      startsAt: instants.startsAt,
+      endsAt: instants.endsAt,
       timeZone: zone,
+      localDate: localDateOf(instants.startsAt, zone),
       snapshot: await snapshotOf(db, current.taskId),
     });
-    return { previous: timesOf(current), after: timesOf(row.data as CalendarBlockData), version: row.contentHash === before.contentHash ? null : row.version };
+    return {
+      previous: timesOf(current),
+      after: timesOf(row.data as CalendarBlockData),
+      previousVersion: before.version,
+      version: row.contentHash === before.contentHash ? null : row.version,
+    };
   });
 }
 
@@ -217,11 +231,11 @@ export async function setRecurrence(db: LocalDb, taskId: string, recurrence: Rec
 }
 
 export interface PlanningData {
-  blocks: { id: string; data: CalendarBlockData }[];
+  blocks: { id: string; data: CalendarBlockData; version: VersionVector }[];
 }
 
-/** Every block on this device (live records; cancelled ones included). */
+/** Every block on this device (live records; cancelled ones included), with its stored version. */
 export async function loadBlocks(db: LocalDb): Promise<PlanningData["blocks"]> {
   const rows: RecordRow[] = await db.records.where("type").equals(CALENDAR_BLOCKS).toArray();
-  return rows.map((row) => ({ id: row.id, data: row.data as CalendarBlockData }));
+  return rows.map((row) => ({ id: row.id, data: row.data as CalendarBlockData, version: row.version }));
 }

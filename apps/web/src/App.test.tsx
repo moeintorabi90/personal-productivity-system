@@ -909,6 +909,64 @@ describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-
     expect(await services.db.records.get(["calendarBlocks", other])).toEqual(cancelledBefore);
   });
 
+  it("4b. Undo closes after another edit that keeps the times (version changed), so no stale undo is offered", async () => {
+    const week = await gridWeek();
+    const task = await createTask(services.db, { title: "Write" });
+    const { createBlock, setBlockCancelled } = await import("./local/planning.ts");
+    const id = await createBlock(services.db, { taskId: task, date: "2026-11-02", startTime: "09:00", durationMinutes: 60 });
+    const monday = within(week).getAllByTestId("grid-column")[2]!;
+    const block = await within(monday).findByTestId("grid-block");
+    fireEvent.pointerDown(block, pointer(y(9, 30)));
+    fireEvent.pointerMove(block, pointer(y(11, 30)));
+    fireEvent.pointerUp(block, pointer(y(11, 30)));
+    await screen.findByTestId("undo-bar");
+    await waitFor(async () => expect((await services.db.records.get(["calendarBlocks", id]))!.data.startsAt).toBe("2026-11-02T07:30:00.000Z")); // 11:00
+    // Cancel and restore: the same times and status, but a new version.
+    await setBlockCancelled(services.db, id, true);
+    await setBlockCancelled(services.db, id, false);
+    await waitFor(() => expect(screen.queryByTestId("undo-bar")).toBeNull());
+    expect((await services.db.records.get(["calendarBlocks", id]))!.data.startsAt).toBe("2026-11-02T07:30:00.000Z");
+  });
+
+  it("T-030 on the grid: a block in the repeated hour shows its offset, and a drag within its own slot writes nothing", async () => {
+    vi.setSystemTime(new Date("2026-11-01T16:00:00.000Z")); // Sunday 1 Nov 2026, New York falls back at 02:00
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "America/New_York" });
+    layoutGrid();
+    const task = await createTask(services.db, { title: "Night shift" });
+    const { createBlock } = await import("./local/planning.ts");
+    await createBlock(services.db, { taskId: task, date: "2026-11-01", startTime: "00:00", durationMinutes: 15 }); // a valid block to copy fields from
+    const { putRecord } = await import("./local/records.ts");
+    const blocksNow = await services.db.records.where("type").equals("calendarBlocks").toArray();
+    // A block in the SECOND 01:30 (EST, UTC−05:00), as a drag or an import may leave it.
+    const id = crypto.randomUUID();
+    await putRecord(services.db, PRODUCT_REGISTRY, "calendarBlocks", id, {
+      ...blocksNow[0]!.data,
+      startsAt: "2026-11-01T06:30:00.000Z",
+      endsAt: "2026-11-01T07:00:00.000Z",
+      localDate: "2026-11-01",
+      timeZone: "America/New_York",
+    });
+    const before = await services.db.records.get(["calendarBlocks", id]);
+    await goTo("Calendar");
+    const week = await screen.findByTestId("grid-week-view");
+    const sunday = within(week).getAllByTestId("grid-column").find((c) => c.dataset.date === "2026-11-01")!;
+    const block = await waitFor(() => {
+      const found = within(sunday).getAllByTestId("grid-block").find((b) => b.dataset.blockId === id);
+      if (!found) throw new Error("not shown yet");
+      return found;
+    });
+    expect(block.textContent).toContain("01:30 (UTC−05:00)");
+    const x = Number(sunday.getBoundingClientRect().left) + 50;
+    fireEvent.pointerDown(block, pointer(y(1, 35), x));
+    fireEvent.pointerMove(block, pointer(y(1, 41), x));
+    fireEvent.pointerUp(block, pointer(y(1, 41), x));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await services.db.records.get(["calendarBlocks", id])).toEqual(before);
+    expect(screen.queryByTestId("undo-bar")).toBeNull();
+  });
+
   it("4. keyboard path: each day has Add, and a block opens its row (edit, cancel) with Enter", async () => {
     const week = await gridWeek();
     const task = await createTask(services.db, { title: "Gym" });

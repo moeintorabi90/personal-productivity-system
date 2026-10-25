@@ -3,7 +3,7 @@
  * T-066, T-067, T-089). Fixed dates and zones.
  */
 import { describe, expect, it } from "vitest";
-import { laneLayout, moveTarget, rangeSelection, resizeTarget, segmentPlacement, tapSelection, wallAt } from "./grid.ts";
+import { isAmbiguousInstant, laneLayout, moveTarget, rangeSelection, resizeTarget, segmentPlacement, tapSelection, wallAt } from "./grid.ts";
 
 const TEHRAN = "Asia/Tehran"; // UTC+3:30, no DST
 const NY = "America/New_York"; // DST starts 2026-03-08 02:00 → 03:00, ends 2026-11-01 02:00 → 01:00
@@ -38,12 +38,16 @@ describe("4a. taps and selections snap to 15 minutes; a tap pre-fills 30 minutes
 describe("2–3. moving and resizing", () => {
   const block = { startsAt: at("2026-11-02T05:30:00Z"), endsAt: at("2026-11-02T06:30:00Z") }; // 09:00–10:00 Tehran
 
+  const ok = (startsAt: string, endsAt: string, offsetMinutes = 210, ambiguous = false) => ({ kind: "ok", startsAt: at(startsAt), endsAt: at(endsAt), ambiguous, offsetMinutes });
+
   it("a move snaps the start to the nearest 15 minutes and keeps the duration; whole days move to another column", () => {
-    expect(moveTarget(block, 0, 22, TEHRAN)).toEqual({ kind: "ok", input: { date: "2026-11-02", startTime: "09:15", durationMinutes: 60 } });
-    expect(moveTarget(block, 0, 23, TEHRAN)).toEqual({ kind: "ok", input: { date: "2026-11-02", startTime: "09:30", durationMinutes: 60 } });
-    expect(moveTarget(block, 2, -60, TEHRAN)).toEqual({ kind: "ok", input: { date: "2026-11-04", startTime: "08:00", durationMinutes: 60 } });
-    // Past midnight the start carries into the next date.
-    expect(moveTarget(block, 0, 15 * 60 + 30, TEHRAN)).toEqual({ kind: "ok", input: { date: "2026-11-03", startTime: "00:30", durationMinutes: 60 } });
+    expect(moveTarget(block, 0, 22, TEHRAN)).toEqual(ok("2026-11-02T05:45:00Z", "2026-11-02T06:45:00Z")); // 09:15
+    expect(moveTarget(block, 0, 23, TEHRAN)).toEqual(ok("2026-11-02T06:00:00Z", "2026-11-02T07:00:00Z")); // 09:30
+    expect(moveTarget(block, 2, -60, TEHRAN)).toEqual(ok("2026-11-04T04:30:00Z", "2026-11-04T05:30:00Z")); // 08:00 two days later
+    // Past midnight the start carries into the next date (00:30 on 3 Nov).
+    expect(moveTarget(block, 0, 15 * 60 + 30, TEHRAN)).toEqual(ok("2026-11-02T21:00:00Z", "2026-11-02T22:00:00Z"));
+    // Staying within the same snapped slot is no move at all.
+    expect(moveTarget(block, 0, 7, TEHRAN)).toEqual({ kind: "unchanged" });
   });
 
   it("a move into a daylight-saving gap is refused, not shifted", () => {
@@ -52,12 +56,60 @@ describe("2–3. moving and resizing", () => {
   });
 
   it("resizing either edge snaps to 15 minutes; zero length and more than 24 hours are refused", () => {
-    expect(resizeTarget(block, "end", "2026-11-02", 10 * 60 + 40, TEHRAN)).toEqual({ kind: "ok", input: { date: "2026-11-02", startTime: "09:00", durationMinutes: 105 } });
-    expect(resizeTarget(block, "start", "2026-11-02", 8 * 60 + 52, TEHRAN)).toEqual({ kind: "ok", input: { date: "2026-11-02", startTime: "08:45", durationMinutes: 75 } });
+    expect(resizeTarget(block, "end", "2026-11-02", 10 * 60 + 40, TEHRAN)).toEqual(ok("2026-11-02T05:30:00Z", "2026-11-02T07:15:00Z")); // to 10:45
+    expect(resizeTarget(block, "start", "2026-11-02", 8 * 60 + 52, TEHRAN)).toEqual(ok("2026-11-02T05:15:00Z", "2026-11-02T06:30:00Z")); // from 08:45
+    expect(resizeTarget(block, "end", "2026-11-02", 10 * 60 + 5, TEHRAN)).toEqual({ kind: "unchanged" });
     expect(resizeTarget(block, "end", "2026-11-02", 9 * 60, TEHRAN)).toEqual({ kind: "invalid" });
     expect(resizeTarget(block, "start", "2026-11-02", 10 * 60 + 15, TEHRAN)).toEqual({ kind: "invalid" });
     expect(resizeTarget(block, "end", "2026-11-03", 9 * 60 + 15, TEHRAN)).toEqual({ kind: "invalid" });
     expect(resizeTarget(block, "end", "2026-11-03", 24 * 60, TEHRAN).kind).toBe("invalid");
+  });
+});
+
+describe("daylight saving: New York falls back on 2026-11-01 (01:00–01:59 occurs twice) (T-030)", () => {
+  // 01:30 EDT (first occurrence, UTC−4) = 05:30Z; 01:30 EST (second occurrence, UTC−5) = 06:30Z.
+  const second = { startsAt: at("2026-11-01T06:30:00Z"), endsAt: at("2026-11-01T07:00:00Z") }; // 01:30–02:00 EST
+  const first = { startsAt: at("2026-11-01T05:30:00Z"), endsAt: at("2026-11-01T06:00:00Z") }; // 01:30 EDT to 01:00 EST (30 real minutes)
+
+  it("a block in the second 01:xx occurrence does not shift an hour from a drag that stays in the same snapped slot", () => {
+    for (const delta of [-7, 0, 5, 7]) expect(moveTarget(second, 0, delta, NY), String(delta)).toEqual({ kind: "unchanged" });
+    expect(resizeTarget(second, "start", "2026-11-01", 90 + 4, NY)).toEqual({ kind: "unchanged" });
+    expect(resizeTarget(second, "end", "2026-11-01", 2 * 60 + 6, NY)).toEqual({ kind: "unchanged" });
+  });
+
+  it("resizing the end of a second-occurrence block keeps its start instant (the undragged edge never re-resolves)", () => {
+    expect(resizeTarget(second, "end", "2026-11-01", 3 * 60, NY)).toEqual({
+      kind: "ok",
+      startsAt: second.startsAt, // still 01:30 EST
+      endsAt: at("2026-11-01T08:00:00Z"), // 03:00 EST
+      ambiguous: false,
+      offsetMinutes: -300,
+    });
+  });
+
+  it("moving or resizing TO an ambiguous wall time takes the earlier instant and reports its offset, as entered times do", () => {
+    // From 00:30 (EDT) by +60 min → wall 01:30 → the earlier 01:30 (EDT, UTC−04:00).
+    const early = { startsAt: at("2026-11-01T04:30:00Z"), endsAt: at("2026-11-01T05:00:00Z") };
+    expect(moveTarget(early, 0, 60, NY)).toEqual({ kind: "ok", startsAt: at("2026-11-01T05:30:00Z"), endsAt: at("2026-11-01T06:00:00Z"), ambiguous: true, offsetMinutes: -240 });
+    // A second-occurrence block moved by one slot to 01:45 lands on the EARLIER 01:45 (the rule for any ambiguous time).
+    expect(moveTarget(second, 0, 15, NY)).toEqual({ kind: "ok", startsAt: at("2026-11-01T05:45:00Z"), endsAt: at("2026-11-01T06:15:00Z"), ambiguous: true, offsetMinutes: -240 });
+    // Resizing an end to 01:15 resolves to 01:15 EDT.
+    expect(resizeTarget(early, "end", "2026-11-01", 75, NY)).toEqual({ kind: "ok", startsAt: early.startsAt, endsAt: at("2026-11-01T05:15:00Z"), ambiguous: true, offsetMinutes: -240 });
+  });
+
+  it("instants in the repeated hour are flagged so the grid shows their offset; others are not", () => {
+    expect(isAmbiguousInstant(first.startsAt, NY)).toBe(true);
+    expect(isAmbiguousInstant(second.startsAt, NY)).toBe(true);
+    expect(isAmbiguousInstant(at("2026-11-01T08:00:00Z"), NY)).toBe(false); // 03:00 EST
+    expect(isAmbiguousInstant(at("2026-11-02T06:30:00Z"), NY)).toBe(false);
+  });
+
+  it("the spring-forward gap is still refused for moves, resizes, taps, and selections", () => {
+    const ny = { startsAt: at("2026-03-08T05:00:00Z"), endsAt: at("2026-03-08T06:00:00Z") }; // 00:00–01:00 EST
+    expect(moveTarget(ny, 0, 135, NY)).toEqual({ kind: "gap" });
+    expect(resizeTarget(ny, "end", "2026-03-08", 2 * 60 + 30, NY)).toEqual({ kind: "gap" });
+    expect(tapSelection("2026-03-08", 2 * 60 + 20, NY)).toEqual({ kind: "gap" });
+    expect(rangeSelection("2026-03-08", 60, 2 * 60 + 20, NY)).toEqual({ kind: "gap" });
   });
 });
 

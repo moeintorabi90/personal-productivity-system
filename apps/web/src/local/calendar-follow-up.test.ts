@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { CALENDAR_BLOCKS, type CalendarBlockData, PROJECTS } from "../backup/registry.ts";
 import { createTestDevice, type TestDevice } from "../backup/test-fixtures.ts";
 import { createProject, createTask, updateProject, updateTask } from "./organization.ts";
-import { createBlock, dragBlockTimes, setBlockCancelled, undoBlockTimes, updateBlock } from "./planning.ts";
+import { undoApplies } from "../components/UndoBar.tsx";
+import { createBlock, dragBlockTimes, loadBlocks, setBlockCancelled, undoBlockTimes, updateBlock } from "./planning.ts";
 import { updateSharedPreferences } from "./settings.ts";
 
 const devices: TestDevice[] = [];
@@ -40,6 +41,7 @@ async function planned(zone?: string) {
 }
 
 const row = async (db: Awaited<ReturnType<typeof device>>, type: string, id: string) => (await db.records.get([type, id]))!;
+const span = (startsAt: string, endsAt: string) => ({ startsAt, endsAt });
 
 describe("2–3. drag edits", () => {
   it("a drag-move changes only that block: new instants, planning zone, refreshed snapshot; task and occurrence kept", async () => {
@@ -47,7 +49,9 @@ describe("2–3. drag edits", () => {
     const otherBefore = await row(s.db, CALENDAR_BLOCKS, s.other);
     await updateTask(s.db, s.task, { title: "Write chapter 1" });
     await updateSharedPreferences(s.db, { timeZone: "Asia/Dubai" });
-    const { previous, version } = await dragBlockTimes(s.db, s.block, { date: "2026-11-03", startTime: "10:15", durationMinutes: 60 });
+    const before = await row(s.db, CALENDAR_BLOCKS, s.block);
+    const { previous, previousVersion, version } = await dragBlockTimes(s.db, s.block, span("2026-11-03T06:15:00.000Z", "2026-11-03T07:15:00.000Z"));
+    expect(previousVersion).toEqual(before.version);
     const data = (await row(s.db, CALENDAR_BLOCKS, s.block)).data as CalendarBlockData;
     expect(previous).toEqual({ startsAt: "2026-11-02T05:30:00.000Z", endsAt: "2026-11-02T06:30:00.000Z", timeZone: "Asia/Tehran", localDate: "2026-11-02" });
     expect(data).toMatchObject({
@@ -64,23 +68,25 @@ describe("2–3. drag edits", () => {
     expect(await row(s.db, CALENDAR_BLOCKS, s.other)).toEqual(otherBefore);
   });
 
-  it("a cancelled block cannot be dragged; a daylight-saving gap, zero, and over-24-hour durations are refused; nothing is written", async () => {
+  it("a cancelled block cannot be dragged; zero, negative, partial-minute, and over-24-hour durations are refused; nothing is written", async () => {
+    // Daylight-saving gaps are refused before the command, where the grid resolves the wall time (planning/grid.test.ts).
     const s = await planned("America/New_York");
     const before = await row(s.db, CALENDAR_BLOCKS, s.block);
-    expect(await codeOf(dragBlockTimes(s.db, s.block, { date: "2026-03-08", startTime: "02:15", durationMinutes: 60 }))).toBe("DST_GAP");
-    expect(await codeOf(dragBlockTimes(s.db, s.block, { date: "2026-11-02", startTime: "09:00", durationMinutes: 0 }))).toBe("INVALID_DURATION");
-    expect(await codeOf(dragBlockTimes(s.db, s.block, { date: "2026-11-02", startTime: "09:00", durationMinutes: 24 * 60 + 15 }))).toBe("INVALID_DURATION");
+    expect(await codeOf(dragBlockTimes(s.db, s.block, span("2026-11-02T14:00:00.000Z", "2026-11-02T14:00:00.000Z")))).toBe("INVALID_DURATION");
+    expect(await codeOf(dragBlockTimes(s.db, s.block, span("2026-11-02T14:00:00.000Z", "2026-11-02T13:00:00.000Z")))).toBe("INVALID_DURATION");
+    expect(await codeOf(dragBlockTimes(s.db, s.block, span("2026-11-02T14:00:00.000Z", "2026-11-02T14:00:30.000Z")))).toBe("INVALID_DURATION");
+    expect(await codeOf(dragBlockTimes(s.db, s.block, span("2026-11-02T14:00:00.000Z", "2026-11-03T14:15:00.000Z")))).toBe("INVALID_DURATION");
     expect(await row(s.db, CALENDAR_BLOCKS, s.block)).toEqual(before);
     await setBlockCancelled(s.db, s.block, true);
     const cancelled = await row(s.db, CALENDAR_BLOCKS, s.block);
-    expect(await codeOf(dragBlockTimes(s.db, s.block, { date: "2026-11-02", startTime: "10:00", durationMinutes: 60 }))).toBe("CANCELLED");
+    expect(await codeOf(dragBlockTimes(s.db, s.block, span("2026-11-02T15:00:00.000Z", "2026-11-02T16:00:00.000Z")))).toBe("CANCELLED");
     expect(await row(s.db, CALENDAR_BLOCKS, s.block)).toEqual(cancelled);
   });
 
   it("dropping a block where it already is writes nothing and offers no undo", async () => {
     const s = await planned();
     const before = await row(s.db, CALENDAR_BLOCKS, s.block);
-    const result = await dragBlockTimes(s.db, s.block, { date: "2026-11-02", startTime: "09:00", durationMinutes: 60 });
+    const result = await dragBlockTimes(s.db, s.block, span(before.data.startsAt as string, before.data.endsAt as string));
     expect(result.version).toBeNull();
     expect(await row(s.db, CALENDAR_BLOCKS, s.block)).toEqual(before);
   });
@@ -91,7 +97,7 @@ describe("4b. Undo after a drag (T-090)", () => {
     const s = await planned();
     const original = await row(s.db, CALENDAR_BLOCKS, s.block);
     await updateSharedPreferences(s.db, { timeZone: "Asia/Dubai" });
-    const drag = await dragBlockTimes(s.db, s.block, { date: "2026-11-02", startTime: "13:00", durationMinutes: 90 });
+    const drag = await dragBlockTimes(s.db, s.block, span("2026-11-02T09:00:00.000Z", "2026-11-02T10:30:00.000Z")); // 13:00 Dubai, 90 min
     await updateTask(s.db, s.task, { title: "Renamed" });
     await undoBlockTimes(s.db, s.block, drag.previous, drag.version!);
     const after = await row(s.db, CALENDAR_BLOCKS, s.block);
@@ -105,15 +111,35 @@ describe("4b. Undo after a drag (T-090)", () => {
 
   it("is refused when the block changed after the drag (version guard) or was cancelled; nothing is written", async () => {
     const s = await planned();
-    const drag = await dragBlockTimes(s.db, s.block, { date: "2026-11-02", startTime: "13:00", durationMinutes: 60 });
+    const drag = await dragBlockTimes(s.db, s.block, span("2026-11-02T09:30:00.000Z", "2026-11-02T10:30:00.000Z"));
     await updateBlock(s.db, s.block, { date: "2026-11-02", startTime: "14:00", durationMinutes: 60 }); // a form edit
     const edited = await row(s.db, CALENDAR_BLOCKS, s.block);
     expect(await codeOf(undoBlockTimes(s.db, s.block, drag.previous, drag.version!))).toBe("CHANGED");
     expect(await row(s.db, CALENDAR_BLOCKS, s.block)).toEqual(edited);
 
-    const drag2 = await dragBlockTimes(s.db, s.other, { date: "2026-11-02", startTime: "15:00", durationMinutes: 30 });
+    const drag2 = await dragBlockTimes(s.db, s.other, span("2026-11-02T11:30:00.000Z", "2026-11-02T12:00:00.000Z"));
     await setBlockCancelled(s.db, s.other, true);
     expect(await codeOf(undoBlockTimes(s.db, s.other, drag2.previous, drag2.version!))).toBe("CHANGED");
+  });
+});
+
+describe("4b. Undo visibility follows the block's version, not only its times (T-090)", () => {
+  it("applies while the block shows the pre-drag or the drag-written version; closes after an edit that keeps the times", async () => {
+    const s = await planned();
+    const drag = await dragBlockTimes(s.db, s.block, span("2026-11-02T07:00:00.000Z", "2026-11-02T08:00:00.000Z"));
+    const offer = { blockId: s.block, title: "Write", previous: drag.previous, after: drag.after, previousVersion: drag.previousVersion, version: drag.version! };
+    const view = async () => (await loadBlocks(s.db)).find((b) => b.id === s.block);
+    expect(undoApplies(offer, await view())).toBe(true); // the drag-written version
+    expect(undoApplies(offer, { data: { ...(await view())!.data, ...drag.previous }, version: drag.previousVersion })).toBe(true); // live view not caught up yet
+    // Cancel and restore: same times, planned again, but a new version.
+    await setBlockCancelled(s.db, s.block, true);
+    await setBlockCancelled(s.db, s.block, false);
+    const after = await view();
+    expect(after!.data).toMatchObject({ startsAt: drag.after.startsAt, endsAt: drag.after.endsAt, status: "planned" });
+    expect(undoApplies(offer, after)).toBe(false);
+    // The command's own guard still refuses a stale undo.
+    expect(await codeOf(undoBlockTimes(s.db, s.block, drag.previous, drag.version!))).toBe("CHANGED");
+    expect(undoApplies(offer, undefined)).toBe(false);
   });
 });
 
