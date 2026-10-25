@@ -150,7 +150,7 @@ These follow from T-037 to T-065, T-077 to T-080, and the existing backup rules.
 | T-086 | **Default start date** is today's local date in the configured time zone, or the device's local date when no zone is configured; the owner sees and can change it before saving (T-042). Goal dates are local calendar dates, so Stage 4 needs no configured zone. | T-042; no calculation depends on the zone until Stage 5 pacing. | Adopted (derived) |
 | T-087 | **No progress in Stage 4** (T-037): goal screens show the target and say that progress is calculated from recorded work and outputs, which arrive with Stage 5. No percentage, count, or pacing is shown or stored. | Progress must not be fabricated before its source records exist. | Adopted (derived) |
 
-## Calendar interaction, project color, and streak decisions (contract, 2026-10-25; Stage 3 follow-up parts implemented on branch `feat/calendar-follow-up`; Stage 6 and Stage 8 parts not implemented)
+## Calendar interaction, project color, and streak decisions (contract, 2026-10-25; Stage 3 follow-up parts implemented and deployed as 0.6.0 (`7fabdcd`); Stage 6 and Stage 8 parts not implemented)
 
 Owner-approved feature contract. Behavior is in PRODUCT_SPEC ("Stage 3 follow-up: calendar interactions and project colors", "Planned versus actual calendar (Stage 6)", "Streaks"); data in DATA_MODEL; backup in BACKUP_FORMAT ("Project color"). The approval covers the behavior in the "Decision" column. The derived technical choices below the table are not owner decisions; the open details at the end still need the owner (detail 1 is resolved by T-076).
 

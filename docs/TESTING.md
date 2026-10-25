@@ -133,7 +133,7 @@ Contract: PRODUCT_SPEC "Goals and measures" and "Stage 4 goal and milestone rule
 11. Goals screen in English and Persian (RTL, Jalali dates): create each kind, edit, pause/resume/complete/reopen, archive/restore, milestones with complete/reopen/delete-with-confirmation, and the date-clash message; every control is reachable by keyboard and labelled.
 12. Manual on the owner's Windows laptop and Android phone: the Stage 4 flow offline, and moving goals in both directions by backup.
 
-## Calendar interaction, project color, and streak acceptance tests (specified 2026-10-25; Stage 3 follow-up items implemented on branch `feat/calendar-follow-up`, results in "Stage 3 follow-up test report"; Stage 6 and Stage 8 items not implemented)
+## Calendar interaction, project color, and streak acceptance tests (specified 2026-10-25; Stage 3 follow-up items implemented and deployed as 0.6.0, results in "Stage 3 follow-up test report"; Stage 6 and Stage 8 items not implemented)
 
 Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-076 and T-088 to T-090. Open details 1–4 are resolved (T-076, T-088 to T-090); tests depending on open details 5–7 follow the owner's answer. The project color arrives in data version 5, after Stage 4's version 4 (T-076). Fixed dates and zones as in Stage 3.
 
@@ -167,7 +167,7 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Sta
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.
 
-## Stage 3 follow-up test report (2026-10-25, branch `feat/calendar-follow-up`)
+## Stage 3 follow-up test report (2026-10-25; developed on `feat/calendar-follow-up`, merged into `main` at `7fabdcd` and deployed as 0.6.0)
 
 Commands run on the Windows development machine (Edge for end-to-end tests): `npm.cmd run typecheck` passed; `npm.cmd test` 29 files, 306 tests passed (260 before; new: `planning/colors.test.ts` 8, `planning/grid.test.ts` 15, `local/calendar-follow-up.test.ts` 7, `backup/colors-backup.test.ts` 9, follow-up component tests in `App.test.tsx` 7); `npm.cmd run test:e2e` 11 passed (2 new). Coverage per item:
 
@@ -180,6 +180,8 @@ Commands run on the Windows development machine (Edge for end-to-end tests): `np
 - Item 8 (backup, data version 5): `backup/colors-backup.test.ts`; end-to-end color on a fresh device. New sample `apps/web/src/backup/samples/pps-backup-format-v1-data-v5.json` (fabricated, written by `PPS_WRITE_SAMPLE=1`).
 
 **Review fixes (same branch):** (1) daylight saving: drags resolve only the dragged position and keep the other edge's instant; a drag within the current snapped slot writes nothing; regression tests on New York's fall-back date (2026-11-01) and the spring gap (`planning/grid.test.ts`, `App.test.tsx`, where a second-occurrence block shows "01:30 (UTC−05:00)"). (2) Undo visibility follows the block's version: `undoApplies` (`local/calendar-follow-up.test.ts`) and a component test where cancel-and-restore after a drag closes the Undo bar; the command's version guard stays.
+
+**After merge (Codex, independent reviewer, at `7fabdcd`):** `npm.cmd run test:e2e` — 11 passed in Edge, including the Stage 3 follow-up and the phone-sized touch-screen scenario. A full `npm.cmd test` run was started but interrupted before it produced results; it is not counted as passed. The 306 passing unit tests above were run by Claude Code on the same content before the merge. Deployment: GitHub Pages workflow run `40204321817` succeeded for `7fabdcd`; the live app served version 0.6.0 (HTTP 200 for the app, manifest, and bundle). **Still open:** physical mouse checks on the owner's Windows laptop and touch checks on the Android phone.
 
 Changed existing tests: exports are data version 5 and "newer" is version 6 (`organization-backup`, `planning-backup`, `goals-backup`, `validation`); three Stage 3 component tests and one Stage 3 end-to-end test choose Layout "List" before checking the list views, since day and week now open as the time grid. **Not yet tested:** manual checks on the owner's Windows laptop (mouse drags) and Android phone (long-press drag, swipe, both themes); touch drag-and-drop is not covered by an automated test (only the touch tap).
 

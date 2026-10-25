@@ -196,7 +196,7 @@ Contract: PRODUCT_SPEC "Goals and measures" and "Stage 4 goal and milestone rule
 - **Commands** `apps/web/src/local/goals.ts`: create/edit goal, status changes (pause, resume, complete, reopen), archive/restore, create/edit/complete/reopen/delete milestone. They refuse edits of an archived goal, check a milestone deadline against the goal's range, and refuse goal date changes that would put a milestone outside it (T-078). The range is not a registry rule (T-084); pure helpers (`deadlineWithinGoal`, `milestonesOutside`, `canChangeStatus`, `filterGoals`, `defaultStartDate`) are unit-tested.
 - **UI:** `GoalsView.tsx` (list with status filter, create form, detail with status/archive actions, milestones with an inline delete confirmation and an "outside the goal's dates" warning). Dates use the existing display-calendar date entry (`DateField`); time targets are entered as hours and minutes. Goal and milestone fields are labelled in the backup conflict view. No progress is computed or displayed (T-087).
 
-## Stage 3 follow-up implementation notes (branch `feat/calendar-follow-up`, 2026-10-25)
+## Stage 3 follow-up implementation notes (2026-10-25; developed on `feat/calendar-follow-up`, merged into `main` at `7fabdcd` and deployed as 0.6.0)
 
 Contract: PRODUCT_SPEC "Stage 3 follow-up"; decisions T-066 to T-070, T-075, T-088 to T-090 and the derived technical choices in DECISIONS.
 

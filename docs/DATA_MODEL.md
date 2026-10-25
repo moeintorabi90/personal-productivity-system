@@ -138,7 +138,7 @@ Decisions: T-037 to T-065 and T-077 to T-080 (owner), T-081 to T-087 (derived). 
 - Both types are **linked**: conflicts offer "keep this device's" or "use the backup's" version, never "keep both". A goal with live milestones cannot be deleted by a conflict choice (restrict).
 - No IndexedDB schema change: both types are stored in `records`.
 
-### Stage 3 follow-up: project color (approved 2026-10-25; implemented on branch `feat/calendar-follow-up`, `dataSchemaVersion` 5)
+### Stage 3 follow-up: project color (approved 2026-10-25; merged into `main` at `7fabdcd` and deployed as 0.6.0; `dataSchemaVersion` 5)
 
 Built after Stage 4 and before Stage 5 (T-076). Decisions: T-068 to T-070 (owner) and the derived technical choices in DECISIONS ("Calendar interaction, project color, and streak decisions"). Field name and encoding are technical choices.
 
