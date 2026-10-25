@@ -69,11 +69,11 @@ async function goalDevice(label = "A") {
 }
 
 describe("8. round-trip and merge of goals and milestones", () => {
-  it("an empty device receives everything with identical IDs, hashes, and versions (dataSchemaVersion 4)", async () => {
+  it("an empty device receives everything with identical IDs, hashes, and versions (written as dataSchemaVersion 5 since the Stage 3 follow-up)", async () => {
     const a = await goalDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(4);
+    expect(doc.app.dataSchemaVersion).toBe(5);
     expect(doc.payload.records[GOALS]).toHaveLength(3);
     expect(doc.payload.records[MILESTONES]).toHaveLength(2);
     const b = await device("B", null);
@@ -166,7 +166,7 @@ describe("8. round-trip and merge of goals and milestones", () => {
 describe("9. upgrade from Stage 3 without loss", () => {
   const v3Sample = new URL("./samples/pps-backup-format-v1-data-v3.json", import.meta.url);
 
-  it("Stage 3 records are byte-identical under the Stage 4 app; re-importing a Stage 3 backup is 'already here'", async () => {
+  it("Stage 3 records are byte-identical under the current app; re-importing a Stage 3 backup is 'already here'", async () => {
     const sample = readFileSync(v3Sample, "utf8");
     const d = await device("Upgraded", null);
     await importInto(d, sample, { ...product, applyUpdates: true });
@@ -175,7 +175,7 @@ describe("9. upgrade from Stage 3 without loss", () => {
     await d.restart();
     expect(await recordsOf(d)).toEqual(before);
     const exported = await exportText(d);
-    expect(JSON.parse(exported).app.dataSchemaVersion).toBe(4);
+    expect(JSON.parse(exported).app.dataSchemaVersion).toBe(5);
     const target = await device("Holds Stage 3 backup", null);
     await importInto(target, sample, { ...product, applyUpdates: true });
     const { preview } = await importInto(target, exported, product);
@@ -208,7 +208,7 @@ describe("10. versioning and validation", () => {
       env.contentHash = contentHashOf(env.data);
     });
 
-  it("a version-3 file with goals or milestones is refused as unknown data; version 5 is refused as newer", async () => {
+  it("a version-3 file with goals or milestones is refused as unknown data; version 6 is refused as newer", async () => {
     const s = await fileWithGoals();
     const asV3 = mutate(s.text, (doc) => {
       doc.app.dataSchemaVersion = 3;
@@ -227,7 +227,7 @@ describe("10. versioning and validation", () => {
     expect(await codeOf(importInto(s.b, milestonesOnly, product))).toBe("UNKNOWN_RECORD_TYPE");
     expect(await snapshot(s.b.db)).toEqual(s.before);
     expect(await codeOf(importInto(s.b, plainV3, product))).toBe("OK");
-    const newer = mutate(s.text, (doc) => (doc.app.dataSchemaVersion = 5));
+    const newer = mutate(s.text, (doc) => (doc.app.dataSchemaVersion = 6));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
   });
 

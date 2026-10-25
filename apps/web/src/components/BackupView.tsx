@@ -460,6 +460,7 @@ const FIELD_LABELS: Record<string, MessageKey> = {
   unit: "goals.target.unit",
   goalId: "backup.type.goals",
   completedAt: "milestones.completed",
+  color: "projects.color",
 };
 
 function formatValue(t: Translate, type: string, field: string, value: unknown, names: Map<string, string>, prefs: PreferenceFields): string {
@@ -480,6 +481,7 @@ function formatValue(t: Translate, type: string, field: string, value: unknown, 
       return [s.taskTitle, s.projectName, s.workstreamName].filter(Boolean).join(" · ");
     }
   }
+  if (type === "projects" && field === "color") return t(`color.${value}` as MessageKey);
   if (type === "goals" || type === "milestones") {
     if (field === "startDate" || field === "deadline") return value ? formatLocalDate(String(value), prefs, "medium") : "—";
     if (field === "kind") return t(`goals.kind.${value}` as MessageKey);

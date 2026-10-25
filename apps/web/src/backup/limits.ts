@@ -5,11 +5,12 @@ export const FORMAT_VERSION = 1;
  * Record types and fields (docs/BACKUP_FORMAT.md, "Versioning and upgrades"). 1: shared
  * preferences (Stage 1B). 2: adds projects, workstreams, and task definitions (Stage 2). 3: adds
  * calendar blocks and the optional fields task `recurrence` and preference `dailyCapacityMinutes`
- * (Stage 3, T-025). 4: adds goals and milestones (Stage 4, T-081). Readers accept every version
- * from 1 to this one; each record type declares the version that introduced it, and types whose
- * fields changed keep the schema of older versions.
+ * (Stage 3, T-025). 4: adds goals and milestones (Stage 4, T-081). 5: adds the optional project
+ * `color` (Stage 3 follow-up, T-070, T-088). Readers accept every version from 1 to this one;
+ * each record type declares the version that introduced it, and types whose fields changed keep
+ * the schema of older versions.
  */
-export const DATA_SCHEMA_VERSION = 4;
+export const DATA_SCHEMA_VERSION = 5;
 
 export const MIB = 1024 * 1024;
 export const MAX_FILE_BYTES = 32 * MIB;

@@ -18,6 +18,25 @@
   --error-text: #8c1d13;
   --info-bg: #e5eefb;
   --info-text: #1f477f;
+  /* Project palette (T-088; values: DECISIONS "Derived technical choices"). */
+  --pal-blue-accent: #1d5fbf;
+  --pal-blue-tint: #dce7f7;
+  --pal-teal-accent: #0e7470;
+  --pal-teal-tint: #d4eeec;
+  --pal-green-accent: #2e7234;
+  --pal-green-tint: #dcefdd;
+  --pal-amber-accent: #8f5f00;
+  --pal-amber-tint: #f7ebcb;
+  --pal-orange-accent: #a3450f;
+  --pal-orange-tint: #f8e0d2;
+  --pal-red-accent: #b5302a;
+  --pal-red-tint: #f7dad8;
+  --pal-pink-accent: #a8326f;
+  --pal-pink-tint: #f5dbe8;
+  --pal-purple-accent: #6343b0;
+  --pal-purple-tint: #e6dff5;
+  --pal-neutral-accent: #5f6670;
+  --pal-neutral-tint: #ecedef;
   --radius: 10px;
   --font: "Segoe UI", system-ui, -apple-system, Tahoma, "Noto Sans Arabic", sans-serif;
 }
@@ -42,6 +61,25 @@
     --error-text: #ffb4a9;
     --info-bg: #16263d;
     --info-text: #a9c8f5;
+    /* Project palette (T-088; values: DECISIONS "Derived technical choices"). */
+    --pal-blue-accent: #7aaef5;
+    --pal-blue-tint: #1b2b44;
+    --pal-teal-accent: #55c7c1;
+    --pal-teal-tint: #14373a;
+    --pal-green-accent: #76c77a;
+    --pal-green-tint: #1b3820;
+    --pal-amber-accent: #e9bc55;
+    --pal-amber-tint: #3b2f14;
+    --pal-orange-accent: #f29a68;
+    --pal-orange-tint: #40261a;
+    --pal-red-accent: #f27f76;
+    --pal-red-tint: #43201e;
+    --pal-pink-accent: #ee8bbe;
+    --pal-pink-tint: #401e32;
+    --pal-purple-accent: #ad92ec;
+    --pal-purple-tint: #2b2444;
+    --pal-neutral-accent: #a3a9b2;
+    --pal-neutral-tint: #2a2d33;
   }
 }
 
@@ -64,6 +102,25 @@
   --error-text: #ffb4a9;
   --info-bg: #16263d;
   --info-text: #a9c8f5;
+  /* Project palette (T-088; values: DECISIONS "Derived technical choices"). */
+  --pal-blue-accent: #7aaef5;
+  --pal-blue-tint: #1b2b44;
+  --pal-teal-accent: #55c7c1;
+  --pal-teal-tint: #14373a;
+  --pal-green-accent: #76c77a;
+  --pal-green-tint: #1b3820;
+  --pal-amber-accent: #e9bc55;
+  --pal-amber-tint: #3b2f14;
+  --pal-orange-accent: #f29a68;
+  --pal-orange-tint: #40261a;
+  --pal-red-accent: #f27f76;
+  --pal-red-tint: #43201e;
+  --pal-pink-accent: #ee8bbe;
+  --pal-pink-tint: #401e32;
+  --pal-purple-accent: #ad92ec;
+  --pal-purple-tint: #2b2444;
+  --pal-neutral-accent: #a3a9b2;
+  --pal-neutral-tint: #2a2d33;
 }
 
 *,
@@ -546,7 +603,6 @@ textarea {
 }
 
 .item.block-cancelled {
-  opacity: 0.65;
   border-inline-start-style: dotted;
 }
 
@@ -701,6 +757,223 @@ textarea {
   }
   .month-compact {
     display: block;
+  }
+}
+
+/* Stage 3 follow-up: project colors (T-068, T-069, T-088). A colored item takes its palette entry:
+   planned items use the lighter tint with the theme's normal text and a dashed accent edge; the
+   stronger accent treatment is for actual work (Stage 5). Color is never the only cue: planned and
+   cancelled items also carry a label and a dashed or dotted edge. Contrast: DECISIONS "Contrast
+   requirements" (checked by planning/colors.test.ts against these tokens). */
+[data-color="blue"] { --c-accent: var(--pal-blue-accent); --c-tint: var(--pal-blue-tint); }
+[data-color="teal"] { --c-accent: var(--pal-teal-accent); --c-tint: var(--pal-teal-tint); }
+[data-color="green"] { --c-accent: var(--pal-green-accent); --c-tint: var(--pal-green-tint); }
+[data-color="amber"] { --c-accent: var(--pal-amber-accent); --c-tint: var(--pal-amber-tint); }
+[data-color="orange"] { --c-accent: var(--pal-orange-accent); --c-tint: var(--pal-orange-tint); }
+[data-color="red"] { --c-accent: var(--pal-red-accent); --c-tint: var(--pal-red-tint); }
+[data-color="pink"] { --c-accent: var(--pal-pink-accent); --c-tint: var(--pal-pink-tint); }
+[data-color="purple"] { --c-accent: var(--pal-purple-accent); --c-tint: var(--pal-purple-tint); }
+[data-color="neutral"] { --c-accent: var(--pal-neutral-accent); --c-tint: var(--pal-neutral-tint); }
+
+/* Two classes, so it wins over .item and .item.block. */
+.colored.colored {
+  background: var(--c-tint);
+  color: var(--text);
+  border-inline-start: 4px dashed var(--c-accent);
+}
+
+.colored[data-status="cancelled"] {
+  border-inline-start-style: dotted;
+}
+
+.colored[data-status="cancelled"] .item-title,
+.colored[data-status="cancelled"] .tg-block-title {
+  text-decoration: line-through;
+}
+
+.color-swatch {
+  display: inline-block;
+  inline-size: 1rem;
+  block-size: 1rem;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--c-tint);
+  border: 3px solid var(--c-accent);
+}
+
+/* Time grid (T-066, T-067, T-089): one column per date, 24 hours of wall time. */
+.time-grid {
+  --hours-w: 3.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  margin-block: 0.75rem;
+}
+
+.tg-header,
+.tg-body {
+  display: grid;
+  grid-template-columns: var(--hours-w) repeat(var(--grid-days), minmax(0, 1fr));
+}
+
+.tg-header {
+  border-block-end: 1px solid var(--border);
+}
+
+.tg-day-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0.4rem;
+  min-width: 0;
+  font-size: 0.85rem;
+  border-inline-start: 1px solid var(--border);
+}
+
+.tg-day-name {
+  font-weight: 600;
+}
+
+.tg-add {
+  min-height: 2rem;
+  min-width: 2.5rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.tg-scroll {
+  max-block-size: 70vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tg-hours {
+  display: flex;
+  flex-direction: column;
+}
+
+.tg-hour {
+  block-size: var(--hour-px);
+  padding-inline: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tg-column {
+  position: relative;
+  block-size: calc(24 * var(--hour-px));
+  border-inline-start: 1px solid var(--border);
+  /* Hour and half-hour lines. */
+  background-image: linear-gradient(to bottom, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--surface-muted) 1px, transparent 1px);
+  background-size: 100% var(--hour-px), 100% calc(var(--hour-px) / 2);
+  /* Touch: vertical swipes scroll; a long press starts a drag (TimeGrid.tsx). */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tg-block {
+  position: absolute;
+  box-sizing: border-box;
+  padding-inline: 2px;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--c-accent);
+  border-inline-start-width: 4px;
+  cursor: grab;
+  touch-action: pan-y;
+}
+
+.tg-block[data-status="cancelled"] {
+  cursor: default;
+}
+
+.tg-block.tg-dragging {
+  opacity: 0.45;
+}
+
+.tg-block-button {
+  all: unset;
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: 100%;
+  padding: 0.1rem 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  color: var(--text);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  cursor: inherit;
+}
+
+.tg-block-button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+
+.tg-block-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.tg-status {
+  font-size: 0.7rem;
+  text-transform: none;
+}
+
+.tg-handle {
+  position: absolute;
+  inset-inline: 0;
+  block-size: 10px;
+  cursor: ns-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.tg-handle-start {
+  inset-block-start: -2px;
+}
+
+.tg-handle-end {
+  inset-block-end: -2px;
+}
+
+.tg-preview {
+  position: absolute;
+  inset-inline: 2px;
+  box-sizing: border-box;
+  padding: 0.1rem 0.25rem;
+  font-size: 0.75rem;
+  border: 2px dashed var(--focus);
+  border-radius: 6px;
+  background: var(--info-bg);
+  color: var(--info-text);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.tg-preview-refused {
+  border-color: var(--error-text);
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.undo-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+@media (max-width: 560px) {
+  .time-grid {
+    --hours-w: 2.75rem;
   }
 }
 

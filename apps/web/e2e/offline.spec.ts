@@ -276,6 +276,7 @@ test("Stage 3 in Persian with the Jalali display: month view and navigation are 
   await page.getByRole("button", { name: "برو" }).click();
   await expect(month.locator(".month-cell").first()).toHaveAttribute("data-date", "2027-03-21");
   await page.getByLabel("نما", { exact: true }).selectOption("day");
+  await page.getByLabel("چیدمان", { exact: true }).selectOption("list"); // the list layout stays (follow-up)
   await expect(page.getByTestId("day-panel")).toContainText("یکشنبه");
   expect(offenders).toEqual([]);
 });
@@ -400,4 +401,157 @@ test("Stage 4 offline: a goal with milestones, status changes, reload, and the s
   rmSync(path.dirname(filePath), { recursive: true, force: true });
   await source.close();
   await target.close();
+});
+
+/** Today's local date in a zone (the app shows the current week). */
+function todayIn(zone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+/** Page coordinates of a wall time in a grid column (24 hours over the column's height). */
+async function slot(column: import("@playwright/test").Locator, hours: number, minutes = 0) {
+  const box = (await column.boundingBox())!;
+  return { x: box.x + box.width / 2, y: box.y + ((hours * 60 + minutes) / 1440) * box.height };
+}
+
+async function setTehran(page: Page) {
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("Time zone").fill("Asia/Tehran");
+  await page.getByLabel("Time zone").blur();
+  await expect(page.getByLabel("Time zone")).toHaveValue("Asia/Tehran");
+}
+
+test("Stage 3 follow-up offline: project color, tap to plan, drag-move and resize with 15-minute snapping, Undo, and the color on a fresh device", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const source = await browser.newContext({ acceptDownloads: true });
+  const a = await source.newPage();
+  const offendersA = forbidNetworkUse(a);
+  await a.goto(BASE_URL);
+  await waitForServiceWorkerControl(a);
+  await source.setOffline(true);
+  await setTehran(a);
+
+  await a.getByRole("button", { name: "Projects" }).click();
+  await a.getByLabel("Name", { exact: true }).fill("Thesis");
+  await a.getByLabel("Color").selectOption("purple");
+  await a.getByRole("button", { name: "Create project" }).click();
+  await expect(a.getByTestId("project-color")).toContainText("Color: Purple");
+  await a.getByLabel("New task in Thesis").fill("Write");
+  await a.getByTestId("direct-tasks").getByRole("button", { name: "Add task" }).click();
+  await expect(a.getByTestId("direct-tasks")).toContainText("Write");
+
+  await a.getByRole("button", { name: "Calendar" }).click();
+  await a.getByLabel("View", { exact: true }).selectOption("day");
+  await expect(a.getByLabel("Layout")).toHaveValue("grid");
+  const column = a.getByTestId("grid-column");
+  await expect(column).toHaveAttribute("data-date", todayIn("Asia/Tehran"));
+  await a.getByTestId("time-grid").locator(".tg-scroll").scrollIntoViewIfNeeded();
+
+  // A click at 09:07 pre-fills 09:00 for 30 minutes; nothing is written until Save.
+  let p = await slot(column, 9, 7);
+  await a.mouse.click(p.x, p.y);
+  const form = a.getByRole("form", { name: "New planned block" });
+  await expect(form.getByLabel("Start time")).toHaveValue("09:00");
+  await expect(form.getByLabel("Duration (minutes)")).toHaveValue("30");
+  await form.getByLabel("Task", { exact: true }).selectOption({ label: "Write" });
+  await form.getByRole("button", { name: "Save" }).click();
+  const block = a.getByTestId("grid-block");
+  await expect(block).toContainText("09:00–09:30");
+  await expect(block).toHaveAttribute("data-color", "purple");
+  await expect(block).toContainText("Planned");
+
+  // Drag-move by 1 h 17 min: 10:17 snaps to 10:15. Undo appears, with no dialog, and leaves after 5 s.
+  p = await slot(column, 9, 15);
+  let q = await slot(column, 10, 32);
+  await a.mouse.move(p.x, p.y);
+  await a.mouse.down();
+  await a.mouse.move(p.x, p.y + 10, { steps: 3 });
+  await a.mouse.move(q.x, q.y, { steps: 8 });
+  await a.mouse.up();
+  await expect(block).toContainText("10:15–10:45");
+  await expect(a.getByTestId("undo-bar")).toBeVisible();
+  await expect(a.getByRole("dialog")).toHaveCount(0);
+  await expect(a.getByTestId("undo-bar")).toBeHidden({ timeout: 8_000 });
+  await expect(block).toContainText("10:15–10:45");
+
+  // Resize the end edge from 10:45 to 11:37 → 11:30. While Undo has focus it stays past 5 s; Undo restores 10:45.
+  p = await slot(column, 10, 44);
+  q = await slot(column, 11, 37);
+  await a.mouse.move(p.x, p.y);
+  await a.mouse.down();
+  await a.mouse.move(q.x, q.y, { steps: 8 });
+  await a.mouse.up();
+  await expect(block).toContainText("10:15–11:30");
+  const undo = a.getByTestId("undo-bar").getByRole("button", { name: "Undo" });
+  await undo.focus();
+  await a.waitForTimeout(6_000);
+  await expect(undo).toBeVisible();
+  await undo.click();
+  await expect(block).toContainText("10:15–10:45");
+  await expect(a.getByTestId("undo-bar")).toBeHidden();
+
+  // The color travels in the backup (data version 5).
+  await a.getByRole("button", { name: "Backup" }).click();
+  const downloadPromise = a.waitForEvent("download");
+  await a.getByRole("button", { name: "Export backup" }).click();
+  const download = await downloadPromise;
+  const filePath = path.join(mkdtempSync(path.join(tmpdir(), "pps-backup-")), download.suggestedFilename());
+  await download.saveAs(filePath);
+
+  const target = await browser.newContext();
+  const b = await target.newPage();
+  const offendersB = forbidNetworkUse(b);
+  await b.goto(BASE_URL);
+  await target.setOffline(true);
+  await b.getByRole("button", { name: "Backup" }).click();
+  await b.getByLabel("Choose a backup file").setInputFiles(filePath);
+  await b.getByTestId("import-preview").getByRole("button", { name: "Import" }).click();
+  await expect(b.getByTestId("import-done")).toBeVisible();
+  await b.getByRole("button", { name: "Projects" }).click();
+  await b.getByRole("button", { name: "Open project: Thesis" }).click();
+  await expect(b.getByTestId("project-color")).toContainText("Color: Purple");
+
+  expect([...offendersA, ...offendersB]).toEqual([]);
+  rmSync(path.dirname(filePath), { recursive: true, force: true });
+  await source.close();
+  await target.close();
+});
+
+test("Stage 3 follow-up on a phone-sized touch screen: two days at a time, Previous/Next reach the whole week, and a tap pre-fills 30 minutes", async ({ browser }) => {
+  const phone = await browser.newContext({ viewport: { width: 375, height: 800 }, hasTouch: true, isMobile: true });
+  const page = await phone.newPage();
+  const offenders = forbidNetworkUse(page);
+  await page.goto(BASE_URL);
+  await waitForServiceWorkerControl(page);
+  await phone.setOffline(true);
+  await setTehran(page);
+  await page.getByRole("button", { name: "Calendar" }).click();
+  const columns = page.getByTestId("grid-column");
+  await expect(columns).toHaveCount(2);
+  const seen = new Set<string>();
+  const collect = async () => {
+    for (const date of await columns.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.date!))) seen.add(date);
+  };
+  await collect();
+  const previous = page.getByRole("button", { name: "Previous days" });
+  const next = page.getByRole("button", { name: "Next days" });
+  while (await previous.isEnabled()) {
+    await previous.click();
+    await collect();
+  }
+  while (await next.isEnabled()) {
+    await next.click();
+    await collect();
+  }
+  expect(seen.size).toBe(7);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  await page.getByTestId("time-grid").locator(".tg-scroll").scrollIntoViewIfNeeded();
+  const p = await slot(columns.first(), 9, 40);
+  await page.touchscreen.tap(p.x, p.y);
+  const form = page.getByRole("form", { name: "New planned block" });
+  await expect(form.getByLabel("Start time")).toHaveValue("09:30");
+  await expect(form.getByLabel("Duration (minutes)")).toHaveValue("30");
+  expect(offenders).toEqual([]);
+  await phone.close();
 });

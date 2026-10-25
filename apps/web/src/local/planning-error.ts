@@ -2,7 +2,15 @@ import type { LocalDb } from "./db.ts";
 import { getSharedPreferences } from "./settings.ts";
 
 /** A planning write that was refused (Stage 3); nothing was changed. */
-export type PlanningErrorCode = "NO_TIME_ZONE" | "DST_GAP" | "INVALID_DURATION" | "NOT_FOUND";
+export type PlanningErrorCode =
+  | "NO_TIME_ZONE"
+  | "DST_GAP"
+  | "INVALID_DURATION"
+  | "NOT_FOUND"
+  /** A cancelled block cannot be dragged (Stage 3 follow-up). */
+  | "CANCELLED"
+  /** Undo refused: the block changed after the drag (T-090 version guard). */
+  | "CHANGED";
 
 export class PlanningError extends Error {
   readonly code: PlanningErrorCode;

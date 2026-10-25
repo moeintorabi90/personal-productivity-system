@@ -123,7 +123,7 @@ A private, offline-first personal productivity app that helps one person set goa
 
 ### Stage 3 planning contract (approved by the owner: D-019 to D-023, T-029 to T-036)
 
-Status: **specified and approved; implemented, merged into `main`, and deployed (ROADMAP Stage 3).** A follow-up adds time-grid interactions and project colors ("Stage 3 follow-up" below; approved 2026-10-25, not implemented; built after Stage 4, T-076). Implementation choices that refine presentation details are listed under "Implementation notes (Stage 3)" at the end of this section. The behavior below is owner-approved: D-019 to D-023 and T-029 to T-036 (2026-10-24); the rest follows from those and earlier recorded decisions (T-025 to T-028, adopted as derived). Storage encodings in DATA_MODEL are technical choices serving this behavior. Data shapes: DATA_MODEL "Stage 3 record types and fields".
+Status: **specified and approved; implemented, merged into `main`, and deployed (ROADMAP Stage 3).** A follow-up adds time-grid interactions and project colors ("Stage 3 follow-up" below; approved 2026-10-25; implemented on branch `feat/calendar-follow-up`, not merged; built after Stage 4, T-076). Implementation choices that refine presentation details are listed under "Implementation notes (Stage 3)" at the end of this section. The behavior below is owner-approved: D-019 to D-023 and T-029 to T-036 (2026-10-24); the rest follows from those and earlier recorded decisions (T-025 to T-028, adopted as derived). Storage encodings in DATA_MODEL are technical choices serving this behavior. Data shapes: DATA_MODEL "Stage 3 record types and fields".
 
 **Time zone, dates, and display (D-020, T-028)**
 
@@ -191,7 +191,7 @@ Status: **specified and approved; implemented, merged into `main`, and deployed 
 - Today invites setting a daily capacity when none is set; Settings has the capacity field (empty = not set) and, next to the time zone, the note that a zone change may change displayed block times or dates.
 - Without a configured zone, Today and Calendar show only the prompt (with the device-zone suggestion button); the recurrence checkbox in the task editor is disabled with a hint.
 
-### Stage 3 follow-up: calendar interactions and project colors (owner-approved 2026-10-25; not implemented)
+### Stage 3 follow-up: calendar interactions and project colors (owner-approved 2026-10-25; implemented on branch `feat/calendar-follow-up`, not merged)
 
 Decisions: DECISIONS T-066 to T-070, T-075, and T-088 to T-090, with the derived technical choices and open details listed there. **Order (T-076):** built after Stage 4 (goals and milestones) and before Stage 5 (actual execution and outputs); Stage 3 itself stays complete. All Stage 3 rules above still apply; this follow-up changes how blocks are created and edited on the calendar, and how items are colored.
 
@@ -219,6 +219,8 @@ Decisions: DECISIONS T-066 to T-070, T-075, and T-088 to T-090, with the derived
 - After a block is moved or resized by drag, an **Undo** action is shown for 5 seconds; there is no confirmation dialog (T-090; the 5-second duration is a derived default).
 
 Palette identifiers and theme values, the default-color rule, snapping in the configured zone, the phone breakpoint, and how Undo writes are derived technical choices in DECISIONS ("Derived technical choices"). Open details 1–4 are resolved (T-076, T-088 to T-090).
+
+**Implementation notes (Stage 3 follow-up; presentation choices, not owner decisions):** day and week views open as the time grid; a "Layout" choice keeps the Stage 3 list layout available (the keyboard and screen-reader path, as before). In the grid each day has an Add (+) button, and every block is a button that opens its row (edit, cancel, restore); unscheduled items are listed below the grid. On touch screens a drag starts after a long press so that ordinary swipes still scroll (vertically) or change the shown days (sideways, phone). The project color is chosen in the project's create and edit forms ("Default" keeps the derived color). Month view is unchanged.
 
 ### Actual work and outputs
 

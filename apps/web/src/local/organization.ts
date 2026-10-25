@@ -9,6 +9,7 @@
  */
 import { nowIso } from "../backup/envelope.ts";
 import {
+  type PaletteId,
   PRODUCT_REGISTRY,
   PROJECTS,
   type ProjectData,
@@ -66,26 +67,41 @@ async function current<T>(db: LocalDb, type: string, id: string): Promise<T> {
 
 /* ---------- commands ---------- */
 
+/** `color` is a palette identifier; leaving it out keeps the derived default (nothing is written). */
 export async function createProject(
   db: LocalDb,
-  input: { name: string; description?: string },
+  input: { name: string; description?: string; color?: PaletteId },
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<string> {
   const id = crypto.randomUUID();
-  const data: ProjectData = { name: input.name.trim(), description: (input.description ?? "").trim(), archivedAt: null };
+  const data: ProjectData = {
+    name: input.name.trim(),
+    description: (input.description ?? "").trim(),
+    archivedAt: null,
+    ...(input.color ? { color: input.color } : {}),
+  };
   await putRecord(db, registry, PROJECTS, id, data);
   return id;
 }
 
+/**
+ * Edits a project. `color: null` returns to the derived default by removing the field (never
+ * stored as null, T-025); leaving `color` out keeps it. Only the project record is written: blocks
+ * and snapshots carry no color (T-069).
+ */
 export async function updateProject(
   db: LocalDb,
   id: string,
-  patch: Partial<Pick<ProjectData, "name" | "description">>,
+  patch: Partial<Pick<ProjectData, "name" | "description">> & { color?: PaletteId | null },
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<void> {
   await db.transaction("rw", [db.records, db.tombstones, db.meta], async () => {
     const data = await current<ProjectData>(db, PROJECTS, id);
-    await putRecord(db, registry, PROJECTS, id, { ...data, ...trimmed(patch) });
+    const { color, ...rest } = patch;
+    const next: Record<string, unknown> = { ...data, ...trimmed(rest) };
+    if (color === null) delete next.color;
+    else if (color !== undefined) next.color = color;
+    await putRecord(db, registry, PROJECTS, id, next);
   });
 }
 

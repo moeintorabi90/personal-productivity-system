@@ -1,0 +1,125 @@
+{
+  "format": "pps-backup",
+  "formatVersion": 1,
+  "backupId": "55555555-5555-4555-8555-555555555555",
+  "createdAt": "2026-10-25T09:00:00.000Z",
+  "app": {
+    "version": "0.5.0",
+    "dataSchemaVersion": 5
+  },
+  "sourceDevice": {
+    "id": "4a815e9f-a95f-4340-ba5f-58b00b919c3c",
+    "name": "Sample device"
+  },
+  "encryption": null,
+  "payload": {
+    "records": {
+      "preferences": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "createdAt": "2026-10-25T13:17:29.249Z",
+          "updatedAt": "2026-10-25T13:17:29.256Z",
+          "version": {
+            "4a815e9f-a95f-4340-ba5f-58b00b919c3c": 1
+          },
+          "contentHash": "861e9e291205f11199f25ffc8113c6062d5d6c62d07013ba91f30e7d7c599c1e",
+          "data": {
+            "timeZone": "Asia/Tehran",
+            "weekStart": 6,
+            "calendarDisplay": "gregorian"
+          }
+        }
+      ],
+      "projects": [
+        {
+          "id": "d46b55c9-bf41-470d-8ead-1ce2f9014e5c",
+          "createdAt": "2026-10-25T13:17:29.260Z",
+          "updatedAt": "2026-10-25T13:17:29.260Z",
+          "version": {
+            "4a815e9f-a95f-4340-ba5f-58b00b919c3c": 1
+          },
+          "contentHash": "30ad1589eb3cde37f1763432ab13d9d071b0d2df733ac4c6e88d5a4d37d976b6",
+          "data": {
+            "name": "Sample project with the default color",
+            "description": "",
+            "archivedAt": null
+          }
+        },
+        {
+          "id": "fbc5fc5d-3794-4105-b1fc-f6fcd7f4d9de",
+          "createdAt": "2026-10-25T13:17:29.258Z",
+          "updatedAt": "2026-10-25T13:17:29.258Z",
+          "version": {
+            "4a815e9f-a95f-4340-ba5f-58b00b919c3c": 1
+          },
+          "contentHash": "9a799d2ecbe53fc1e51b9a6addd83e681bd04b16f17412d327e4f4f39b5a08e5",
+          "data": {
+            "name": "Sample project with a color",
+            "description": "",
+            "archivedAt": null,
+            "color": "green"
+          }
+        }
+      ],
+      "taskDefinitions": [
+        {
+          "id": "666efd39-8413-4ee0-8162-d4a465a833c6",
+          "createdAt": "2026-10-25T13:17:29.263Z",
+          "updatedAt": "2026-10-25T13:17:29.263Z",
+          "version": {
+            "4a815e9f-a95f-4340-ba5f-58b00b919c3c": 1
+          },
+          "contentHash": "0a7b2c95ff318c1eff0ada04910d59663d00b3b83e3dfa6fb504f3ce04973ae9",
+          "data": {
+            "title": "Sample task",
+            "notes": "",
+            "projectId": "fbc5fc5d-3794-4105-b1fc-f6fcd7f4d9de",
+            "workstreamId": null,
+            "nextAction": "",
+            "estimateMinutes": null,
+            "archivedAt": null
+          }
+        }
+      ],
+      "calendarBlocks": [
+        {
+          "id": "c0083e0b-6540-4413-a9e3-cea638dd5ffa",
+          "createdAt": "2026-10-25T13:17:29.272Z",
+          "updatedAt": "2026-10-25T13:17:29.272Z",
+          "version": {
+            "4a815e9f-a95f-4340-ba5f-58b00b919c3c": 1
+          },
+          "contentHash": "ca22b95f1064579e9e8138806dbb5af8940d8a4ef6fb87950b6d4440bd6d0515",
+          "data": {
+            "taskId": "666efd39-8413-4ee0-8162-d4a465a833c6",
+            "startsAt": "2026-11-02T05:30:00.000Z",
+            "endsAt": "2026-11-02T06:00:00.000Z",
+            "timeZone": "Asia/Tehran",
+            "localDate": "2026-11-02",
+            "occurrenceDate": null,
+            "status": "planned",
+            "snapshot": {
+              "taskTitle": "Sample task",
+              "projectId": "fbc5fc5d-3794-4105-b1fc-f6fcd7f4d9de",
+              "projectName": "Sample project with a color",
+              "workstreamId": null,
+              "workstreamName": null
+            }
+          }
+        }
+      ]
+    },
+    "tombstones": [],
+    "pendingConflicts": [],
+    "replacedVersions": [],
+    "sourceDeviceSettings": {
+      "language": "en",
+      "theme": "system"
+    }
+  },
+  "integrity": {
+    "algorithm": "SHA-256",
+    "canonicalization": "JCS-RFC8785",
+    "hash": "5424564db63c538a16e1d2afe5d1689e5e0f3f93f3646dd3c4ff22c381ad9a90"
+  }
+}

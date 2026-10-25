@@ -1,12 +1,33 @@
-import { useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { useT } from "../app-context.tsx";
 import { formatDayNumber, formatLocalDate, formatMonthHeading, formatWeekdayShort } from "../i18n/index.ts";
+import type { BlockTimeInput } from "../local/planning.ts";
 import { NO_FILTER, type PlanFilter } from "../planning/planning.ts";
 import { addDays, monthDates, shiftMonth, weekDates, weekdayOf } from "../planning/time.ts";
 import { SearchField } from "./organization-ui.tsx";
-import { DateField, DayPanel, dayPlan, type PlanningContext, TimeZonePrompt, usePlanning, useToday } from "./planning-ui.tsx";
+import { BlockForm, BlockRow, DateField, DayPanel, dayPlan, type PlanningContext, TimeZonePrompt, UnscheduledRow, usePlanning, useToday } from "./planning-ui.tsx";
+import { TimeGrid } from "./TimeGrid.tsx";
+import { UndoBar, type UndoOffer } from "./UndoBar.tsx";
 
 type Mode = "day" | "week" | "month";
+type Layout = "grid" | "list";
+
+/** The phone layout (T-089): the same breakpoint as the rest of the narrow layout in styles.css. */
+export const PHONE_QUERY = "(max-width: 560px)";
+
+function useMediaQuery(query: string): boolean {
+  const get = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(query).matches;
+  const [matches, setMatches] = useState(get);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const list = window.matchMedia(query);
+    const update = () => setMatches(list.matches);
+    update();
+    list.addEventListener?.("change", update);
+    return () => list.removeEventListener?.("change", update);
+  }, [query]);
+  return matches;
+}
 
 /** Stage 3 calendar: day, week, and month views with navigation, search, and filters. */
 export function CalendarView({ onOpenSettings }: { onOpenSettings?: () => void }) {
@@ -24,8 +45,9 @@ export function CalendarView({ onOpenSettings }: { onOpenSettings?: () => void }
 
 function Calendar({ ctx, today }: { ctx: PlanningContext; today: string }) {
   const t = useT();
-  const ids = { mode: useId(), project: useId(), workstream: useId(), cancelled: useId(), unscheduled: useId() };
+  const ids = { mode: useId(), layout: useId(), project: useId(), workstream: useId(), cancelled: useId(), unscheduled: useId() };
   const [mode, setMode] = useState<Mode>("week");
+  const [layout, setLayout] = useState<Layout>("grid");
   const [focus, setFocus] = useState(today);
   const [goTo, setGoTo] = useState("");
   const [filter, setFilter] = useState<PlanFilter>(NO_FILTER);
@@ -51,6 +73,15 @@ function Calendar({ ctx, today }: { ctx: PlanningContext; today: string }) {
             <option value="month">{t("calendar.month")}</option>
           </select>
         </div>
+        {mode !== "month" ? (
+          <div className="field">
+            <label htmlFor={ids.layout}>{t("calendar.layout")}</label>
+            <select id={ids.layout} value={layout} onChange={(e) => setLayout(e.target.value as Layout)}>
+              <option value="grid">{t("calendar.layout.grid")}</option>
+              <option value="list">{t("calendar.layout.list")}</option>
+            </select>
+          </div>
+        ) : null}
         <div className="button-row" role="group" aria-label={t("calendar.navigation")}>
           <button type="button" className="secondary" onClick={() => step(-1)}>
             {t("calendar.previous")}
@@ -111,7 +142,9 @@ function Calendar({ ctx, today }: { ctx: PlanningContext; today: string }) {
           <label htmlFor={ids.unscheduled}>{t("calendar.onlyUnscheduled")}</label>
         </div>
       </div>
-      {mode === "day" ? (
+      {mode !== "month" && layout === "grid" ? (
+        <GridView ctx={ctx} dates={mode === "day" ? [focus] : weekDates(focus, ctx.weekStart)} focus={focus} filter={filter} week={mode === "week"} />
+      ) : mode === "day" ? (
         <DayPanel ctx={ctx} plan={dayPlan(ctx, focus, filter)} />
       ) : mode === "week" ? (
         <WeekView ctx={ctx} focus={focus} filter={filter} />
@@ -122,6 +155,112 @@ function Calendar({ ctx, today }: { ctx: PlanningContext; today: string }) {
         }} />
       )}
     </>
+  );
+}
+
+type Panel = { kind: "new"; date: string; startTime?: string; durationMinutes?: number } | { kind: "block"; blockId: string } | null;
+
+/**
+ * Day or week as a time grid (T-066, T-067, T-089). On a phone the week shows two days at a time,
+ * moved with Previous/Next days (and a sideways swipe). Forms open below the grid; an opened block
+ * shows its row (edit, cancel, restore), which is also the keyboard path.
+ */
+function GridView({ ctx, dates, focus, filter, week }: { ctx: PlanningContext; dates: string[]; focus: string; filter: PlanFilter; week: boolean }) {
+  const t = useT();
+  const phone = useMediaQuery(PHONE_QUERY);
+  const twoDays = week && phone;
+  const lastFirst = Math.max(dates.length - 2, 0);
+  const focusIndex = Math.max(dates.indexOf(focus), 0);
+  const [first, setFirst] = useState(Math.min(focusIndex, lastFirst));
+  const [panel, setPanel] = useState<Panel>(null);
+  const [offer, setOffer] = useState<UndoOffer | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const weekKey = dates[0];
+  useEffect(() => setFirst(Math.min(focusIndex, lastFirst)), [weekKey, focusIndex, lastFirst]);
+  const shown = twoDays ? dates.slice(first, first + 2) : dates;
+  const step = useCallback((delta: 1 | -1) => setFirst((f) => Math.max(0, Math.min(lastFirst, f + 2 * delta))), [lastFirst]);
+  const closeUndo = useCallback(() => setOffer(null), []);
+  const openBlock = panel?.kind === "block" ? ctx.blocks.find((b) => b.id === panel.blockId) : undefined;
+
+  return (
+    <div data-testid={week ? "grid-week-view" : "grid-day-view"}>
+      <h2>
+        {week
+          ? t("calendar.weekOf", { first: formatLocalDate(dates[0]!, ctx, "medium"), last: formatLocalDate(dates[dates.length - 1]!, ctx, "medium") })
+          : formatLocalDate(dates[0]!, ctx)}
+      </h2>
+      {twoDays ? (
+        <div className="button-row" role="group" aria-label={t("grid.daysNavigation")}>
+          <button type="button" className="secondary" disabled={first === 0} onClick={() => step(-1)}>
+            {t("grid.previousDays")}
+          </button>
+          <button type="button" className="secondary" disabled={first >= lastFirst} onClick={() => step(1)}>
+            {t("grid.nextDays")}
+          </button>
+        </div>
+      ) : null}
+      <p className="hint">{t("grid.hint")}</p>
+      {offer ? <UndoBar offer={offer} blocks={ctx.blocks} onClose={closeUndo} onError={setError} /> : null}
+      {error ? (
+        <p className="notice notice-error" role="alert" data-testid="grid-error">
+          {error}
+        </p>
+      ) : null}
+      <TimeGrid
+        ctx={ctx}
+        dates={shown}
+        filter={filter}
+        onCreate={(input: BlockTimeInput) => {
+          setError(null);
+          setPanel({ kind: "new", date: input.date, startTime: input.startTime, durationMinutes: input.durationMinutes });
+        }}
+        onAdd={(date) => {
+          setError(null);
+          setPanel({ kind: "new", date });
+        }}
+        onOpenBlock={(block) => {
+          setError(null);
+          setPanel({ kind: "block", blockId: block.id });
+        }}
+        onMoved={(o) => {
+          setError(null);
+          setOffer(o);
+        }}
+        onError={setError}
+        onSwipe={twoDays ? step : undefined}
+      />
+      {panel?.kind === "new" ? (
+        <BlockForm key={`${panel.date}/${panel.startTime ?? ""}/${panel.durationMinutes ?? ""}`} ctx={ctx} mode={panel} onDone={() => setPanel(null)} />
+      ) : null}
+      {openBlock ? (
+        <ul className="item-list" aria-label={t("plan.blocks")} data-testid="opened-block">
+          <BlockRow ctx={ctx} block={openBlock} date={openBlock.data.localDate} overlaps={false} />
+        </ul>
+      ) : null}
+      <GridUnscheduled ctx={ctx} dates={shown} filter={filter} />
+    </div>
+  );
+}
+
+/** Unscheduled items of the shown dates (D-019): listed below the grid, each with "Schedule". */
+function GridUnscheduled({ ctx, dates, filter }: { ctx: PlanningContext; dates: string[]; filter: PlanFilter }) {
+  const t = useT();
+  const groups = dates.map((date) => ({ date, items: dayPlan(ctx, date, filter).unscheduled })).filter((g) => g.items.length > 0);
+  if (groups.length === 0) return null;
+  return (
+    <section className="day-panel" aria-label={t("plan.unscheduledHeading")} data-testid="grid-unscheduled">
+      <h3>{t("plan.unscheduledHeading")}</h3>
+      {groups.map(({ date, items }) => (
+        <div key={date}>
+          <p className="hint">{formatLocalDate(date, ctx, "medium")}</p>
+          <ul className="item-list">
+            {items.map((item) => (
+              <UnscheduledRow key={`${item.taskId}/${item.date}`} ctx={ctx} item={item} />
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
   );
 }
 

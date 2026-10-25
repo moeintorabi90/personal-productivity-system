@@ -19,6 +19,8 @@ import {
   WORKSTREAMS,
   type WorkstreamData,
 } from "../backup/registry.ts";
+import { canonicalize } from "../backup/jcs.ts";
+import type { VersionVector } from "../backup/versions.ts";
 import { localDateOf, MINUTE_MS, resolveWallTime } from "../planning/time.ts";
 import type { LocalDb, RecordRow } from "./db.ts";
 import { createTask, updateTask } from "./organization.ts";
@@ -124,6 +126,62 @@ export async function updateBlock(db: LocalDb, id: string, input: BlockTimeInput
       timeZone: zone,
       snapshot: await snapshotOf(db, current.taskId),
     });
+  });
+}
+
+/** The times a drag changes, kept so Undo can write them back (T-090). */
+export type BlockTimes = Pick<CalendarBlockData, "startsAt" | "endsAt" | "timeZone" | "localDate">;
+
+const timesOf = (b: CalendarBlockData): BlockTimes => ({ startsAt: b.startsAt, endsAt: b.endsAt, timeZone: b.timeZone, localDate: b.localDate });
+
+/**
+ * Moves or resizes a block by drag on the time grid (T-067, T-089): the same edit as `updateBlock`
+ * (new instants from the snapped wall time in the configured zone, refreshed snapshot, task and
+ * occurrence link kept), refused for a cancelled block. Returns the times before and after the drag
+ * and the version this edit wrote, which guards Undo; `version` is null when nothing changed.
+ */
+export async function dragBlockTimes(
+  db: LocalDb,
+  id: string,
+  input: BlockTimeInput,
+  registry: Registry = PRODUCT_REGISTRY,
+): Promise<{ previous: BlockTimes; after: BlockTimes; version: VersionVector | null }> {
+  return db.transaction("rw", planningTables(db), async () => {
+    const zone = await requireZone(db);
+    const before = await db.records.get([CALENDAR_BLOCKS, id]);
+    if (!before) throw new PlanningError("NOT_FOUND", `block ${id} is not on this device`);
+    const current = before.data as CalendarBlockData;
+    if (current.status === "cancelled") throw new PlanningError("CANCELLED", "a cancelled block cannot be dragged");
+    const row = await putRecord(db, registry, CALENDAR_BLOCKS, id, {
+      ...current,
+      ...blockInstants(input, zone),
+      timeZone: zone,
+      snapshot: await snapshotOf(db, current.taskId),
+    });
+    return { previous: timesOf(current), after: timesOf(row.data as CalendarBlockData), version: row.contentHash === before.contentHash ? null : row.version };
+  });
+}
+
+/**
+ * Undo of a drag (T-090): an ordinary edit that writes the previous instants, zone, and local date
+ * back as a NEW version (history moves forward; nothing is erased) and refreshes the snapshot like
+ * any edit of the block (T-036). Refused when the block changed after the drag (its version is no
+ * longer the one the drag wrote) or was cancelled meanwhile.
+ */
+export async function undoBlockTimes(
+  db: LocalDb,
+  id: string,
+  previous: BlockTimes,
+  expectedVersion: VersionVector,
+  registry: Registry = PRODUCT_REGISTRY,
+): Promise<void> {
+  await db.transaction("rw", planningTables(db), async () => {
+    const row = await db.records.get([CALENDAR_BLOCKS, id]);
+    if (!row) throw new PlanningError("NOT_FOUND", `block ${id} is not on this device`);
+    if (canonicalize(row.version) !== canonicalize(expectedVersion)) throw new PlanningError("CHANGED", "the block changed after the drag");
+    const current = row.data as CalendarBlockData;
+    if (current.status === "cancelled") throw new PlanningError("CANCELLED", "the block was cancelled after the drag");
+    await putRecord(db, registry, CALENDAR_BLOCKS, id, { ...current, ...previous, snapshot: await snapshotOf(db, current.taskId) });
   });
 }
 

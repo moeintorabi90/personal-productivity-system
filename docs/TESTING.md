@@ -133,7 +133,7 @@ Contract: PRODUCT_SPEC "Goals and measures" and "Stage 4 goal and milestone rule
 11. Goals screen in English and Persian (RTL, Jalali dates): create each kind, edit, pause/resume/complete/reopen, archive/restore, milestones with complete/reopen/delete-with-confirmation, and the date-clash message; every control is reachable by keyboard and labelled.
 12. Manual on the owner's Windows laptop and Android phone: the Stage 4 flow offline, and moving goals in both directions by backup.
 
-## Calendar interaction, project color, and streak acceptance tests (specified 2026-10-25; not implemented)
+## Calendar interaction, project color, and streak acceptance tests (specified 2026-10-25; Stage 3 follow-up items implemented on branch `feat/calendar-follow-up`, results in "Stage 3 follow-up test report"; Stage 6 and Stage 8 items not implemented)
 
 Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-076 and T-088 to T-090. Open details 1–4 are resolved (T-076, T-088 to T-090); tests depending on open details 5–7 follow the owner's answer. The project color arrives in data version 5, after Stage 4's version 4 (T-076). Fixed dates and zones as in Stage 3.
 
@@ -166,6 +166,20 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Sta
 ## Release gate
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.
+
+## Stage 3 follow-up test report (2026-10-25, branch `feat/calendar-follow-up`)
+
+Commands run on the Windows development machine (Edge for end-to-end tests): `npm.cmd run typecheck` passed; `npm.cmd test` 29 files, 298 tests passed (260 before; new: `planning/colors.test.ts` 8, `planning/grid.test.ts` 10, `local/calendar-follow-up.test.ts` 6, `backup/colors-backup.test.ts` 9, follow-up component tests in `App.test.tsx` 5); `npm.cmd run test:e2e` 11 passed (2 new). Coverage per item:
+
+- Items 1, 4a (tap and range pre-fill, 15-minute snapping, daylight-saving gap refused): `planning/grid.test.ts`; `App.test.tsx` (tap at 09:07 → 09:00 for 30 minutes, drag selection, nothing written until Save) with jsdom pointer events; end-to-end with a real mouse and a touch tap.
+- Items 2, 3 (drag-move and edge-resize change only that block; cancelled blocks not dragged; DST gap, zero and over-24-hour durations refused): `planning/grid.test.ts`, `local/calendar-follow-up.test.ts`, `App.test.tsx`, and the end-to-end mouse drag and resize.
+- Item 4 (keyboard and forms; English/Persian, LTR/RTL): `App.test.tsx` (Add per day, a block opens its row with Enter; the list layout still drives the Stage 3 tests); a visual check of the Persian RTL week grid in the dark theme at 375 px.
+- Item 4a, phone: `App.test.tsx` and end-to-end at 375 px with touch emulation (two days, Previous/Next reach all seven, no horizontal scroll).
+- Item 4b (Undo without a dialog, restores as a new version, disappears after 5 seconds or when the block changes, stays while focused): `local/calendar-follow-up.test.ts` (version guard, refreshed snapshot), `App.test.tsx`, and end-to-end (hidden after 5 s; kept for 6 s while focused; Undo restores).
+- Items 5–7 (palette, derived default, item colors, color change writes only the project, non-color cue, contrast): `planning/colors.test.ts` (reads `styles.css`), `local/calendar-follow-up.test.ts`, `App.test.tsx`.
+- Item 8 (backup, data version 5): `backup/colors-backup.test.ts`; end-to-end color on a fresh device. New sample `apps/web/src/backup/samples/pps-backup-format-v1-data-v5.json` (fabricated, written by `PPS_WRITE_SAMPLE=1`).
+
+Changed existing tests: exports are data version 5 and "newer" is version 6 (`organization-backup`, `planning-backup`, `goals-backup`, `validation`); three Stage 3 component tests and one Stage 3 end-to-end test choose Layout "List" before checking the list views, since day and week now open as the time grid. **Not yet tested:** manual checks on the owner's Windows laptop (mouse drags) and Android phone (long-press drag, swipe, both themes); touch drag-and-drop is not covered by an automated test (only the touch tap).
 
 ## Stage 4 test report (2026-10-25; merged into `main` at `771c534` and deployed as 0.5.0)
 

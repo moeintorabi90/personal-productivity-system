@@ -9,6 +9,7 @@ import { createBackup } from "./backup/export.ts";
 import { PRODUCT_REGISTRY } from "./backup/registry.ts";
 import { LocalDb } from "./local/db.ts";
 import { createGoal, defaultStartDate, loadGoals } from "./local/goals.ts";
+import { defaultColorOf } from "./planning/colors.ts";
 import { createProject, createTask, createWorkstream, loadOrganization, updateProject } from "./local/organization.ts";
 import { getDeviceSettings } from "./local/records.ts";
 import { getSharedPreferences, updateSharedPreferences } from "./local/settings.ts";
@@ -509,6 +510,7 @@ describe("Stage 3: calendar, Today, recurrence, capacity", () => {
     expect(await screen.findByTestId("unscheduled-row")).toBeTruthy(); // cancelled blocks are hidden; the item is back
     await goTo("Calendar");
     fireEvent.change(await screen.findByLabelText("View"), { target: { value: "day" } });
+    fireEvent.change(screen.getByLabelText("Layout"), { target: { value: "list" } }); // the list layout stays (follow-up)
     fireEvent.click(screen.getByLabelText("Show cancelled blocks"));
     const cancelled = await screen.findByTestId("block-row");
     expect(cancelled.textContent).toContain("Cancelled");
@@ -526,6 +528,7 @@ describe("Stage 3: calendar, Today, recurrence, capacity", () => {
     await createTask(services.db, { title: "Draft chapter", projectId: project });
 
     await goTo("Calendar");
+    fireEvent.change(await screen.findByLabelText("Layout"), { target: { value: "list" } }); // the list layout stays (follow-up)
     const week = await screen.findByTestId("week-view");
     expect(within(week).getAllByTestId("day-panel").map((p) => p.dataset.date)).toEqual([
       "2026-10-31", "2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06",
@@ -604,6 +607,7 @@ describe("Stage 3: calendar, Today, recurrence, capacity", () => {
     fireEvent.click(screen.getByRole("button", { name: "برو" }));
     await waitFor(() => expect(screen.getByTestId("month-view").querySelector(".month-cell")!.getAttribute("data-date")).toBe("2027-03-21"));
     fireEvent.change(screen.getByLabelText("نما"), { target: { value: "day" } });
+    fireEvent.change(await screen.findByLabelText("چیدمان"), { target: { value: "list" } }); // the list layout stays (follow-up)
     expect((await screen.findByTestId("day-panel")).textContent).toContain("یکشنبه"); // 21 March 2027 is a Sunday
   });
 });
@@ -748,5 +752,194 @@ describe("Stage 4: goals and milestones (TESTING.md Stage 4 item 11)", () => {
     expect(await screen.findByText(/پیشرفت هنوز محاسبه/)).toBeTruthy();
     // 2 Nov 2026 = 11 Aban 1405: wait until the date line uses the Jalali display calendar.
     await waitFor(() => expect(document.body.textContent).toContain("آبان"));
+  });
+});
+
+describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-up items 1, 2, 4, 4a, 4b, 5, 6)", () => {
+  // Monday 2026-11-02, 09:30 in Tehran. Only Date is faked; timers and IndexedDB stay real.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T06:00:00.000Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const HOUR_PX = 64; // TimeGrid.tsx
+  const COLUMN_PX = 100;
+
+  /** jsdom has no layout: grid columns get a 24 × 64 px height, side by side, 100 px wide. */
+  function layoutGrid() {
+    const real = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.testid === "grid-column") {
+        const columns = [...document.querySelectorAll<HTMLElement>('[data-testid="grid-column"]')];
+        const left = columns.indexOf(this) * COLUMN_PX;
+        return { top: 0, bottom: 24 * HOUR_PX, height: 24 * HOUR_PX, left, right: left + COLUMN_PX, width: COLUMN_PX, x: left, y: 0, toJSON: () => ({}) } as DOMRect;
+      }
+      return real.call(this);
+    });
+    // jsdom has no PointerEvent; a MouseEvent with a pointer ID and type is enough here.
+    if (!("PointerEvent" in window)) {
+      class PointerEventPolyfill extends MouseEvent {
+        pointerId: number;
+        pointerType: string;
+        constructor(type: string, init: PointerEventInit = {}) {
+          super(type, init);
+          this.pointerId = init.pointerId ?? 1;
+          this.pointerType = init.pointerType ?? "mouse";
+        }
+      }
+      vi.stubGlobal("PointerEvent", PointerEventPolyfill);
+    }
+  }
+
+  const y = (h: number, m = 0) => (h * 60 + m) * (HOUR_PX / 60);
+  const pointer = (clientY: number, clientX = 250) => ({ clientX, clientY, pointerId: 1, pointerType: "mouse", button: 0, bubbles: true });
+
+  async function gridWeek() {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    layoutGrid();
+    await goTo("Calendar");
+    return screen.findByTestId("grid-week-view");
+  }
+
+  it("5–6. a project's color is chosen from 8 named colors or the derived default; changing it writes only the project", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await goTo("Projects");
+    const colorSelect = (await screen.findByLabelText("Color")) as HTMLSelectElement;
+    expect([...colorSelect.options].map((o) => o.value)).toEqual(["", "blue", "teal", "green", "amber", "orange", "red", "pink", "purple"]);
+    expect([...colorSelect.options].slice(1).map((o) => o.textContent)).toEqual(["Blue", "Teal", "Green", "Amber", "Orange", "Red", "Pink", "Purple"]);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Thesis" } });
+    fireEvent.change(colorSelect, { target: { value: "teal" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
+    expect((await screen.findByTestId("project-color")).textContent).toContain("Color: Teal");
+    const project = (await loadOrganization(services.db)).projects[0]!;
+    expect(project.data.color).toBe("teal");
+
+    const task = await createTask(services.db, { title: "Write", projectId: project.id });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    const { createBlock } = await import("./local/planning.ts");
+    await createBlock(services.db, { taskId: task, date: "2026-11-02", startTime: "09:00", durationMinutes: 60 });
+    const blockBefore = (await services.db.records.where("type").equals("calendarBlocks").toArray())[0]!;
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit project: Thesis" }));
+    fireEvent.change(await screen.findByLabelText("Color"), { target: { value: "" } }); // back to the default
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(async () => expect((await loadOrganization(services.db)).projects[0]!.data).not.toHaveProperty("color"));
+    expect((await screen.findByTestId("project-color")).textContent).toMatch(/\(default\)/);
+    expect((await services.db.records.where("type").equals("calendarBlocks").toArray())[0]).toEqual(blockBefore);
+
+    await goTo("Today");
+    const row = await screen.findByTestId("block-row");
+    expect(row.dataset.color).toBe(defaultColorOf(project.id));
+    expect(row.textContent).toContain("Planned"); // a visible non-color cue
+  });
+
+  it("4a, 1. a tap on empty time pre-fills 09:00–09:30 in the form; nothing is written until Save; a drag selection pre-fills its range", async () => {
+    const week = await gridWeek();
+    const columns = within(week).getAllByTestId("grid-column");
+    expect(columns.map((c) => c.dataset.date)).toEqual(["2026-10-31", "2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06"]);
+    const monday = columns[2]!;
+    fireEvent.pointerDown(monday, pointer(y(9, 7)));
+    fireEvent.pointerUp(monday, pointer(y(9, 7)));
+    let form = await screen.findByRole("form", { name: "New planned block" });
+    expect((within(form).getByLabelText("Date") as HTMLInputElement).value).toBe("2026-11-02");
+    expect((within(form).getByLabelText("Start time") as HTMLInputElement).value).toBe("09:00");
+    expect((within(form).getByLabelText("Duration (minutes)") as HTMLInputElement).value).toBe("30");
+    expect(await services.db.records.where("type").equals("calendarBlocks").count()).toBe(0);
+    fireEvent.click(within(form).getByRole("button", { name: "Cancel" }));
+    expect(await services.db.records.where("type").equals("calendarBlocks").count()).toBe(0);
+
+    fireEvent.pointerDown(monday, pointer(y(13, 5)));
+    fireEvent.pointerMove(monday, pointer(y(14, 40)));
+    expect((await within(monday).findByTestId("grid-preview")).textContent).toContain("13:00");
+    fireEvent.pointerUp(monday, pointer(y(14, 40)));
+    form = await screen.findByRole("form", { name: "New planned block" });
+    expect((within(form).getByLabelText("Start time") as HTMLInputElement).value).toBe("13:00");
+    expect((within(form).getByLabelText("Duration (minutes)") as HTMLInputElement).value).toBe("105");
+    fireEvent.change(within(form).getByLabelText("Title of the new task"), { target: { value: "Read" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+    const block = await within(monday).findByTestId("grid-block");
+    expect(block.textContent).toContain("13:00–14:45");
+    expect(block.dataset.color).toBe("neutral"); // an inbox task has no project
+    expect(block.textContent).toContain("Planned");
+  });
+
+  it("2, 4b. a drag-move snaps to 15 minutes, changes only that block, and offers Undo without a confirmation; Undo restores the times", async () => {
+    const week = await gridWeek();
+    const project = await createProject(services.db, { name: "Thesis", color: "purple" });
+    const task = await createTask(services.db, { title: "Write", projectId: project });
+    const { createBlock, setBlockCancelled } = await import("./local/planning.ts");
+    const moved = await createBlock(services.db, { taskId: task, date: "2026-11-02", startTime: "09:00", durationMinutes: 60 });
+    const other = await createBlock(services.db, { taskId: task, date: "2026-11-02", startTime: "16:00", durationMinutes: 30 });
+    const otherBefore = await services.db.records.get(["calendarBlocks", other]);
+    const monday = within(week).getAllByTestId("grid-column")[2]!;
+    await waitFor(() => expect(within(monday).getAllByTestId("grid-block")).toHaveLength(2));
+    const block = within(monday).getAllByTestId("grid-block").find((b) => b.dataset.blockId === moved)!;
+    expect(block.dataset.color).toBe("purple");
+
+    // Grab at 09:30, drop 1 h 22 min lower → start 10:22 → snaps to 10:15.
+    fireEvent.pointerDown(block, pointer(y(9, 30)));
+    fireEvent.pointerMove(block, pointer(y(10, 52)));
+    fireEvent.pointerUp(block, pointer(y(10, 52)));
+    const undo = await screen.findByTestId("undo-bar");
+    expect(undo.textContent).toContain("Moved: Write");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(async () => expect((await services.db.records.get(["calendarBlocks", moved]))!.data.startsAt).toBe("2026-11-02T06:45:00.000Z")); // 10:15 Tehran
+    expect(await services.db.records.get(["calendarBlocks", other])).toEqual(otherBefore);
+
+    fireEvent.click(within(undo).getByRole("button", { name: "Undo" }));
+    await waitFor(async () => expect((await services.db.records.get(["calendarBlocks", moved]))!.data.startsAt).toBe("2026-11-02T05:30:00.000Z"));
+    await waitFor(() => expect(screen.queryByTestId("undo-bar")).toBeNull());
+
+    // A cancelled block is never dragged.
+    await setBlockCancelled(services.db, other, true);
+    fireEvent.click(screen.getByLabelText("Show cancelled blocks"));
+    const cancelled = await waitFor(() => {
+      const found = within(monday).getAllByTestId("grid-block").find((b) => b.dataset.blockId === other && b.dataset.status === "cancelled");
+      if (!found) throw new Error("cancelled block not shown yet");
+      return found;
+    });
+    const cancelledBefore = await services.db.records.get(["calendarBlocks", other]);
+    fireEvent.pointerDown(cancelled, pointer(y(16, 10)));
+    fireEvent.pointerMove(cancelled, pointer(y(18, 10)));
+    fireEvent.pointerUp(cancelled, pointer(y(18, 10)));
+    expect(await services.db.records.get(["calendarBlocks", other])).toEqual(cancelledBefore);
+  });
+
+  it("4. keyboard path: each day has Add, and a block opens its row (edit, cancel) with Enter", async () => {
+    const week = await gridWeek();
+    const task = await createTask(services.db, { title: "Gym" });
+    const { createBlock } = await import("./local/planning.ts");
+    await createBlock(services.db, { taskId: task, date: "2026-11-03", startTime: "07:00", durationMinutes: 45 });
+    const blockButton = await within(week).findByRole("button", { name: /^Gym, 07:00–07:45, 45 min, Planned$/ });
+    fireEvent.click(blockButton, { detail: 0 }); // keyboard activation
+    const opened = await screen.findByTestId("opened-block");
+    expect(within(opened).getByRole("button", { name: "Change planned block: Gym" })).toBeTruthy();
+    fireEvent.click(within(week).getByRole("button", { name: /Add a planned block on 3 Nov 2026/ }));
+    const form = await screen.findByRole("form", { name: "New planned block" });
+    expect((within(form).getByLabelText("Start time") as HTMLInputElement).value).toBe(""); // typed by the user
+  });
+
+  it("4a. on a phone-sized screen the week shows two days, and Previous/Next days reach every day", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-width: 560px)", media: query, addEventListener() {}, removeEventListener() {} }));
+    const week = await gridWeek();
+    const shownDays = () => within(week).getAllByTestId("grid-column").map((c) => c.dataset.date);
+    expect(shownDays()).toEqual(["2026-11-02", "2026-11-03"]); // starts at today
+    const seen = new Set(shownDays());
+    const next = screen.getByRole("button", { name: "Next days" });
+    while (!(next as HTMLButtonElement).disabled) {
+      fireEvent.click(next);
+      shownDays().forEach((d) => seen.add(d));
+    }
+    expect(shownDays()).toEqual(["2026-11-05", "2026-11-06"]);
+    const previous = screen.getByRole("button", { name: "Previous days" });
+    while (!(previous as HTMLButtonElement).disabled) {
+      fireEvent.click(previous);
+      shownDays().forEach((d) => seen.add(d));
+    }
+    expect([...seen].sort()).toEqual(["2026-10-31", "2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06"]);
   });
 });

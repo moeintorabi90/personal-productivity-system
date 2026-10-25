@@ -151,9 +151,24 @@ const textSchema = z.string().max(TEXT_MAX);
 /** Archive state is data (it merges and conflicts like any edit); it is never a deletion. */
 const archivedAtSchema = z.iso.datetime().nullable();
 
-export const projectSchema = z
-  .object({ name: nameSchema, description: textSchema, archivedAt: archivedAtSchema })
-  .strict();
+/**
+ * Palette identifiers a project may choose (T-088), fixed for data schema version 5; theme values
+ * are presentation (styles.css). Changing or adding an identifier is a data-version step.
+ */
+export const PALETTE_IDS = ["blue", "teal", "green", "amber", "orange", "red", "pink", "purple"] as const;
+export type PaletteId = (typeof PALETTE_IDS)[number];
+
+const projectV2Shape = { name: nameSchema, description: textSchema, archivedAt: archivedAtSchema };
+
+/** A project as written by data schema versions 2 to 4 (no color). */
+const projectV2Schema = z.object(projectV2Shape).strict();
+
+/**
+ * A project. `color` (data schema version 5, T-068 to T-070) is absent when the owner has not
+ * chosen one — never null — so existing projects keep their content hash (T-025); the default
+ * color is derived from the project ID on display and never written.
+ */
+export const projectSchema = z.object({ ...projectV2Shape, color: z.enum(PALETTE_IDS).optional() }).strict();
 export type ProjectData = z.infer<typeof projectSchema>;
 
 export const workstreamSchema = z
@@ -212,6 +227,7 @@ export const projectsType: RecordTypeDef = {
   schema: projectSchema as unknown as RecordTypeDef["schema"],
   links: [],
   sinceDataSchemaVersion: 2,
+  olderSchemas: [{ untilDataSchemaVersion: 4, schema: projectV2Schema as unknown as RecordTypeDef["schema"] }],
 };
 
 /** A workstream belongs to one project for its whole life (moving it is not supported). */

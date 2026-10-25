@@ -8,7 +8,7 @@ import { isValidTimeZone } from "@pps/shared";
 import { useLiveQuery } from "dexie-react-hooks";
 import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { usePreferences, useServices, useT } from "../app-context.tsx";
-import { BLOCK_MAX_MINUTES, type CalendarBlockData, DEFAULT_SHARED_PREFERENCES, NAME_MAX, type SharedPreferences, type TaskDefinitionData } from "../backup/registry.ts";
+import { BLOCK_MAX_MINUTES, type CalendarBlockData, DEFAULT_SHARED_PREFERENCES, NAME_MAX, type ProjectData, type SharedPreferences, type TaskDefinitionData } from "../backup/registry.ts";
 import { formatLocalDate, formatTime, type MessageKey, type Translate } from "../i18n/index.ts";
 import type { Organization } from "../local/organization.ts";
 import { createBlock, loadBlocks, PlanningError, quickAddBlock, setBlockCancelled, updateBlock } from "../local/planning.ts";
@@ -29,6 +29,7 @@ import {
   type UnscheduledItem,
   unscheduledItemsOn,
 } from "../planning/planning.ts";
+import { type ColorKey, itemColor } from "../planning/colors.ts";
 import { formatOffset, fromJalali, isLocalDate, isWallTime, localDateOf, MINUTE_MS, resolveWallTime, toJalali, wallTimeOf } from "../planning/time.ts";
 import { useOrganization } from "./data-hooks.ts";
 
@@ -48,6 +49,7 @@ export interface PlanningContext {
   org: Organization;
   blocks: BlockItem[];
   tasks: Map<string, TaskDefinitionData>;
+  projects: Map<string, ProjectData>;
   zone: string;
   capacity: number | undefined;
   language: Language;
@@ -67,6 +69,7 @@ export function usePlanning(): { ctx: PlanningContext | null; loading: boolean; 
       org,
       blocks,
       tasks: new Map(org.tasks.map((t) => [t.id, t.data])),
+      projects: new Map(org.projects.map((p) => [p.id, p.data])),
       zone: shared.timeZone,
       capacity: shared.dailyCapacityMinutes,
       language: prefs.language,
@@ -106,6 +109,11 @@ export function dayPlan(ctx: PlanningContext, date: string, filter: PlanFilter):
     unscheduled: filterUnscheduled(allItems, filter, ctx.tasks),
     capacity: capacityStatus(ctx.capacity, plannedMinutesOn(ctx.blocks, date, ctx.zone), allItems, ctx.tasks),
   };
+}
+
+/** The project color of a block (current project of its task, else its snapshot's, else neutral; T-069). */
+export function blockColor(ctx: PlanningContext, block: CalendarBlockData): ColorKey {
+  return itemColor({ taskId: block.taskId, snapshotProjectId: block.snapshot.projectId }, ctx.tasks, ctx.projects);
 }
 
 /* ---------------- messages ---------------- */
@@ -231,14 +239,17 @@ function JalaliDateField({ label, value, onChange, required, hint }: { label: st
 /* ---------------- block form ---------------- */
 
 export type BlockFormMode =
-  | { kind: "new"; date: string } // from the calendar: an existing task, or quick add from a title
+  // From the calendar: an existing task, or quick add from a title. A slot chosen on the time grid
+  // pre-fills its start and duration: the user's explicit time choice (T-066, T-089, D-019).
+  | { kind: "new"; date: string; startTime?: string; durationMinutes?: number }
   | { kind: "task"; taskId: string; date: string } // "Plan" on a task
   | { kind: "schedule"; taskId: string; occurrenceDate: string } // "Schedule" on an unscheduled item
   | { kind: "edit"; block: BlockItem };
 
 /**
- * Creates or edits a block. The start time is ALWAYS entered by the user (never pre-filled for a
- * new block, D-019, T-033); scheduling pre-fills the occurrence date and the task's estimate.
+ * Creates or edits a block. The start time is ALWAYS chosen by the user: typed, or the slot they
+ * selected on the time grid (D-019, T-033, T-066); scheduling pre-fills the occurrence date and the
+ * task's estimate. Nothing is written until the user saves.
  * A daylight-saving gap is refused; an ambiguous time uses the earlier instant and shows its
  * offset (T-030). A capacity warning informs but never blocks saving (D-021).
  */
@@ -254,13 +265,15 @@ export function BlockForm({ ctx, mode, onDone }: { ctx: PlanningContext; mode: B
   const [date, setDate] = useState(
     mode.kind === "edit" ? localDateOf(mode.block.data.startsAt, ctx.zone) : mode.kind === "schedule" ? mode.occurrenceDate : mode.date,
   );
-  const [startTime, setStartTime] = useState(editing ? wallTimeOf(editing.data.startsAt, ctx.zone) : "");
+  const [startTime, setStartTime] = useState(editing ? wallTimeOf(editing.data.startsAt, ctx.zone) : mode.kind === "new" ? (mode.startTime ?? "") : "");
   const [duration, setDuration] = useState(
     editing
       ? String((Date.parse(editing.data.endsAt) - Date.parse(editing.data.startsAt)) / MINUTE_MS)
       : mode.kind === "schedule" && estimate !== null && estimate <= BLOCK_MAX_MINUTES
         ? String(estimate)
-        : "",
+        : mode.kind === "new" && mode.durationMinutes
+          ? String(mode.durationMinutes)
+          : "",
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -417,7 +430,7 @@ export function BlockRow({ ctx, block, date, overlaps }: { ctx: PlanningContext;
     }
   }
   return (
-    <li className={`item block${cancelled ? " block-cancelled" : ""}`} data-testid="block-row">
+    <li className={`item block colored${cancelled ? " block-cancelled" : ""}`} data-testid="block-row" data-color={blockColor(ctx, block.data)} data-status={block.data.status}>
       <div className="item-main">
         <span className="block-time">{time}</span> <span className="item-title">{label.title}</span>{" "}
         {cancelled ? <span className="pill pill-muted">{t("plan.cancelled")}</span> : <span className="pill">{t("plan.planned")}</span>}
