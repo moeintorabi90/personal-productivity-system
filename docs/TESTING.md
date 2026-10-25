@@ -135,7 +135,7 @@ Contract: PRODUCT_SPEC "Goals and measures" and "Stage 4 goal and milestone rule
 
 ## Calendar interaction, project color, and streak acceptance tests (specified 2026-10-25; not implemented)
 
-Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-076. Tests depending on an open detail (DECISIONS, open details 2–7) follow the owner's answer. The project color arrives in data version 5, after Stage 4's version 4 (T-076). Fixed dates and zones as in Stage 3.
+Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-076 and T-088 to T-090. Open details 1–4 are resolved (T-076, T-088 to T-090); tests depending on open details 5–7 follow the owner's answer. The project color arrives in data version 5, after Stage 4's version 4 (T-076). Fixed dates and zones as in Stage 3.
 
 **Stage 3 follow-up: time grid and drag (T-066, T-067)**
 
@@ -143,12 +143,14 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Sta
 2. Drag-move and edge-resize of a planned block change only that block (same rules as a form edit: new instants, planning zone, refreshed snapshot; task and `occurrenceDate` unchanged); other blocks are never moved; cancelled blocks cannot be dragged.
 3. A drop or selection in a daylight-saving gap is refused, not shifted; a resize beyond 24 hours or to zero length is refused; a resulting over-capacity date shows the warning and the change is still allowed (D-021).
 4. Pointer input works with mouse and touch (touch scrolling still scrolls); every action remains possible with the forms and the keyboard; English/Persian, LTR/RTL.
+4a. Time-grid details (T-089): a tap at 09:07 pre-fills 09:00–09:30; drag selection, move, and resize land on 15-minute boundaries in the configured zone (including on a daylight-saving date); at 560 px or narrower the week grid shows two days and Previous/Next (and swipe) reach every day of the week.
+4b. Undo (T-090): after a drag-move or resize, Undo appears without any confirmation dialog, restores the previous start, end, zone, and local date as a new version (snapshot refreshed as for any block edit), and disappears after 5 seconds (unless it has keyboard focus) or when the block changes again; form edits show no Undo.
 
 **Stage 3 follow-up: project colors (T-068 to T-070)**
 
-5. A project without a chosen color shows the same derived default on every device; a chosen palette color is shown; items without a project are neutral; a block whose task moved to another project shows the new project's color; a block whose task is not on the device uses its snapshot's project.
+5. The palette has exactly the 8 identifiers `blue`, `teal`, `green`, `amber`, `orange`, `red`, `pink`, `purple` with names in English and Persian; a project without a chosen color shows the same derived default (FNV-1a mod 8) on every device; a chosen palette color is shown; items without a project are neutral; a block whose task moved to another project shows the new project's color; a block whose task is not on the device uses its snapshot's project.
 6. Changing a project's color writes only the project record (blocks, snapshots, and other records unchanged by hash and version) and re-renders related items.
-7. Planned items always carry a visible non-color status cue (label or marker); contrast is checked in light and dark themes.
+7. Planned items always carry a visible non-color status cue (label or marker); every palette entry and the neutral color meet the contrast targets against both theme backgrounds (text at least 4.5:1, markers at least 3:1).
 8. Backup: color round-trips and merges as a project field (a color edited on two devices is a project conflict with keep/use only); existing projects without `color` keep their content hashes after the update and a re-import of an older backup is "already here"; the committed version-1 to version-4 samples import unchanged; a fabricated version-5 sample imports; a version-4 or older file containing `color`, a `null` color, or an unknown palette identifier is refused with no change (also in carried conflicts and the archive); the Stage 4 app (data version 4) refuses version 5 as newer.
 
 **Stage 6: planned versus actual lanes and goal streaks (T-071 to T-073)**

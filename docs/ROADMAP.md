@@ -69,9 +69,9 @@ After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offlin
 
 ## Stage 3 follow-up — Calendar interactions and project colors
 
-**Status (2026-10-25): contract approved by the owner (T-066 to T-070, T-075); not implemented. Built after Stage 4 and before Stage 5 (T-076);** it is a separate change on its own branch, not a reopening of the completed Stage 3.
+**Status (2026-10-25): contract approved by the owner (T-066 to T-070, T-075; details T-088 to T-090); not implemented. Built after Stage 4 and before Stage 5 (T-076);** it is a separate change on its own branch, not a reopening of the completed Stage 3.
 
-**Deliverables:** time-grid day and week views (month view unchanged); create a planned block by tapping/clicking an empty slot or dragging across an empty range; drag to move and edge-drag to resize planned blocks; mouse and touch; project colors from a predefined palette with a derived default and a neutral color for items without a project; color treatment for planned items with a visible non-color cue; project color in backups with `dataSchemaVersion` 5, the version after Stage 4's (PRODUCT_SPEC "Stage 3 follow-up", BACKUP_FORMAT "Project color").
+**Deliverables:** time-grid day and week views (month view unchanged); create a planned block by tapping/clicking an empty slot or dragging across an empty range; drag to move and edge-drag to resize planned blocks; mouse and touch; project colors from a palette of 8 named colors with a derived default and a neutral color for items without a project (T-088); a 30-minute default for tap-created blocks, 15-minute snapping, a two-day week view on phones (T-089), and a 5-second Undo after a drag-move or resize instead of a confirmation (T-090); color treatment for planned items with a visible non-color cue; project color in backups with `dataSchemaVersion` 5, the version after Stage 4's (PRODUCT_SPEC "Stage 3 follow-up", BACKUP_FORMAT "Project color").
 
 **Acceptance:**
 

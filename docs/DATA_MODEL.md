@@ -149,7 +149,8 @@ Built after Stage 4 and before Stage 5 (T-076). Decisions: T-068 to T-070 (owner
 - **Default color (derived, not stored):** a project without `color` is shown in a default palette color computed deterministically from its project ID, the same on every device; nothing is written. Existing projects therefore keep their data, content hash, and version vector.
 - **Neutral color:** items without a project (inbox tasks and their blocks).
 - **Presentation only:** blocks, sessions, and snapshots store no color. An item uses the current color of its task's current project; when the task is not on this device, the project ID in the item's snapshot; with no project, neutral. Changing a color writes only the project record and rewrites no history (T-069).
-- The palette's identifiers and values are not defined yet (DECISIONS, open detail 2).
+- **Palette identifiers in data version 5** (T-088; values in DECISIONS "Derived technical choices"): `blue`, `teal`, `green`, `amber`, `orange`, `red`, `pink`, `purple`. `color` must be one of these; the neutral color is never stored. The default for a project without `color` is the palette entry at index FNV-1a 32-bit(project ID) mod 8. Theme values are presentation and may change without a data-version step; identifiers may not.
+- **Undo after a drag** (T-090) adds no field: it writes the block's previous values as a new version of the same `calendarBlocks` record.
 
 ### Streak data (approved 2026-10-25; not implemented)
 

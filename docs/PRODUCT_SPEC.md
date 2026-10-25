@@ -193,7 +193,7 @@ Status: **specified and approved; implemented, merged into `main`, and deployed 
 
 ### Stage 3 follow-up: calendar interactions and project colors (owner-approved 2026-10-25; not implemented)
 
-Decisions: DECISIONS T-066 to T-070 and T-075, with the derived technical choices and open details listed there. **Order (T-076):** built after Stage 4 (goals and milestones) and before Stage 5 (actual execution and outputs); Stage 3 itself stays complete. All Stage 3 rules above still apply; this follow-up changes how blocks are created and edited on the calendar, and how items are colored.
+Decisions: DECISIONS T-066 to T-070, T-075, and T-088 to T-090, with the derived technical choices and open details listed there. **Order (T-076):** built after Stage 4 (goals and milestones) and before Stage 5 (actual execution and outputs); Stage 3 itself stays complete. All Stage 3 rules above still apply; this follow-up changes how blocks are created and edited on the calendar, and how items are colored.
 
 **Approved behavior**
 
@@ -212,7 +212,13 @@ Decisions: DECISIONS T-066 to T-070 and T-075, with the derived technical choice
 - Forms stay available for every action, so keyboard and screen-reader users never depend on dragging.
 - A color change writes only the project record; blocks and snapshots never store a color (DECISIONS, "Derived technical choices").
 
-**Not decided yet** (DECISIONS, open details 2–4; detail 1, the ordering, is resolved by T-076): the palette and neutral color, the tap duration, drag snapping and the phone week layout, and whether drags offer undo.
+**Approved details (owner, 2026-10-25; DECISIONS T-088 to T-090):**
+
+- The palette has **8 selectable, named colors** (Blue, Teal, Green, Amber, Orange, Red, Pink, Purple); items without a project are **neutral**; all colors stay readable in the light and dark themes. A project without a selected color keeps its derived default (T-088).
+- Tapping or clicking an empty slot pre-fills a **30-minute** block; drag selection, moving, and resizing **snap to 15 minutes**; on a phone the week view shows **two days at a time** with horizontal navigation through the week (T-089).
+- After a block is moved or resized by drag, an **Undo** action is shown for 5 seconds; there is no confirmation dialog (T-090; the 5-second duration is a derived default).
+
+Palette identifiers and theme values, the default-color rule, snapping in the configured zone, the phone breakpoint, and how Undo writes are derived technical choices in DECISIONS ("Derived technical choices"). Open details 1–4 are resolved (T-076, T-088 to T-090).
 
 ### Actual work and outputs
 
