@@ -731,19 +731,22 @@ describe("Stage 4: goals and milestones (TESTING.md Stage 4 item 11)", () => {
     await goTo("Settings");
     fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
     await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
-    fireEvent.click(within(screen.getByRole("navigation")).getByRole("button", { name: "اهداف" }));
+    // Each component loads the device language and display calendar on its own (a live query per
+    // hook), so every Persian or Jalali element is awaited, never read synchronously.
+    fireEvent.click(await within(screen.getByRole("navigation")).findByRole("button", { name: "اهداف" }));
     expect(await screen.findByRole("heading", { level: 1, name: "اهداف" })).toBeTruthy();
-    fireEvent.change(field("نام"), { target: { value: "مطالعه" } });
-    fireEvent.change(field("نوع"), { target: { value: "taskCount" } });
+    fireEvent.change(await screen.findByLabelText("نام"), { target: { value: "مطالعه" } });
+    fireEvent.change(await screen.findByLabelText("نوع"), { target: { value: "taskCount" } });
     fireEvent.change(await screen.findByLabelText("تعداد کارهای انجام‌شده‌ی هدف"), { target: { value: "12" } });
     const start = await screen.findByRole("group", { name: "تاریخ شروع" });
-    fireEvent.change(within(start).getByLabelText("سال"), { target: { value: "1405" } });
-    fireEvent.change(within(start).getByLabelText("ماه"), { target: { value: "8" } });
-    fireEvent.change(within(start).getByLabelText("روز"), { target: { value: "11" } });
-    fireEvent.click(screen.getByRole("button", { name: "ساختن هدف" }));
+    fireEvent.change(await within(start).findByLabelText("سال"), { target: { value: "1405" } });
+    fireEvent.change(await within(start).findByLabelText("ماه"), { target: { value: "8" } });
+    fireEvent.change(await within(start).findByLabelText("روز"), { target: { value: "11" } });
+    fireEvent.click(await screen.findByRole("button", { name: "ساختن هدف" }));
     await screen.findByRole("heading", { level: 1, name: /مطالعه/ });
     expect((await loadGoals(services.db)).goals[0]!.data).toMatchObject({ kind: "taskCount", startDate: "2026-11-02", target: 12 });
-    expect(await screen.findByText(/پیشرفت هنوز محاسبه/)).toBeTruthy(); // after the device language loads in the new view
-    expect(document.body.textContent).toContain("آبان"); // 2 Nov 2026 = 11 Aban 1405, shown in the Jalali display calendar
+    expect(await screen.findByText(/پیشرفت هنوز محاسبه/)).toBeTruthy();
+    // 2 Nov 2026 = 11 Aban 1405: wait until the date line uses the Jalali display calendar.
+    await waitFor(() => expect(document.body.textContent).toContain("آبان"));
   });
 });
