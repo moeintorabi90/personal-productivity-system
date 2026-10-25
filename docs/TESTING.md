@@ -165,7 +165,7 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Sta
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.
 
-## Stage 4 test report (2026-10-25, branch `feat/stage-4-goals`)
+## Stage 4 test report (2026-10-25; merged into `main` at `771c534` and deployed as 0.5.0)
 
 Commands run on the Windows development machine (Edge for end-to-end tests):
 
@@ -173,7 +173,9 @@ Commands run on the Windows development machine (Edge for end-to-end tests):
 - `npm.cmd test` — 25 files, 260 tests passed (229 before Stage 4; new: `local/goals.test.ts` 14, `backup/goals-backup.test.ts` 13, Stage 4 component tests in `App.test.tsx` 4).
 - `npm.cmd run test:e2e` — 9 passed, including "Stage 4 offline: a goal with milestones, status changes, reload, and the same goal on a fresh device by backup".
 
-Coverage of "Stage 4 acceptance tests": items 1–7 in `local/goals.test.ts`; items 8–10 in `backup/goals-backup.test.ts` (round-trip, idempotent re-import, keep/use conflicts for goals and milestones, deleted milestone not restored by an older backup, deletion in a backup as a decision, "delete here" refused for a goal with milestones, merged out-of-range milestone imported and flagged, Stage 3 records unchanged and "already here", samples 1–4, version-3 files with Stage 4 types refused, version 5 refused as newer, invalid shapes and links refused in records, carried conflicts, and the archive, immutable `goalId` and `kind`); item 11 in `App.test.tsx` (English and Persian RTL with Jalali entry) and the end-to-end test; a visual check of the Goals detail at desktop and 375 px width (no horizontal scroll, no console errors). **Not yet tested:** item 12, manual checks on the owner's Windows laptop and Android phone.
+Coverage of "Stage 4 acceptance tests": items 1–7 in `local/goals.test.ts`; items 8–10 in `backup/goals-backup.test.ts` (round-trip, idempotent re-import, keep/use conflicts for goals and milestones, deleted milestone not restored by an older backup, deletion in a backup as a decision, "delete here" refused for a goal with milestones, merged out-of-range milestone imported and flagged, Stage 3 records unchanged and "already here", samples 1–4, version-3 files with Stage 4 types refused, version 5 refused as newer, invalid shapes and links refused in records, carried conflicts, and the archive, immutable `goalId` and `kind`); item 11 in `App.test.tsx` (English and Persian RTL with Jalali entry) and the end-to-end test; a visual check of the Goals detail at desktop and 375 px width (no horizontal scroll, no console errors). **Not yet tested:** item 12, manual checks on the owner's Windows laptop and Android phone (awaiting the owner's report).
+
+Before publishing, one full `npm.cmd test` run failed once in "is translated in Persian (RTL) with Jalali date entry": the test read Persian and Jalali elements synchronously while components were still loading the device language and display calendar. Reproduced with a temporary random delay on preference loading; `771c534` awaits those elements (test-only). After the fix: the focused test passed 5 of 5 runs, `npm.cmd run typecheck` passed, and one full `npm.cmd test` run passed 260 of 260. Deployment: GitHub Pages workflow run `40190499274` succeeded for `771c534`; the live app served version 0.5.0 (HTTP 200 for the app, manifest, service worker, and bundle).
 
 Changed existing tests (version only): `organization-backup.test.ts`, `planning-backup.test.ts`, and `validation.test.ts` now expect exports with data version 4 and treat version 5 as newer; the navigation tests in `App.test.tsx` include "Goals". New sample: `apps/web/src/backup/samples/pps-backup-format-v1-data-v4.json` (fabricated, written by `PPS_WRITE_SAMPLE=1`).
 
