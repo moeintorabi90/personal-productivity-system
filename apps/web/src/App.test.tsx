@@ -8,6 +8,7 @@ import { App } from "./App.tsx";
 import { createBackup } from "./backup/export.ts";
 import { PRODUCT_REGISTRY } from "./backup/registry.ts";
 import { LocalDb } from "./local/db.ts";
+import { createGoal, defaultStartDate, loadGoals } from "./local/goals.ts";
 import { createProject, createTask, createWorkstream, loadOrganization, updateProject } from "./local/organization.ts";
 import { getDeviceSettings } from "./local/records.ts";
 import { getSharedPreferences, updateSharedPreferences } from "./local/settings.ts";
@@ -70,13 +71,13 @@ async function goTo(name: string) {
 }
 
 describe("v1 app shell (sync frozen and hidden, D-016)", () => {
-  it("renders English LTR with Home, Today, Calendar, Inbox, Projects, Settings, Backup only; no sync UI; engine not started", async () => {
+  it("renders English LTR with Home, Today, Calendar, Inbox, Projects, Goals, Settings, Backup only; no sync UI; engine not started", async () => {
     const start = vi.spyOn((await import("./sync/sync-engine.ts")).SyncEngine.prototype, "start");
     renderApp();
     expect(await screen.findByRole("heading", { level: 1, name: "Welcome" })).toBeTruthy();
     await waitFor(() => expect(document.documentElement.dir).toBe("ltr"));
     const nav = screen.getByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Home", "Today", "Calendar", "Inbox", "Projects", "Settings", "Backup"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Home", "Today", "Calendar", "Inbox", "Projects", "Goals", "Settings", "Backup"]);
     expect(screen.queryByTestId("sync-status")).toBeNull();
     expect(screen.queryByText("Sync check notes")).toBeNull();
     expect((await screen.findByTestId("last-backup")).textContent).toBe("No backup yet");
@@ -413,7 +414,7 @@ describe("Stage 2: inbox, projects, workstreams, tasks", () => {
     fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
     await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
     const nav = screen.getByRole("navigation", { name: "اصلی" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["خانه", "امروز", "تقویم", "صندوق ورودی", "پروژه‌ها", "تنظیمات", "پشتیبان"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["خانه", "امروز", "تقویم", "صندوق ورودی", "پروژه‌ها", "اهداف", "تنظیمات", "پشتیبان"]);
     fireEvent.click(within(nav).getByRole("button", { name: "صندوق ورودی" }));
     expect(await screen.findByLabelText("ثبت سریع کار یا ایده")).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "پروژه‌ها" }));
@@ -604,5 +605,145 @@ describe("Stage 3: calendar, Today, recurrence, capacity", () => {
     await waitFor(() => expect(screen.getByTestId("month-view").querySelector(".month-cell")!.getAttribute("data-date")).toBe("2027-03-21"));
     fireEvent.change(screen.getByLabelText("نما"), { target: { value: "day" } });
     expect((await screen.findByTestId("day-panel")).textContent).toContain("یکشنبه"); // 21 March 2027 is a Sunday
+  });
+});
+
+describe("Stage 4: goals and milestones (TESTING.md Stage 4 item 11)", () => {
+  const field = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
+  const goalsNav = () => within(screen.getByRole("navigation")).getByRole("button", { name: "Goals" });
+
+  it("creates an output goal with today's default start, shows no progress, and walks the status and archive lifecycle", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    const project = await createProject(services.db, { name: "Thesis" });
+    fireEvent.click(goalsNav());
+    expect(await screen.findByText("No goals yet. Create one below.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create goal" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(field("Name"), { target: { value: "Write the book" } });
+    fireEvent.change(field("Target (whole number)"), { target: { value: "2.5" } });
+    expect(await screen.findByText("Enter a whole number from 1 to 1,000,000,000.")).toBeTruthy();
+    fireEvent.change(field("Target (whole number)"), { target: { value: "300" } });
+    fireEvent.change(field("Unit (for example pages or words)"), { target: { value: "pages" } });
+    await waitFor(() => expect(field("Project (optional)").querySelectorAll("option")).toHaveLength(2));
+    fireEvent.change(field("Project (optional)"), { target: { value: project } });
+    const today = defaultStartDate("Asia/Tehran");
+    await waitFor(() => expect(field("Start date").value).toBe(today));
+    fireEvent.change(field("Deadline (optional)"), { target: { value: "2099-12-31" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create goal" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: /Write the book/ })).toBeTruthy();
+    const goal = (await loadGoals(services.db)).goals[0]!;
+    expect(goal.data).toMatchObject({ kind: "output", target: 300, unit: "pages", projectId: project, startDate: today, deadline: "2099-12-31", status: "active" });
+    expect(screen.getByText(/Progress is not calculated yet/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/%/);
+    expect(document.body.textContent).toContain("300 pages");
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    await screen.findByRole("button", { name: "Resume" });
+    fireEvent.click(screen.getByRole("button", { name: "Mark complete" })); // directly from paused (T-062)
+    fireEvent.click(await screen.findByRole("button", { name: "Reopen" })); // T-060
+    fireEvent.click(await screen.findByRole("button", { name: "Pause" }));
+    await screen.findByRole("button", { name: "Resume" });
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    expect(await screen.findByText(/This goal is archived/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add milestone" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await screen.findByRole("button", { name: "Resume" }); // back to its pre-archive status: paused (T-065)
+    expect((await loadGoals(services.db)).goals[0]!.data).toMatchObject({ status: "paused", archivedAt: null, startDate: today, deadline: "2099-12-31" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("time targets use hours and minutes; the type is fixed when editing", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    fireEvent.click(goalsNav());
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Study" } });
+    fireEvent.change(field("Type"), { target: { value: "time" } });
+    fireEvent.change(await screen.findByLabelText("Hours"), { target: { value: "40" } });
+    fireEvent.change(field("Minutes"), { target: { value: "75" } });
+    expect(await screen.findByText(/minutes 0–59/)).toBeTruthy();
+    fireEvent.change(field("Minutes"), { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create goal" }));
+    await screen.findByRole("heading", { level: 1, name: /Study/ });
+    expect((await loadGoals(services.db)).goals[0]!.data).toMatchObject({ kind: "time", target: 2430 });
+    expect(document.body.textContent).toContain("40 h 30 min");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByRole("form", { name: "Edit goal: Study" });
+    expect(within(editor).queryByLabelText("Type")).toBeNull();
+    expect(editor.textContent).toContain("The type cannot be changed");
+    fireEvent.change(within(editor).getByLabelText("Hours"), { target: { value: "2" } });
+    fireEvent.change(within(editor).getByLabelText("Minutes"), { target: { value: "0" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Save" }));
+    await waitFor(async () => expect((await loadGoals(services.db)).goals[0]!.data.target).toBe(120));
+  });
+
+  it("milestones: deadline within the goal, independent completion, date-clash message, delete after confirmation", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    const goal = await createGoal(services.db, { name: "Book", startDate: "2026-11-01", deadline: "2026-12-31", kind: "taskCount", target: 20 });
+    fireEvent.click(goalsNav());
+    fireEvent.click(await screen.findByRole("button", { name: "Open goal: Book" }));
+    const section = await screen.findByTestId("milestones");
+    expect(section.textContent).toContain("No milestones yet.");
+    fireEvent.change(within(section).getByLabelText("Milestone name"), { target: { value: "Late" } });
+    fireEvent.change(within(section).getByLabelText("Deadline (optional)"), { target: { value: "2027-01-15" } });
+    fireEvent.click(within(section).getByRole("button", { name: "Add milestone" }));
+    expect((await within(section).findByRole("alert")).textContent).toContain("must be on or after the goal's start date");
+    fireEvent.change(within(section).getByLabelText("Deadline (optional)"), { target: { value: "2026-12-20" } });
+    fireEvent.click(within(section).getByRole("button", { name: "Add milestone" }));
+    await within(section).findByText("Late");
+    fireEvent.change(within(section).getByLabelText("Milestone name"), { target: { value: "Outline" } });
+    fireEvent.click(within(section).getByRole("button", { name: "Add milestone" }));
+    await within(section).findByText("Outline");
+
+    fireEvent.click(within(section).getByRole("button", { name: "Mark milestone complete: Outline" }));
+    await within(section).findByRole("button", { name: "Mark milestone incomplete: Outline" });
+    expect(within(section).getByRole("button", { name: "Mark milestone complete: Late" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByRole("form", { name: "Edit goal: Book" });
+    fireEvent.change(within(editor).getByLabelText("Deadline (optional)"), { target: { value: "2026-12-10" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Save" }));
+    expect((await within(editor).findByRole("alert")).textContent).toBe(
+      "These dates would put milestone deadlines outside the goal: Late. Change those milestones first.",
+    );
+    expect((await loadGoals(services.db)).goals[0]!.data.deadline).toBe("2026-12-31");
+    fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(within(section).getByRole("button", { name: "Delete milestone: Late" }));
+    const dialog = await within(section).findByRole("alertdialog", { name: "Delete milestone: Late" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Keep it" }));
+    expect(within(section).getByText("Late")).toBeTruthy();
+    fireEvent.click(within(section).getByRole("button", { name: "Delete milestone: Late" }));
+    fireEvent.click(within(await within(section).findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(within(section).queryByText("Late")).toBeNull());
+    const { milestones } = await loadGoals(services.db);
+    expect(milestones.map((m) => m.data.name)).toEqual(["Outline"]);
+    expect(milestones[0]!.data.goalId).toBe(goal);
+  });
+
+  it("is translated in Persian (RTL) with Jalali date entry", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran", calendarDisplay: "jalali" });
+    await goTo("Settings");
+    fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
+    await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+    fireEvent.click(within(screen.getByRole("navigation")).getByRole("button", { name: "اهداف" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "اهداف" })).toBeTruthy();
+    fireEvent.change(field("نام"), { target: { value: "مطالعه" } });
+    fireEvent.change(field("نوع"), { target: { value: "taskCount" } });
+    fireEvent.change(await screen.findByLabelText("تعداد کارهای انجام‌شده‌ی هدف"), { target: { value: "12" } });
+    const start = await screen.findByRole("group", { name: "تاریخ شروع" });
+    fireEvent.change(within(start).getByLabelText("سال"), { target: { value: "1405" } });
+    fireEvent.change(within(start).getByLabelText("ماه"), { target: { value: "8" } });
+    fireEvent.change(within(start).getByLabelText("روز"), { target: { value: "11" } });
+    fireEvent.click(screen.getByRole("button", { name: "ساختن هدف" }));
+    await screen.findByRole("heading", { level: 1, name: /مطالعه/ });
+    expect((await loadGoals(services.db)).goals[0]!.data).toMatchObject({ kind: "taskCount", startDate: "2026-11-02", target: 12 });
+    expect(await screen.findByText(/پیشرفت هنوز محاسبه/)).toBeTruthy(); // after the device language loads in the new view
+    expect(document.body.textContent).toContain("آبان"); // 2 Nov 2026 = 11 Aban 1405, shown in the Jalali display calendar
   });
 });

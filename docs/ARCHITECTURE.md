@@ -188,6 +188,14 @@ Design:
 - **Backup:** registry entries for the new type and version-aware schemas for `taskDefinitions` and `preferences` (version 2 vs 3); validation, links, and relationship rules as in BACKUP_FORMAT "Data schema version 3". No IndexedDB data rewrite; an optional date index for blocks would be a schema step without data changes (not needed so far).
 - **UI:** Calendar (day/week/month, navigation, search/filters), Today, block forms (create/schedule/quick add/edit/cancel/restore), capacity setting in Settings, warnings in views. All forms keyboard- and screen-reader-accessible, English and Persian, LTR/RTL.
 
+## Stage 4 implementation notes (goals and milestones, branch `feat/stage-4-goals`, 2026-10-25)
+
+Contract: PRODUCT_SPEC "Goals and measures" and "Stage 4 goal and milestone rules"; decisions T-037 to T-065, T-077 to T-080 (owner) and T-081 to T-087 (derived).
+
+- **Registry:** `goals` (link `projectId` → `projects`; immutable `kind`) and `milestones` (link `goalId` → `goals`; immutable `goalId`), both since data version 4. Shape rules (deadline ≥ start, unit only on output goals, target limits per kind) are in the schemas, so they apply to every version in a file. `DATA_SCHEMA_VERSION` = 4; no field of an older type changed, so no `olderSchemas` entry and no IndexedDB change.
+- **Commands** `apps/web/src/local/goals.ts`: create/edit goal, status changes (pause, resume, complete, reopen), archive/restore, create/edit/complete/reopen/delete milestone. They refuse edits of an archived goal, check a milestone deadline against the goal's range, and refuse goal date changes that would put a milestone outside it (T-078). The range is not a registry rule (T-084); pure helpers (`deadlineWithinGoal`, `milestonesOutside`, `canChangeStatus`, `filterGoals`, `defaultStartDate`) are unit-tested.
+- **UI:** `GoalsView.tsx` (list with status filter, create form, detail with status/archive actions, milestones with an inline delete confirmation and an "outside the goal's dates" warning). Dates use the existing display-calendar date entry (`DateField`); time targets are entered as hours and minutes. Goal and milestone fields are labelled in the backup conflict view. No progress is computed or displayed (T-087).
+
 ## Design outline: calendar interactions, project colors, streaks (approved 2026-10-25; not implemented)
 
 Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-075 and the derived technical choices and open details in DECISIONS. Everything below is a technical design choice, not an owner decision.

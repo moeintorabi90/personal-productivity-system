@@ -306,11 +306,87 @@ export const calendarBlocksType: RecordTypeDef = {
   sinceDataSchemaVersion: 3,
 };
 
+/* ---------- Stage 4: goals and milestones (dataSchemaVersion 4) ---------- */
+
+export const GOALS = "goals";
+export const MILESTONES = "milestones";
+export const GOAL_KINDS = ["output", "time", "taskCount"] as const;
+export type GoalKind = (typeof GOAL_KINDS)[number];
+export const GOAL_STATUSES = ["active", "paused", "completed"] as const;
+export type GoalStatus = (typeof GOAL_STATUSES)[number];
+export const UNIT_MAX = 50;
+/** Largest target per kind (T-085): output amount, minutes of a time goal, completed tasks. */
+export const TARGET_MAX: Record<GoalKind, number> = { output: 1_000_000_000, time: 1_000_000, taskCount: 1_000_000 };
+
+/**
+ * A goal (T-037 to T-065, T-077 to T-087): one overall target of a fixed kind (`time` in whole
+ * minutes), a date range, and a status. Archive is separate from status, so restoring returns to
+ * the pre-archive status (T-065). No progress is stored (Stage 5 derives it).
+ */
+export const goalSchema = z
+  .object({
+    name: nameSchema,
+    description: textSchema,
+    projectId: z.uuid().nullable(),
+    startDate: localDateSchema,
+    deadline: localDateSchema.nullable(),
+    kind: z.enum(GOAL_KINDS),
+    target: z.number().int().min(1),
+    unit: z.string().max(UNIT_MAX).regex(/\S/, "must not be blank").optional(),
+    status: z.enum(GOAL_STATUSES),
+    archivedAt: archivedAtSchema,
+  })
+  .strict()
+  .superRefine((g, ctx) => {
+    if (g.deadline !== null && g.deadline < g.startDate) ctx.addIssue({ code: "custom", message: "deadline must not be before startDate" });
+    if (g.target > TARGET_MAX[g.kind]) ctx.addIssue({ code: "custom", message: `target must be at most ${TARGET_MAX[g.kind]}` });
+    if ((g.kind === "output") !== (g.unit !== undefined)) ctx.addIssue({ code: "custom", message: "a unit is present exactly for output goals" });
+  });
+export type GoalData = z.infer<typeof goalSchema>;
+
+/** A milestone of one goal (T-040, T-055 to T-059); `completedAt` null means incomplete. */
+export const milestoneSchema = z
+  .object({
+    goalId: z.uuid(),
+    name: nameSchema,
+    description: textSchema,
+    deadline: localDateSchema.nullable(),
+    completedAt: archivedAtSchema,
+  })
+  .strict();
+export type MilestoneData = z.infer<typeof milestoneSchema>;
+
+/** The kind never changes (T-079). The milestone date range is not an import rule (T-084). */
+export const goalsType: RecordTypeDef = {
+  type: GOALS,
+  schema: goalSchema as unknown as RecordTypeDef["schema"],
+  links: [{ field: "projectId", target: PROJECTS }],
+  sinceDataSchemaVersion: 4,
+  immutableFields: ["kind"],
+};
+
+/** A milestone belongs to one goal for its whole life (T-083). */
+export const milestonesType: RecordTypeDef = {
+  type: MILESTONES,
+  schema: milestoneSchema as unknown as RecordTypeDef["schema"],
+  links: [{ field: "goalId", target: GOALS }],
+  sinceDataSchemaVersion: 4,
+  immutableFields: ["goalId"],
+};
+
 /**
  * Record types allowed in format version 1 product backups. Later stages add their types here
  * (with schemas, links, and a new `dataSchemaVersion` when exported data changes).
  */
-export const PRODUCT_REGISTRY = createRegistry([preferencesType, projectsType, workstreamsType, taskDefinitionsType, calendarBlocksType]);
+export const PRODUCT_REGISTRY = createRegistry([
+  preferencesType,
+  projectsType,
+  workstreamsType,
+  taskDefinitionsType,
+  calendarBlocksType,
+  goalsType,
+  milestonesType,
+]);
 
 /** Data of the frozen sync code; never exported, and a file containing it is refused. */
 export const EXCLUDED_RECORD_TYPES: ReadonlySet<string> = new Set(["sync_probe", "probes", "outbox", "session"]);

@@ -21,6 +21,7 @@ import { formatDateTime, formatLocalDate, type MessageKey, type Translate } from
 import type { DeviceIdentity, VersionEntry } from "../local/db.ts";
 import { getMeta } from "../local/db.ts";
 import { renameDevice } from "../local/repository.ts";
+import { useGoals } from "./data-hooks.ts";
 import { useOrganization } from "./organization-ui.tsx";
 import { lastBackupText } from "./StatusBar.tsx";
 
@@ -422,6 +423,8 @@ const TYPE_LABELS: Record<string, MessageKey> = {
   workstreams: "backup.type.workstreams",
   taskDefinitions: "backup.type.taskDefinitions",
   calendarBlocks: "backup.type.calendarBlocks",
+  goals: "backup.type.goals",
+  milestones: "backup.type.milestones",
 };
 
 function typeLabel(t: Translate, type: string): string {
@@ -450,6 +453,13 @@ const FIELD_LABELS: Record<string, MessageKey> = {
   occurrenceDate: "plan.field.occurrenceDate",
   status: "plan.field.status",
   snapshot: "plan.field.snapshot",
+  startDate: "goals.startDate",
+  deadline: "goals.deadline",
+  kind: "goals.field.kind",
+  target: "goals.field.target",
+  unit: "goals.target.unit",
+  goalId: "backup.type.goals",
+  completedAt: "milestones.completed",
 };
 
 function formatValue(t: Translate, type: string, field: string, value: unknown, names: Map<string, string>, prefs: PreferenceFields): string {
@@ -470,6 +480,13 @@ function formatValue(t: Translate, type: string, field: string, value: unknown, 
       return [s.taskTitle, s.projectName, s.workstreamName].filter(Boolean).join(" · ");
     }
   }
+  if (type === "goals" || type === "milestones") {
+    if (field === "startDate" || field === "deadline") return value ? formatLocalDate(String(value), prefs, "medium") : "—";
+    if (field === "kind") return t(`goals.kind.${value}` as MessageKey);
+    if (field === "status") return t(`goals.status.${value}` as MessageKey);
+    if (field === "goalId") return names.get(String(value)) ?? t("org.unknownItem");
+    if (field === "completedAt") return value ? formatDateTime(String(value), prefs) : t("milestones.notCompleted");
+  }
   if (field === "recurrence") {
     const r = value as { weekdays: number[]; startDate: string; endDate: string | null };
     const days = r.weekdays.map((d) => t(`weekday.${d}` as MessageKey)).join(", ");
@@ -489,12 +506,14 @@ function EntryView({ type, entry, other, missingLabel }: { type: string; entry: 
   const t = useT();
   const prefs = usePreferences();
   const org = useOrganization();
+  const goals = useGoals();
   if (!entry) return <span className="muted">{missingLabel}</span>;
   if (entry.deleted) return <span className="muted">{t("backup.conflicts.deleted")}</span>;
   const names = new Map<string, string>([
     ...(org?.projects.map((p) => [p.id, p.data.name] as const) ?? []),
     ...(org?.workstreams.map((w) => [w.id, w.data.name] as const) ?? []),
     ...(org?.tasks.map((task) => [task.id, task.data.title] as const) ?? []),
+    ...(goals?.goals.map((g) => [g.id, g.data.name] as const) ?? []),
   ]);
   const otherData = other && !other.deleted ? other.envelope.data : {};
   return (

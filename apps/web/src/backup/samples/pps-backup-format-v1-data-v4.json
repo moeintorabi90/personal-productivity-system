@@ -1,0 +1,180 @@
+{
+  "format": "pps-backup",
+  "formatVersion": 1,
+  "backupId": "44444444-4444-4444-8444-444444444444",
+  "createdAt": "2026-10-25T08:00:00.000Z",
+  "app": {
+    "version": "0.5.0",
+    "dataSchemaVersion": 4
+  },
+  "sourceDevice": {
+    "id": "eae0e97d-c3af-488f-b616-84244ec9d1c4",
+    "name": "Sample device"
+  },
+  "encryption": null,
+  "payload": {
+    "records": {
+      "preferences": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "createdAt": "2026-10-25T00:04:48.407Z",
+          "updatedAt": "2026-10-25T00:04:48.414Z",
+          "version": {
+            "eae0e97d-c3af-488f-b616-84244ec9d1c4": 1
+          },
+          "contentHash": "861e9e291205f11199f25ffc8113c6062d5d6c62d07013ba91f30e7d7c599c1e",
+          "data": {
+            "timeZone": "Asia/Tehran",
+            "weekStart": 6,
+            "calendarDisplay": "gregorian"
+          }
+        }
+      ],
+      "projects": [
+        {
+          "id": "51328ce8-e4cf-48df-952c-cede38f8a74b",
+          "createdAt": "2026-10-25T00:04:48.416Z",
+          "updatedAt": "2026-10-25T00:04:48.416Z",
+          "version": {
+            "eae0e97d-c3af-488f-b616-84244ec9d1c4": 1
+          },
+          "contentHash": "4f343228117ee08b39e90ef327a89a55949871615e92ef258d9bf35762d375a2",
+          "data": {
+            "name": "Sample project",
+            "description": "",
+            "archivedAt": null
+          }
+        }
+      ],
+      "goals": [
+        {
+          "id": "92029cd5-d7da-4293-bebd-766a64dfe42f",
+          "createdAt": "2026-10-25T00:04:48.428Z",
+          "updatedAt": "2026-10-25T00:04:48.429Z",
+          "version": {
+            "eae0e97d-c3af-488f-b616-84244ec9d1c4": 2
+          },
+          "contentHash": "3e4201bb5f5485906669f0d3dc3c78427b03bdb164e5086734972fafb162b544",
+          "data": {
+            "name": "Sample time goal",
+            "description": "",
+            "projectId": null,
+            "startDate": "2026-11-01",
+            "deadline": null,
+            "kind": "time",
+            "target": 90,
+            "status": "paused",
+            "archivedAt": null
+          }
+        },
+        {
+          "id": "bd72c115-ce00-44e3-b963-5686ad6af83a",
+          "createdAt": "2026-10-25T00:04:48.431Z",
+          "updatedAt": "2026-10-25T00:04:48.432Z",
+          "version": {
+            "eae0e97d-c3af-488f-b616-84244ec9d1c4": 2
+          },
+          "contentHash": "f9c138bdbe2d85f063266e176c3ab7f96fd086c71bc7b15b3588293e9498f73a",
+          "data": {
+            "name": "Sample task-count goal",
+            "description": "",
+            "projectId": null,
+            "startDate": "2026-10-01",
+            "deadline": "2026-10-31",
+            "kind": "taskCount",
+            "target": 10,
+            "status": "completed",
+            "archivedAt": null
+          }
+        },
+        {
+          "id": "be47966f-5cbf-4407-b48e-7445a04d29bf",
+          "createdAt": "2026-10-25T00:04:48.420Z",
+          "updatedAt": "2026-10-25T00:04:48.420Z",
+          "version": {
+            "eae0e97d-c3af-488f-b616-84244ec9d1c4": 1
+          },
+          "contentHash": "5019e6ba4c112a542cbfbe0176e3bafd49d322c2ad75a6fc73634575a8d4c3ad",
+          "data": {
+            "name": "Sample output goal",
+            "description": "",
+            "projectId": "51328ce8-e4cf-48df-952c-cede38f8a74b",
+            "startDate": "2026-11-01",
+            "deadline": "2026-12-31",
+            "kind": "output",
+            "target": 120,
+            "unit": "pages",
+            "status": "active",
+            "archivedAt": null
+          }
+        },
+        {
+          "id": "eb22f782-3f1f-45e8-a948-c73bbac0ad49",
+          "createdAt": "2026-10-25T00:04:48.433Z",
+          "updatedAt": "2026-10-25T00:04:48.435Z",
+          "version": {
+            "eae0e97d-c3af-488f-b616-84244ec9d1c4": 2
+          },
+          "contentHash": "3cbca73d2f16801429ade28c767f76377c68a09e9938fda9692110ea2453e03b",
+          "data": {
+            "name": "Sample archived goal",
+            "description": "",
+            "projectId": null,
+            "startDate": "2026-09-01",
+            "deadline": null,
+            "kind": "taskCount",
+            "target": 5,
+            "status": "active",
+            "archivedAt": "2026-10-25T00:04:48.433Z"
+          }
+        }
+      ],
+      "milestones": [
+        {
+          "id": "9fc42f68-57d6-4334-8bd1-020d228ee9e4",
+          "createdAt": "2026-10-25T00:04:48.423Z",
+          "updatedAt": "2026-10-25T00:04:48.425Z",
+          "version": {
+            "eae0e97d-c3af-488f-b616-84244ec9d1c4": 2
+          },
+          "contentHash": "6deee573df5b3470a8e7f706321ee4f518ecca315d5bf435ab4c8fcbe037a3d7",
+          "data": {
+            "goalId": "be47966f-5cbf-4407-b48e-7445a04d29bf",
+            "name": "Sample completed milestone",
+            "description": "",
+            "deadline": "2026-11-30",
+            "completedAt": "2026-10-25T00:04:48.425Z"
+          }
+        },
+        {
+          "id": "dba04e7a-c8dd-4953-b214-d44ecd9e6e1c",
+          "createdAt": "2026-10-25T00:04:48.427Z",
+          "updatedAt": "2026-10-25T00:04:48.427Z",
+          "version": {
+            "eae0e97d-c3af-488f-b616-84244ec9d1c4": 1
+          },
+          "contentHash": "dfac9bd7b5d35126e4151a1d28f5dd40ab14ce7fb59ac06dd1f92b825b1b1840",
+          "data": {
+            "goalId": "be47966f-5cbf-4407-b48e-7445a04d29bf",
+            "name": "Sample open milestone",
+            "description": "No deadline",
+            "deadline": null,
+            "completedAt": null
+          }
+        }
+      ]
+    },
+    "tombstones": [],
+    "pendingConflicts": [],
+    "replacedVersions": [],
+    "sourceDeviceSettings": {
+      "language": "en",
+      "theme": "system"
+    }
+  },
+  "integrity": {
+    "algorithm": "SHA-256",
+    "canonicalization": "JCS-RFC8785",
+    "hash": "9cae3b5e2bb9e00b9b13a816a99032e22c6e6a528b030284582f8ef168c7bd51"
+  }
+}

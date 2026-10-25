@@ -165,6 +165,18 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Sta
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.
 
+## Stage 4 test report (2026-10-25, branch `feat/stage-4-goals`)
+
+Commands run on the Windows development machine (Edge for end-to-end tests):
+
+- `npm.cmd run typecheck` — passed (no errors).
+- `npm.cmd test` — 25 files, 260 tests passed (229 before Stage 4; new: `local/goals.test.ts` 14, `backup/goals-backup.test.ts` 13, Stage 4 component tests in `App.test.tsx` 4).
+- `npm.cmd run test:e2e` — 9 passed, including "Stage 4 offline: a goal with milestones, status changes, reload, and the same goal on a fresh device by backup".
+
+Coverage of "Stage 4 acceptance tests": items 1–7 in `local/goals.test.ts`; items 8–10 in `backup/goals-backup.test.ts` (round-trip, idempotent re-import, keep/use conflicts for goals and milestones, deleted milestone not restored by an older backup, deletion in a backup as a decision, "delete here" refused for a goal with milestones, merged out-of-range milestone imported and flagged, Stage 3 records unchanged and "already here", samples 1–4, version-3 files with Stage 4 types refused, version 5 refused as newer, invalid shapes and links refused in records, carried conflicts, and the archive, immutable `goalId` and `kind`); item 11 in `App.test.tsx` (English and Persian RTL with Jalali entry) and the end-to-end test; a visual check of the Goals detail at desktop and 375 px width (no horizontal scroll, no console errors). **Not yet tested:** item 12, manual checks on the owner's Windows laptop and Android phone.
+
+Changed existing tests (version only): `organization-backup.test.ts`, `planning-backup.test.ts`, and `validation.test.ts` now expect exports with data version 4 and treat version 5 as newer; the navigation tests in `App.test.tsx` include "Goals". New sample: `apps/web/src/backup/samples/pps-backup-format-v1-data-v4.json` (fabricated, written by `PPS_WRITE_SAMPLE=1`).
+
 ## Stage 3 test report (2026-10-24)
 
 Branch `feat/stage-3-calendar-planning` (from `main` at `52d30c7`). Windows 11, Node.js 24.20.0 (ICU 78.3, time-zone data 2026c), Vitest 5.0.5, Playwright 1.64, Microsoft Edge (headless). Fixed dates and zones in all tests; component tests fake only `Date` (2026-11-02 09:30 Tehran).

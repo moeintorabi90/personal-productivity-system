@@ -3,6 +3,7 @@ import { usePreferences, useDocumentPreferences, useServices, useT } from "./app
 import { AccountView } from "./components/AccountView.tsx";
 import { BackupView } from "./components/BackupView.tsx";
 import { CalendarView } from "./components/CalendarView.tsx";
+import { GoalsView } from "./components/GoalsView.tsx";
 import { HomeView } from "./components/HomeView.tsx";
 import { InboxView } from "./components/InboxView.tsx";
 import { ProjectsView } from "./components/ProjectsView.tsx";
@@ -10,7 +11,7 @@ import { SettingsView } from "./components/SettingsView.tsx";
 import { ConnectivityNotice, StatusBar } from "./components/StatusBar.tsx";
 import { TodayView } from "./components/TodayView.tsx";
 
-type View = "home" | "today" | "calendar" | "inbox" | "projects" | "settings" | "backup" | "account";
+type View = "home" | "today" | "calendar" | "inbox" | "projects" | "goals" | "settings" | "backup" | "account";
 
 export function App() {
   const prefs = usePreferences();
@@ -25,6 +26,7 @@ export function App() {
     { id: "calendar", label: t("nav.calendar") },
     { id: "inbox", label: t("nav.inbox") },
     { id: "projects", label: t("nav.projects") },
+    { id: "goals", label: t("nav.goals") },
     { id: "settings", label: t("nav.settings") },
     { id: "backup", label: t("nav.backup") },
     // Frozen post-v1 sync screens: only in builds with the flag on (D-016).
@@ -65,6 +67,8 @@ export function App() {
           <InboxView />
         ) : view === "projects" ? (
           <ProjectsView />
+        ) : view === "goals" ? (
+          <GoalsView />
         ) : view === "settings" ? (
           <SettingsView />
         ) : view === "backup" ? (

@@ -258,8 +258,9 @@ function validateEntry(raw: z.infer<typeof entryShape>, type: string, id: string
  * Validates the (decrypted) payload: entry count first, then shapes, record types, schemas,
  * sizes, content hashes, and uniqueness. Throws BackupError; never touches the database.
  *
- * Upgrades (docs/BACKUP_FORMAT.md, "Versioning and upgrades"): 1 → 2 adds record types and 2 → 3
- * adds a type and optional fields (absent, never null), so every upgrade is the identity. The
+ * Upgrades (docs/BACKUP_FORMAT.md, "Versioning and upgrades"): 1 → 2 adds record types, 2 → 3
+ * adds a type and optional fields (absent, never null), and 3 → 4 adds types (goals, milestones),
+ * so every upgrade is the identity. The
  * payload is checked against the types AND fields of ITS version: a version-1 file containing a
  * version-2 type is refused as an unknown record type, and a version-2 task with `recurrence` is
  * refused as invalid data.

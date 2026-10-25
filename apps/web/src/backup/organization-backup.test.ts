@@ -66,11 +66,11 @@ const recordsOf = async (d: TestDevice) =>
     .sort((a, b) => `${a.type}/${a.id}`.localeCompare(`${b.type}/${b.id}`));
 
 describe("1–3. round-trip, merge without loss, idempotent re-import", () => {
-  it("an empty device receives every project, workstream, and task unchanged (written as dataSchemaVersion 3 since Stage 3)", async () => {
+  it("an empty device receives every project, workstream, and task unchanged (written as dataSchemaVersion 4 since Stage 4)", async () => {
     const a = await organizedDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(3);
+    expect(doc.app.dataSchemaVersion).toBe(4);
     expect(Object.keys(doc.payload.records).sort()).toEqual(["preferences", PROJECTS, TASK_DEFINITIONS, WORKSTREAMS].sort());
 
     const b = await device("B");
@@ -326,7 +326,7 @@ describe("11. versioning: dataSchemaVersion 1 files still import; types are chec
 
   it("a newer dataSchemaVersion is refused before anything else", async () => {
     const a = await organizedDevice();
-    const newer = mutate(await exportText(a.d), (doc) => (doc.app.dataSchemaVersion = 4));
+    const newer = mutate(await exportText(a.d), (doc) => (doc.app.dataSchemaVersion = 5));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
   });
 

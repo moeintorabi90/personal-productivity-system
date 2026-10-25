@@ -338,3 +338,66 @@ test("Stage 2 offline: capture, organize into a project and workstream, and carr
   await source.close();
   await target.close();
 });
+
+test("Stage 4 offline: a goal with milestones, status changes, reload, and the same goal on a fresh device by backup", async ({ browser }) => {
+  const source = await browser.newContext({ acceptDownloads: true });
+  const a = await source.newPage();
+  const offendersA = forbidNetworkUse(a);
+  await a.goto(BASE_URL);
+  await waitForServiceWorkerControl(a);
+  await source.setOffline(true);
+
+  await a.getByRole("button", { name: "Goals" }).click();
+  await a.getByLabel("Name", { exact: true }).fill("Write the book");
+  await a.getByLabel("Target (whole number)").fill("300");
+  await a.getByLabel("Unit (for example pages or words)").fill("pages");
+  await a.getByLabel("Start date").fill("2026-11-01");
+  await a.getByLabel("Deadline (optional)").fill("2026-12-31");
+  await a.getByRole("button", { name: "Create goal" }).click();
+  await expect(a.getByRole("heading", { level: 1, name: /Write the book/ })).toBeVisible();
+  await expect(a.getByText(/Progress is not calculated yet/)).toBeVisible();
+
+  const milestones = a.getByTestId("milestones");
+  await milestones.getByLabel("Milestone name").fill("First draft");
+  await milestones.getByLabel("Deadline (optional)").fill("2026-11-30");
+  await milestones.getByRole("button", { name: "Add milestone" }).click();
+  await milestones.getByRole("button", { name: "Mark milestone complete: First draft" }).click();
+  await expect(milestones.getByRole("button", { name: "Mark milestone incomplete: First draft" })).toBeVisible();
+  await a.getByRole("button", { name: "Pause" }).click();
+  await expect(a.getByRole("button", { name: "Resume" })).toBeVisible();
+
+  // Survives a reload while offline (served by the service worker, data in IndexedDB).
+  await a.reload();
+  await a.getByRole("button", { name: "Goals" }).click();
+  await a.getByRole("button", { name: "Open goal: Write the book" }).click();
+  await expect(a.getByRole("button", { name: "Resume" })).toBeVisible();
+  await expect(a.getByTestId("milestones")).toContainText("First draft");
+
+  await a.getByRole("button", { name: "Backup" }).click();
+  const downloadPromise = a.waitForEvent("download");
+  await a.getByRole("button", { name: "Export backup" }).click();
+  const download = await downloadPromise;
+  const filePath = path.join(mkdtempSync(path.join(tmpdir(), "pps-backup-")), download.suggestedFilename());
+  await download.saveAs(filePath);
+
+  const target = await browser.newContext();
+  const b = await target.newPage();
+  const offendersB = forbidNetworkUse(b);
+  await b.goto(BASE_URL);
+  await target.setOffline(true);
+  await b.getByRole("button", { name: "Backup" }).click();
+  await b.getByLabel("Choose a backup file").setInputFiles(filePath);
+  await expect(b.getByTestId("import-preview")).toContainText("New items to add: 2");
+  await b.getByTestId("import-preview").getByRole("button", { name: "Import" }).click();
+  await expect(b.getByTestId("import-done")).toContainText("Added: 2");
+  await b.getByRole("button", { name: "Goals" }).click();
+  await b.getByRole("button", { name: "Open goal: Write the book" }).click();
+  await expect(b.getByRole("button", { name: "Resume" })).toBeVisible(); // still paused
+  await expect(b.getByTestId("milestones")).toContainText("First draft");
+  await expect(b.getByTestId("milestones").getByText("Completed")).toBeVisible();
+
+  expect([...offendersA, ...offendersB]).toEqual([]);
+  rmSync(path.dirname(filePath), { recursive: true, force: true });
+  await source.close();
+  await target.close();
+});
