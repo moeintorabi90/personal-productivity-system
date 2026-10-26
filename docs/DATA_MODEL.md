@@ -10,7 +10,7 @@ erDiagram
   PROJECT ||--o{ TASK_DEFINITION : contains
   WORKSTREAM o|--o{ TASK_DEFINITION : optionally_groups
   TASK_DEFINITION ||--o{ CALENDAR_BLOCK : planned_as
-  TASK_DEFINITION ||--o{ EXECUTION_SESSION : performed_as
+  TASK_DEFINITION |o--o{ EXECUTION_SESSION : optionally_performed_as
   CALENDAR_BLOCK o|--o{ EXECUTION_SESSION : optionally_links
   EXECUTION_SESSION ||--o{ OUTPUT_RECORD : records
   OUTPUT_METRIC ||--o{ OUTPUT_RECORD : measures
@@ -74,13 +74,13 @@ Foreign keys use `ON DELETE RESTRICT`: nothing referenced by history is removed 
 - **Inbox:** task definitions with `projectId` null (DECISIONS T-021). Organizing a captured item edits the same record; nothing is copied.
 - **Archive** is data (`archivedAt`), not a deletion; archiving never changes linked records (T-023). Stage 2 offers no delete; deleting a record that live records link to is refused (restrict).
 - `notes` is the task's descriptive text; there is no separate description field (owner-approved, T-024).
-- **Deferred in Stage 2** (owner-approved, T-024): recurrence and active weekdays (added in Stage 3 as the optional `recurrence` field, below in "Stage 3 record types and fields"), relevant output metrics (Stage 5), and a task type (only after the owner defines a use case and categories). Each is added with a new `dataSchemaVersion` and an upgrade step. Under the approved order (T-076), the output-metrics field arrives with Stage 5's session and output record types in `dataSchemaVersion` 6, after Stage 4's version 4 and the project color's version 5.
+- **Deferred in Stage 2** (owner-approved, T-024): recurrence and active weekdays (added in Stage 3 as the optional `recurrence` field, below in "Stage 3 record types and fields"), relevant output metrics (Stage 5), and a task type (only after the owner defines a use case and categories). Each is added with a new `dataSchemaVersion` and an upgrade step. Under the approved order (T-076), Stage 5's data uses `dataSchemaVersion` 6; whether the output-metrics task field is still wanted, and what it does, is open (DECISIONS, Stage 5 open detail S-8).
 - All three types are **linked** (they link to, or are linked from, another type), so a conflict on any of them offers "keep this device's" or "use the backup's" version, never "keep both".
-- **OutputMetric:** named unit and formatting/aggregation rules (e.g. pages, words, applications). Metric definitions have revisions so historical outputs retain their meaning.
+- **OutputMetric (output definition):** reusable, user-named measure with a unit (e.g. pages, words, minutes of content covered), archivable (T-104, T-107). Definitions have revisions so historical outputs retain their meaning (T-111).
 - **Goal / Milestone / GoalContribution:** a measurable outcome with a required name and optional description (T-054), optional project link, start date, target/window/status (including pause/resume) and explicit attribution rules; goals the owner no longer intends to pursue can be archived without deleting the goal or its history (T-063), and an archived goal may be restored at any time (T-064) to its pre-archive status (T-065). A paused goal may be completed without resuming it first (T-062), and the owner may reopen a completed goal to make it active again (T-060), preserving all milestone completion statuses (T-061). Milestones have a required name and optional description (T-055), plus an optional deadline (T-056) that falls within the parent goal's date range (T-057). The owner marks each milestone complete independently; no other milestone must be complete first (T-058), and may later return it to incomplete (T-059). Numeric output goals have an owner-entered unit label and whole-number targets in the initial release (decimal targets deferred to a later version). A work session's time may be attributed to at most one goal, a completed task may count toward at most one task-count goal, and an output record may contribute to multiple goals only when explicitly attributed to each. Pausing or resuming does not alter goal dates or suppress explicitly attributed work/output. A goal may contain milestones, which cannot exist independently. The owner manually marks goals and milestones complete. Progress is derived from sessions, task completion events, and output records.
 - **CalendarBlock:** planned occurrence with planned start/end, local-date key, timezone, source recurrence, relationship IDs, and task/project/workstream snapshot/revision. Implemented in Stage 3 as record type `calendarBlocks` (below).
-- **ExecutionSession:** actual work event, planned or unplanned, with task ID, optional block ID, actual timestamps, state, context, notes, and canonical snapshots.
-- **OutputRecord:** actual value for a metric and session. Corrections append an audit event rather than replacing the original value.
+- **ExecutionSession:** one period of actual work, planned or unplanned, with optional task ID (T-095), optional block ID of the same task (T-094), exact start and end instants, pause intervals (T-092), notes, snapshots when a task is linked, and a deletion state (T-103). No end status (T-098). Its duration is separate from any output (T-099).
+- **OutputRecord:** whole-number actual value for one output definition, always belonging to one session (T-104), optionally attributed to several goals (T-105). Corrections append a history entry (T-102, T-113).
 - **Habit / HabitOccurrence / HabitCompletion:** user-defined recurring activity, planned local-date occurrence, and separate completion record.
 - **WeeklyReview:** selected local week, computed immutable summary snapshot, source record IDs/revisions, user observations, and next-week adjustments.
 - **Tombstone:** deletion marker (record type, ID, deletion time, version vector) kept locally and exported in backups.
@@ -152,6 +152,25 @@ Built after Stage 4 and before Stage 5 (T-076). Decisions: T-068 to T-070 (owner
 - **Palette identifiers in data version 5** (T-088; values in DECISIONS "Derived technical choices"): `blue`, `teal`, `green`, `amber`, `orange`, `red`, `pink`, `purple`. `color` must be one of these; the neutral color is never stored. The default for a project without `color` is the palette entry at index FNV-1a 32-bit(project ID) mod 8. Theme values are presentation and may change without a data-version step; identifiers may not.
 - **Undo after a drag** (T-090) adds no field: it writes the block's previous values as a new version of the same `calendarBlocks` record.
 
+### Stage 5 record types (proposed; `dataSchemaVersion` 6; not implemented)
+
+Owner decisions T-091 to T-108; field names, encodings, and the record split are **proposed technical choices** (T-109 to T-116), not owner decisions. Open details S-1 to S-14 (DECISIONS) may change them.
+
+| Type / field | Data fields (proposed) | Links | Rules |
+|---|---|---|---|
+| `sessions` (new) | `taskId` (or null), `blockId` (or null), `startedAt`, `endedAt` (absent while active), `pauses` (list of `{ start, end }`, last `end` absent while paused), `timeZone`, `localDate`, `goalId` (manual attribution, or null), `snapshot` (task/project/workstream IDs and names, or null without a task), `startedOnDevice`, `notes`, `deletedAt` (or null) | `taskId` → `taskDefinitions`, `blockId` → `calendarBlocks`, `goalId` → `goals` | block only of the same task (T-094); instants at whole minutes; end ≥ start, not in the future (T-096); pauses inside the session and not overlapping; one active per device (T-092) |
+| `outputDefinitions` (new) | `revisions` (list of `{ name, unit }`), `archivedAt` (or null) | — | archived: not selectable for new outputs (T-107) |
+| `outputRecords` (new) | `sessionId`, `definitionId`, `revision`, `value` (whole number), `goalIds` (explicit attribution) | `sessionId` → `sessions`, `definitionId` → `outputDefinitions`, `goalIds` → `goals` | `sessionId` never changes; no standalone outputs (T-104) |
+| `corrections` (new, append-only) | `target` (`sessions` or `outputRecords` + ID), `field`, `before`, `after`, `reason` (optional), `device`, `at` | target record | never edited; imported ones are appended (T-113) |
+| `taskDefinitions.completedAt` (new, optional) | absent = not completed | — | set only by the explicit "complete" action (T-108) |
+| `goals.definitionId` (new, optional, output goals only) | absent = no definition chosen yet | → `outputDefinitions` | one definition per output goal (T-105); existing goals: open detail S-6 |
+| task–goal link | **open (S-1)** | — | needed for T-100 and T-108 |
+
+- **Duration versus outputs (T-099):** session work time is computed from instants and pauses; content minutes or other quantities are output records and never change the session's time.
+- **Goal progress inputs (T-116):** time goals from session work time counted toward them; output goals from attributed output records of their definition; task-count goals from explicitly completed tasks. Calculated, never stored; shown in Stage 6.
+- **Deletion (T-103, T-114, T-115):** `deletedAt` hides a session and its outputs and lets them be restored; after the recovery period (proposed 30 days) the session, its outputs, and its corrections become tombstones, which never expire.
+- **Upgrade:** all new fields are optional and absent when unused (T-025 pattern); no stored record is rewritten.
+
 ### Streak data (approved 2026-10-25; not implemented)
 
 - **Goal streak (Stage 6, T-073):** derived, not stored. Computed per goal from its scheduled goal-work opportunities and the actual-work records attributed to the goal (T-047 to T-049), in the configured time zone. Current streak = consecutive past opportunities, each with at least one attributed attempt or work record, ending at the latest passed opportunity; longest = the maximum over the goal's history. Unscheduled days are skipped; an opportunity is missed only after its local day ends; a planned block alone never counts. The definition of an opportunity awaits the post-Stage-5 goal workday decision (T-053; DECISIONS, open detail 6).
@@ -164,7 +183,7 @@ Built after Stage 4 and before Stage 5 (T-076). Decisions: T-068 to T-070 (owner
 - v1: all records on a device belong to the device's user. (After v1, with a server: all private records are scoped by the authenticated owner ID; client-supplied owner IDs are ignored/rejected.)
 - A workstream's project must match the task's project. A workstream's project never changes, and a task without a project (inbox) has no workstream. Enforced for typed-in data by the repository (`putRecord`) and for imported data for every version in a backup file (Stage 2).
 - A calendar block's task, project, workstream, and snapshots must be mutually consistent at its recorded revision.
-- An execution session must reference a task definition owned by the same user; its optional block must reference the same task or an explicitly permitted linked task.
+- An execution session may reference a task definition (optional, T-095); it is linked to a planned block only when the block is for the same task (T-094; a later manual link: open detail S-13).
 - Deletes of records referenced by history use archive/restrict/tombstone behavior, not destructive cascades.
 
 ### Planning versus actual
@@ -183,17 +202,17 @@ Built after Stage 4 and before Stage 5 (T-076). Decisions: T-068 to T-070 (owner
 
 ### Execution state and history
 
-- Running: start exists; end and final state are absent.
-- Finished: end and final state are both present; end is not before start.
+- Active: start exists; end is absent. At most one active session per device (T-092); "active" includes a paused session (proposed, T-110).
+- Ended: end is present and not before start; there is no final-state label (T-098). Work time = end − start − paused time (T-092, T-110). An ended session is never in the future (T-096).
 - Finished sessions are never silently reopened. Any correction/reopen operation must be explicit and audited.
 - Historical names/definitions are captured as snapshots when the event is recorded; later edits (and later imports) do not change prior session or block snapshots.
-- Corrections to actual outputs preserve original value, attribution, actor/device, timestamp, and reason where appropriate.
+- Corrections to session times and output values keep their history, with an optional reason, and the history travels in backups (T-102); its proposed content is before and after values, device, and time (T-113).
 - Finalized review snapshots remain stable after preferences, definitions, schedules, or source records change.
 
 ### Goals and metrics
 
 - Goal progress is recomputed from underlying records and is rebuildable; cached totals are disposable.
-- A session's time/task-count contribution may be linked to at most one goal in the initial scope.
+- A session's time counts toward at most one goal (T-047, T-100); a task explicitly marked complete counts toward at most one task-count goal (T-048, T-108). Session completion never completes a task (T-091).
 - Output metric values may support multiple goals only through explicit compatible attribution records.
 - After Stage 5, pacing uses target, progress, deadline, timezone, owner-chosen goal workdays, and explicit weekly objective. Choosing goal workdays is deferred until after Stage 5 (DECISIONS T-053). Do not union multiple task schedules to invent a goal schedule.
 

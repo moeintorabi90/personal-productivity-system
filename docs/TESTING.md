@@ -135,7 +135,7 @@ Contract: PRODUCT_SPEC "Goals and measures" and "Stage 4 goal and milestone rule
 
 ## Calendar interaction, project color, and streak acceptance tests (specified 2026-10-25; Stage 3 follow-up items implemented and deployed as 0.6.0, results in "Stage 3 follow-up test report"; Stage 6 and Stage 8 items not implemented)
 
-Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-076 and T-088 to T-090. Open details 1–4 are resolved (T-076, T-088 to T-090); tests depending on open details 5–7 follow the owner's answer. The project color arrives in data version 5, after Stage 4's version 4 (T-076). Fixed dates and zones as in Stage 3.
+Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-076 and T-088 to T-090. Open details 1–5 are resolved (T-076, T-088 to T-090, T-102); tests depending on open details 6–7 follow the owner's answer. The project color arrives in data version 5, after Stage 4's version 4 (T-076). Fixed dates and zones as in Stage 3.
 
 **Stage 3 follow-up: time grid and drag (T-066, T-067)**
 
@@ -162,6 +162,23 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Sta
 **Stage 8: app-use streak (T-074, T-075)**
 
 12. Consecutive days of recorded app use (fixed dates) give the expected current and longest streaks; a day without use breaks the current streak and keeps the longest; the value is labelled as this device's, is not exported as mergeable data, and is unchanged by an import; no points, penalties, or pressure appear. (What counts as use and the day boundary: open detail 7.)
+
+## Stage 5 acceptance tests (specified 2026-10-26; not implemented)
+
+Contract: DECISIONS "Stage 5 decisions" (owner-approved T-091 to T-108; proposed T-109 to T-116); tests touching open details S-1 to S-14 follow the owner's answers. Fixed dates and zones.
+
+1. Sessions (T-091, T-092, T-095): start, pause, resume, end, with and without a task; a second start on the same device is refused while one is active; paused time is excluded from work time; ending a session leaves its task incomplete.
+2. Forgotten session (T-093): an active session from before an app restart prompts for its end time; nothing is ended automatically.
+3. Block link (T-094): starting from a planned block of the same task links it; a block of another task is not linked; the block itself never changes.
+4. Past sessions (T-096, T-097): start plus duration stores exact start and end instants (also across a daylight-saving change); any past date is accepted; an end in the future is refused; an overlap shows a warning and can still be saved.
+5. No end status and separate values (T-098, T-099): ending needs no status; a 2-hour session with a "15 content minutes" output keeps 120 minutes of work time and an output of 15.
+6. Outputs (T-104, T-107): several outputs per session; whole numbers only; no output without a session; definitions reused across sessions; archived definitions stay on old records and are not offered for new ones; editing a used definition asks "apply to history" or "keep previous", and both choices show the expected names on old records.
+7. Corrections (T-102, T-113): correcting session times or an output value keeps the before and after values and an optional reason; history round-trips in backups; imported corrections are appended, never merged.
+8. Task completion and goals (T-100, T-101, T-105, T-106, T-108; S-1, S-4, S-5): session time counts toward at most one goal; outputs may be attributed to several goals; work before a goal's start, after its deadline, or attributed to a paused, completed, or archived goal counts; task-count goals count only explicitly completed tasks; values beyond the target are shown in full and never complete a goal; attributing never edits the goal record.
+9. Deletion (T-103, T-114, T-115): a deleted session and its outputs disappear and can be restored within the recovery period; afterwards they become tombstones; an older backup containing the session is "older copy" and adds nothing; deletion and restore merge as edits; the tombstone travels in backups.
+10. Backup version 6 (T-109): round-trip with identical IDs, hashes, and versions; version-5 records unchanged and a re-import of a version-5 backup is "already here"; a version-5 file with version-6 data is refused; version 7 is refused as newer; committed samples 1–5 import.
+11. UI: English and Persian (RTL, Jalali dates), keyboard and screen-reader paths for every action; actual work uses the stronger project color with a non-color cue (T-069).
+12. Manual on the owner's Windows laptop and Android phone: a real session with pauses, a forgotten session, past entry, outputs, deletion and restore, and moving the data by backup.
 
 ## Release gate
 
