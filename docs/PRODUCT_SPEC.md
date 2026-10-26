@@ -224,7 +224,7 @@ Palette identifiers and theme values, the default-color rule, snapping in the co
 
 ### Actual work and outputs
 
-Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-108, T-117, T-118 (approval date not stated; recorded 2026-10-26), derived technical choices T-109 to T-116, T-119, and open details S-1 to S-14. Items below cite their source; items marked *(spec)* come from this specification without a specific owner decision.
+Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-108, T-117, T-118, T-120 to T-125 (approval date not stated; recorded 2026-10-26), derived technical choices T-109 to T-116, T-119, T-126 to T-128, and open details S-1 to S-15. Items below cite their source; items marked *(spec)* come from this specification without a specific owner decision.
 
 **Sessions**
 
@@ -248,12 +248,16 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 - [ ] Output definitions are reusable across sessions, with a user-entered name and unit (T-104). A definition can be archived: it stays on historical records but cannot be chosen for new sessions (T-107).
 - [ ] Editing the name or unit of a definition already in use asks whether the change also applies to historical records or whether they keep the previous name and unit (T-107).
 - [ ] Corrections of output values keep their history, also in backups; a reason is optional (T-102). Planned output is never assumed achieved *(spec)*.
+- [ ] For each session, an expected output amount may be entered per applicable output definition; it is optional and separate from the actual output, which may be below or above it, e.g. expected 30 words, actual 20 (T-125). Expected amounts never count toward goals. Entry from a planned block: open (S-15).
 
 **Tasks and goals**
 
 - [ ] A task is completed only by a separate, explicit action; a task-count goal advances only when a task is explicitly marked complete (T-091, T-108).
 - [ ] Each occurrence of a recurring task can be marked complete on its own and counts as one completion toward a task-count goal; the recurring task itself stays active and is not completed or archived (T-118). Reopening, display in planning, and completing future occurrences: open (S-7).
-- [ ] A session's actual time counts toward a time goal when its task is linked to that goal, toward at most one goal; without such a link the user may attribute it manually (T-047, T-100; link: S-1, precedence: S-4).
+- [ ] A task may be linked to several goals of any type; a project's goal link does not link its tasks (T-120, T-121).
+- [ ] A session's work time counts toward at most one time goal: its task's linked time goal, or — when the task is linked to several — the one the user chooses when recording the session; without a linked time goal the user may attribute it manually (T-047, T-100, T-122; open: S-1 remainder, S-4).
+- [ ] A completed task or occurrence counts toward at most one task-count goal; with several linked task-count goals the user chooses one when marking it complete (T-048, T-123; open: S-1 remainder).
+- [ ] Through its outputs a session may also advance non-time goals; this does not change the one-time-goal rule for its work time (T-124).
 - [ ] Each output goal tracks one output definition; an output record may be explicitly attributed to several relevant goals (T-049, T-105; S-5, S-6).
 - [ ] Explicitly attributed work counts even before a goal's start or after its deadline, and may be attributed to a completed or archived goal; attributed work during a pause counts (T-046, T-101).
 - [ ] The full actual value is shown even beyond the target; goal completion stays manual (T-043, T-106). Goal progress is calculated from these records and shown in Stage 6 (ROADMAP).
