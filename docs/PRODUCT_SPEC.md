@@ -224,12 +224,12 @@ Palette identifiers and theme values, the default-color rule, snapping in the co
 
 ### Actual work and outputs
 
-Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-108 (approval date not stated; recorded 2026-10-26), derived technical choices T-109 to T-116, and open details S-1 to S-14. Items below cite their source; items marked *(spec)* come from this specification without a specific owner decision.
+Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-108, T-117, T-118 (approval date not stated; recorded 2026-10-26), derived technical choices T-109 to T-116, T-119, and open details S-1 to S-14. Items below cite their source; items marked *(spec)* come from this specification without a specific owner decision.
 
 **Sessions**
 
 - [ ] A session records one period of actual work. A task can span several sessions; ending a session does not complete its task (T-091).
-- [ ] User can start, pause, resume, and end a session, or record a past session, whether planned or unplanned. Only one session is active per device; paused time is not work time (T-092).
+- [ ] User can start, pause, resume, and end a session, or record a past session, whether planned or unplanned. Only one session is open per device; a paused session stays open, so it must be resumed or ended before another session starts on that device (T-092, T-117). Paused time is not work time (T-092).
 - [ ] A forgotten running session: the next time the app opens, it asks for the session's end time (T-093).
 - [ ] Linking a task is optional (T-095). A session started from a planned block is linked to it automatically only when the block is for the same task (T-094).
 - [ ] A past session is entered as a start time and a duration; the app stores exact start and end instants. Any past date is allowed; a finished session cannot be in the future (T-096).
@@ -251,7 +251,8 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 
 **Tasks and goals**
 
-- [ ] A task is completed only by a separate, explicit action; a task-count goal advances only when a task is explicitly marked complete (T-091, T-108; details S-7).
+- [ ] A task is completed only by a separate, explicit action; a task-count goal advances only when a task is explicitly marked complete (T-091, T-108).
+- [ ] Each occurrence of a recurring task can be marked complete on its own and counts as one completion toward a task-count goal; the recurring task itself stays active and is not completed or archived (T-118). Reopening, display in planning, and completing future occurrences: open (S-7).
 - [ ] A session's actual time counts toward a time goal when its task is linked to that goal, toward at most one goal; without such a link the user may attribute it manually (T-047, T-100; link: S-1, precedence: S-4).
 - [ ] Each output goal tracks one output definition; an output record may be explicitly attributed to several relevant goals (T-049, T-105; S-5, S-6).
 - [ ] Explicitly attributed work counts even before a goal's start or after its deadline, and may be attributed to a completed or archived goal; attributed work during a pause counts (T-046, T-101).

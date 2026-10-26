@@ -154,22 +154,23 @@ Built after Stage 4 and before Stage 5 (T-076). Decisions: T-068 to T-070 (owner
 
 ### Stage 5 record types (proposed; `dataSchemaVersion` 6; not implemented)
 
-Owner decisions T-091 to T-108; field names, encodings, and the record split are **proposed technical choices** (T-109 to T-116), not owner decisions. Open details S-1 to S-14 (DECISIONS) may change them.
+Owner decisions T-091 to T-108, T-117, T-118; field names, encodings, and the record split are **proposed technical choices** (T-109 to T-116, T-119), not owner decisions. Open details S-1 to S-14 (DECISIONS) may change them.
 
 | Type / field | Data fields (proposed) | Links | Rules |
 |---|---|---|---|
-| `sessions` (new) | `taskId` (or null), `blockId` (or null), `startedAt`, `endedAt` (absent while active), `pauses` (list of `{ start, end }`, last `end` absent while paused), `timeZone`, `localDate`, `goalId` (manual attribution, or null), `snapshot` (task/project/workstream IDs and names, or null without a task), `startedOnDevice`, `notes`, `deletedAt` (or null) | `taskId` → `taskDefinitions`, `blockId` → `calendarBlocks`, `goalId` → `goals` | block only of the same task (T-094); instants at whole minutes; end ≥ start, not in the future (T-096); pauses inside the session and not overlapping; one active per device (T-092) |
-| `outputDefinitions` (new) | `revisions` (list of `{ name, unit }`), `archivedAt` (or null) | — | archived: not selectable for new outputs (T-107) |
-| `outputRecords` (new) | `sessionId`, `definitionId`, `revision`, `value` (whole number), `goalIds` (explicit attribution) | `sessionId` → `sessions`, `definitionId` → `outputDefinitions`, `goalIds` → `goals` | `sessionId` never changes; no standalone outputs (T-104) |
-| `corrections` (new, append-only) | `target` (`sessions` or `outputRecords` + ID), `field`, `before`, `after`, `reason` (optional), `device`, `at` | target record | never edited; imported ones are appended (T-113) |
-| `taskDefinitions.completedAt` (new, optional) | absent = not completed | — | set only by the explicit "complete" action (T-108) |
-| `goals.definitionId` (new, optional, output goals only) | absent = no definition chosen yet | → `outputDefinitions` | one definition per output goal (T-105); existing goals: open detail S-6 |
-| task–goal link | **open (S-1)** | — | needed for T-100 and T-108 |
+| `sessions` (new type; every field present, `null` = none) | `taskId` (or `null`), `blockId` (or `null`), `startedAt`, `endedAt` (`null` while open), `pauses` (list of `{ start, end }`, last `end` `null` while paused), `timeZone`, `localDate`, `goalId` (manual attribution, or `null`), `snapshot` (task/project/workstream IDs and names, or `null` without a task), `startedOnDevice`, `notes`, `deletedAt` (or `null`) | `taskId` → `taskDefinitions`, `blockId` → `calendarBlocks`, `goalId` → `goals` | block only of the same task (T-094); instants at whole minutes; end ≥ start, not in the future (T-096); pauses inside the session and not overlapping; one open session (running or paused) per device (T-092, T-117) |
+| `outputDefinitions` (new type; every field present) | `revisions` (list of `{ name, unit }`), `archivedAt` (or `null`) | — | archived: not selectable for new outputs (T-107) |
+| `outputRecords` (new type; every field present) | `sessionId`, `definitionId`, `revision`, `value` (whole number), `goalIds` (explicit attribution; empty list = none) | `sessionId` → `sessions`, `definitionId` → `outputDefinitions`, `goalIds` → `goals` | `sessionId` never changes; no standalone outputs (T-104) |
+| `corrections` (new type, append-only; every field present) | `target` (`sessions` or `outputRecords` + ID), `field`, `before`, `after`, `reason` (text, or `null` when none was given), `device`, `at` | target record | never edited; imported ones are appended (T-113) |
+| `taskCompletions` (new type; every field present; T-119) | `taskId`, `occurrenceDate` (`YYYY-MM-DD` of a recurring task's occurrence, or `null` for a one-off task), `completedAt` | `taskId` → `taskDefinitions` | ID derived from task ID and occurrence date (one record per completion on every device); created only by the explicit "complete" action (T-108, T-118); the task definition is not changed |
+| `goals.definitionId` (added to an existing type: optional, **omitted** when unused, never `null`) | omitted = no definition chosen yet; output goals only | → `outputDefinitions` | one definition per output goal (T-105); existing goals: open detail S-6 |
+| task–goal link | **open (S-1)** — if it is a field on `taskDefinitions` (an existing type), it is optional and omitted when unused | — | needed for T-100, T-108, and T-118 |
 
 - **Duration versus outputs (T-099):** session work time is computed from instants and pauses; content minutes or other quantities are output records and never change the session's time.
-- **Goal progress inputs (T-116):** time goals from session work time counted toward them; output goals from attributed output records of their definition; task-count goals from explicitly completed tasks. Calculated, never stored; shown in Stage 6.
+- **Goal progress inputs (T-116):** time goals from session work time counted toward them; output goals from attributed output records of their definition; task-count goals from completion records (one per completed one-off task, one per completed occurrence of a recurring task, T-118). Calculated, never stored; shown in Stage 6.
 - **Deletion (T-103, T-114, T-115):** `deletedAt` hides a session and its outputs and lets them be restored; after the recovery period (proposed 30 days) the session, its outputs, and its corrections become tombstones, which never expire.
-- **Upgrade:** all new fields are optional and absent when unused (T-025 pattern); no stored record is rewritten.
+- **Field conventions and upgrade (T-109):** new types use present-and-nullable fields, as Stages 2–4 did; fields added to existing types (`goals.definitionId`, a task–goal link field) are optional and omitted when unused (T-025 pattern). No stored record is rewritten.
+- **Recurring tasks (T-118, T-119):** completing an occurrence writes a `taskCompletions` record for that task and date; the recurring task stays active and unchanged. An occurrence is a task and a local date (T-026), with or without a planned block.
 
 ### Streak data (approved 2026-10-25; not implemented)
 
@@ -202,7 +203,7 @@ Owner decisions T-091 to T-108; field names, encodings, and the record split are
 
 ### Execution state and history
 
-- Active: start exists; end is absent. At most one active session per device (T-092); "active" includes a paused session (proposed, T-110).
+- Open: start exists; end is absent; the session may be running or paused. At most one open session per device; a paused session keeps the slot until it is ended, with or without resuming it first (T-092, T-117).
 - Ended: end is present and not before start; there is no final-state label (T-098). Work time = end − start − paused time (T-092, T-110). An ended session is never in the future (T-096).
 - Finished sessions are never silently reopened. Any correction/reopen operation must be explicit and audited.
 - Historical names/definitions are captured as snapshots when the event is recorded; later edits (and later imports) do not change prior session or block snapshots.
@@ -212,7 +213,7 @@ Owner decisions T-091 to T-108; field names, encodings, and the record split are
 ### Goals and metrics
 
 - Goal progress is recomputed from underlying records and is rebuildable; cached totals are disposable.
-- A session's time counts toward at most one goal (T-047, T-100); a task explicitly marked complete counts toward at most one task-count goal (T-048, T-108). Session completion never completes a task (T-091).
+- A session's time counts toward at most one goal (T-047, T-100); a task explicitly marked complete, or a completed occurrence of a recurring task, counts toward at most one task-count goal (T-048, T-108, T-118). Session completion never completes a task (T-091).
 - Output metric values may support multiple goals only through explicit compatible attribution records.
 - After Stage 5, pacing uses target, progress, deadline, timezone, owner-chosen goal workdays, and explicit weekly objective. Choosing goal workdays is deferred until after Stage 5 (DECISIONS T-053). Do not union multiple task schedules to invent a goal schedule.
 
