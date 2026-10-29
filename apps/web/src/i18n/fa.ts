@@ -286,6 +286,13 @@ export const fa: Messages = {
   "backup.resolve.keepHere": "اینجا بماند",
   "backup.resolve.error": "این انتخاب اعمال نشد: {reason}",
   "backup.resolve.hasLinked": "موارد دیگری هنوز به آن تعلق دارند.",
+  "backup.resolve.hasLinkedCount":
+    "{count} مورد روی این دستگاه هنوز به آن تعلق دارند؛ فهرستشان کنار همین مورد آمده است. چیزی تغییر نکرد و انتخاب‌های دیگر شما سر جایشان هستند.",
+  "backup.blocked.intro":
+    "این مورد فقط وقتی اینجا حذف می‌شود که {count} موردِ متعلق به آن دیگر نباشند. آن‌ها هرگز همراه این مورد حذف نمی‌شوند و هر کدام انتخاب جداگانه می‌خواهد:",
+  "backup.blocked.pending": "در این پشتیبان هم حذف شده است: اول دربارهٔ آن تصمیم بگیرید.",
+  "backup.blocked.goTo": "رفتن به تصمیم آن",
+  "backup.blocked.kept": "در این پشتیبان حذف نشده، پس می‌ماند. برای حذف این مورد، اول آن را خودتان حذف کنید؛ وگرنه این مورد را نگه دارید.",
   "backup.resolve.brokenLink": "این نسخه به موردی تعلق دارد که روی این دستگاه نیست. ابتدا آن مورد را بازگردانید.",
   "backup.resolve.invalidRelationship": "جریان کاری این نسخه متعلق به پروژهٔ دیگری است.",
   "backup.resolve.stale":
@@ -298,6 +305,7 @@ export const fa: Messages = {
   "backup.bulk.confirm": "با این کار نسخهٔ این دستگاه برای {count} مورد نگه داشته می‌شود. نسخه‌های پشتیبان برای بازگردانی نگه داشته می‌شوند. ادامه می‌دهید؟",
   "backup.bulk.yes": "بله، برای {count} مورد",
   "backup.bulk.no": "انصراف",
+  "backup.bulk.skipped": "{count} مورد تغییر نکرد، چون روی این دستگاه تغییر کرده بود یا اعمال‌شدنی نبود. همچنان منتظر تصمیم شما هستند.",
   "backup.replaced.title": "نسخه‌های جایگزین‌شده (بازگردانی)",
   "backup.replaced.intro": "نسخه‌هایی که با انتخاب‌های شما جایگزین شده‌اند. بازگرداندن هرکدام آن را دوباره نسخهٔ فعلی می‌کند.",
   "backup.replaced.restore": "بازگرداندن این نسخه",
@@ -508,6 +516,11 @@ export const fa: Messages = {
   "goal.error.MILESTONES_OUTSIDE_RANGE": "با این تاریخ‌ها موعد این نقاط عطف بیرون از بازه‌ی هدف می‌افتد: {names}. اول آن‌ها را اصلاح کنید.",
   "backup.type.goals": "هدف",
   "backup.type.milestones": "نقطه‌ی عطف",
+  "backup.type.sessions": "جلسه",
+  "backup.type.outputDefinitions": "تعریف خروجی",
+  "backup.type.outputRecords": "خروجی",
+  "backup.type.corrections": "سابقه‌ی اصلاح",
+  "backup.type.taskCompletions": "تکمیل تسک",
 
   "color.blue": "آبی",
   "color.teal": "فیروزه‌ای",

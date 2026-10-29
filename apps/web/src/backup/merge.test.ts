@@ -308,7 +308,7 @@ describe("history, identity, preview, bulk, atomicity (items 8, 14, 15, 17)", ()
     await importInto(b, (await exportFrom(a)).text);
     const shown = (await loadConflictViews(b.db, TEST_REGISTRY)).map((v) => ({ conflictId: v.conflict.conflictId, expected: v.token }));
     expect(shown).toHaveLength(3);
-    expect(await resolveConflicts(b.db, TEST_REGISTRY, shown, "keepDevice")).toBe(3);
+    expect((await resolveConflicts(b.db, TEST_REGISTRY, shown, "keepDevice")).resolved).toBe(3);
     expect(await b.db.pendingConflicts.count()).toBe(0);
     expect(await b.db.replacedVersions.count()).toBe(3);
     for (const i of ids) expect((await b.db.records.get(["fixtureNote", i]))?.data).toEqual(note("B"));

@@ -283,6 +283,13 @@ export const en = {
   "backup.resolve.keepHere": "Keep it here",
   "backup.resolve.error": "This choice could not be applied: {reason}",
   "backup.resolve.hasLinked": "other items still belong to it.",
+  "backup.resolve.hasLinkedCount":
+    "{count} item(s) on this device still belong to it; they are listed with this item. Nothing was changed, and your other choices are kept.",
+  "backup.blocked.intro":
+    "This can be deleted here only after the {count} item(s) that belong to it are gone. They are never deleted with it; each needs its own choice:",
+  "backup.blocked.pending": "also deleted in this backup: decide it first.",
+  "backup.blocked.goTo": "Go to its decision",
+  "backup.blocked.kept": "not deleted in this backup, so it stays. To delete this item too, delete that one yourself first; otherwise keep this item.",
   "backup.resolve.brokenLink": "this version belongs to an item that is not on this device. Restore that item first.",
   "backup.resolve.invalidRelationship": "this version's workstream belongs to a different project.",
   "backup.resolve.stale":
@@ -295,6 +302,7 @@ export const en = {
   "backup.bulk.confirm": "This keeps this device's version for {count} item(s). The backup versions are kept for undo. Continue?",
   "backup.bulk.yes": "Yes, apply to {count}",
   "backup.bulk.no": "Cancel",
+  "backup.bulk.skipped": "{count} item(s) were not changed because they changed on this device or could not be applied. They still wait for your decision.",
   "backup.replaced.title": "Replaced versions (undo)",
   "backup.replaced.intro": "Versions replaced by your choices. Restoring one makes it current again.",
   "backup.replaced.restore": "Restore this version",
@@ -505,6 +513,11 @@ export const en = {
   "goal.error.MILESTONES_OUTSIDE_RANGE": "These dates would put milestone deadlines outside the goal: {names}. Change those milestones first.",
   "backup.type.goals": "Goal",
   "backup.type.milestones": "Milestone",
+  "backup.type.sessions": "Session",
+  "backup.type.outputDefinitions": "Output definition",
+  "backup.type.outputRecords": "Output",
+  "backup.type.corrections": "Correction record",
+  "backup.type.taskCompletions": "Task completion",
 
   "color.blue": "Blue",
   "color.teal": "Teal",

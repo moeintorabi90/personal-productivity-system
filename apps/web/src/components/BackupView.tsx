@@ -4,6 +4,7 @@ import { type ChangeEvent, useId, useState } from "react";
 import { useLastBackupAt, usePreferences, useServices, useT } from "../app-context.tsx";
 import {
   type ConflictView,
+  type LinkedItem,
   loadConflictViews,
   type Resolution,
   ResolutionError,
@@ -30,7 +31,9 @@ const registry = PRODUCT_REGISTRY;
 function errorMessage(t: Translate, error: unknown): string {
   if (error instanceof BackupError) return t(`backup.error.${error.code}` as MessageKey);
   if (error instanceof ResolutionError && error.code === "HAS_LINKED_ITEMS") {
-    return t("backup.resolve.error", { reason: t("backup.resolve.hasLinked") });
+    return t("backup.resolve.error", {
+      reason: error.linkedItems.length > 0 ? t("backup.resolve.hasLinkedCount", { count: error.linkedItems.length }) : t("backup.resolve.hasLinked"),
+    });
   }
   if (error instanceof ResolutionError && error.code === "BROKEN_LINK") {
     return t("backup.resolve.error", { reason: t("backup.resolve.brokenLink") });
@@ -425,6 +428,11 @@ const TYPE_LABELS: Record<string, MessageKey> = {
   calendarBlocks: "backup.type.calendarBlocks",
   goals: "backup.type.goals",
   milestones: "backup.type.milestones",
+  sessions: "backup.type.sessions",
+  outputDefinitions: "backup.type.outputDefinitions",
+  outputRecords: "backup.type.outputRecords",
+  corrections: "backup.type.corrections",
+  taskCompletions: "backup.type.taskCompletions",
 };
 
 function typeLabel(t: Translate, type: string): string {
@@ -540,7 +548,8 @@ function PendingConflicts() {
   // Live: re-renders when the conflict list OR the device's current versions change, so the
   // comparison always shows what is on this device now.
   const views = useLiveQuery(() => loadConflictViews(db, registry), [db]);
-  const [error, setError] = useState<string | null>(null);
+  // An error from one decision is shown with that decision (conflictId), a bulk one above the list.
+  const [error, setError] = useState<{ conflictId: string | null; text: string } | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
   if (!views) return null;
   const conflicts = views;
@@ -555,8 +564,14 @@ function PendingConflicts() {
     try {
       await resolveConflict(db, registry, view.conflict.conflictId, resolution, view.token);
     } catch (e) {
-      setError(errorMessage(t, e));
+      setError({ conflictId: view.conflict.conflictId, text: errorMessage(t, e) });
     }
+  }
+
+  function goTo(conflictId: string) {
+    const target = document.getElementById(`conflict-${conflictId}`);
+    target?.scrollIntoView?.({ block: "start" });
+    target?.focus();
   }
 
   return (
@@ -576,7 +591,11 @@ function PendingConflicts() {
                     type="button"
                     onClick={async () => {
                       setConfirmBulk(false);
-                      await resolveConflicts(db, registry, bulk, "keepDevice");
+                      setError(null);
+                      const result = await resolveConflicts(db, registry, bulk, "keepDevice");
+                      if (result.skipped.length > 0) {
+                        setError({ conflictId: null, text: t("backup.bulk.skipped", { count: result.skipped.length }) });
+                      }
                     }}
                   >
                     {t("backup.bulk.yes", { count: bulk.length })}
@@ -592,15 +611,15 @@ function PendingConflicts() {
               </button>
             )
           ) : null}
-          {error ? (
+          {error && error.conflictId === null ? (
             <p className="notice notice-error" role="alert">
-              {error}
+              {error.text}
             </p>
           ) : null}
           {conflicts.map((view) => {
             const { conflict, current } = view;
             return (
-              <article key={conflict.conflictId} className="conflict" data-testid="backup-conflict">
+              <article key={conflict.conflictId} id={`conflict-${conflict.conflictId}`} tabIndex={-1} className="conflict" data-testid="backup-conflict">
                 <h3>{typeLabel(t, conflict.type)}</h3>
                 {conflict.kind === "history" ? <p className="notice notice-warn">{t("backup.conflicts.history")}</p> : null}
                 <div className="conflict-columns">
@@ -632,6 +651,12 @@ function PendingConflicts() {
                     <EntryView type={conflict.type} entry={conflict.local} other={current} missingLabel="" />
                   </div>
                 ) : null}
+                {view.blockedBy.length > 0 ? <BlockedDeletion items={view.blockedBy} goTo={goTo} /> : null}
+                {error && error.conflictId === conflict.conflictId ? (
+                  <p className="notice notice-error" role="alert">
+                    {error.text}
+                  </p>
+                ) : null}
                 <div className="button-row">
                   {view.options.map((resolution, i) => (
                     <button
@@ -650,6 +675,37 @@ function PendingConflicts() {
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * "Delete it here too" is refused while live records link to this one (restrict, never cascade):
+ * names them, and for each one also deleted in the backup offers its own decision (D-015).
+ */
+function BlockedDeletion({ items, goTo }: { items: LinkedItem[]; goTo: (conflictId: string) => void }) {
+  const t = useT();
+  return (
+    <div className="notice notice-info" data-testid="conflict-blocked">
+      <p>{t("backup.blocked.intro", { count: items.length })}</p>
+      <ul>
+        {items.map((item) => (
+          <li key={`${item.type}/${item.id}`}>
+            {typeLabel(t, item.type)}
+            {" — "}
+            {item.conflictId ? (
+              <>
+                {t("backup.blocked.pending")}{" "}
+                <button type="button" className="link-button" onClick={() => goTo(item.conflictId!)}>
+                  {t("backup.blocked.goTo")}
+                </button>
+              </>
+            ) : (
+              t("backup.blocked.kept")
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -190,6 +190,7 @@ Commands run on the Windows development machine (Edge for end-to-end tests):
 
 - `npm.cmd run typecheck`: passed.
 - `npm.cmd test`: 32 files, 359 tests passed (306 on `main` before Stage 5). New test files: `local/work.test.ts` 32, `backup/work-backup.test.ts` 12, `work/units.test.ts` 5. There are also 4 new Stage 5 component tests in `App.test.tsx`.
+- After the fix for deletions that block each other (T-170), `npm.cmd test` passed with 33 files and 366 tests. The new tests are `backup/deletion-order.test.ts` (6) and one component test. `npm.cmd run test:e2e` still passes 12 tests; no end-to-end test was added.
 - `npm.cmd run test:e2e`: 12 passed (11 before), including the new "Stage 5 offline" test.
 
 Earlier tests were updated for approved Stage 5 changes:
@@ -206,6 +207,15 @@ Coverage per item:
 - Item 6 (outputs, definitions, the different-unit rule, suggested definitions, legacy-goal migration with match, mismatch, and unknown): `local/work.test.ts`, `work/units.test.ts` (harmless differences, English and Persian singular/plural forms including irregular ones, translations, synonyms, different units, and unknown pairs), and the component test for the T-169 question (no keeps the goal unlinked; yes links it with target and unit unchanged).
 - Items 7–8b (corrections, attribution, completions, reopening, today's and future occurrences, one-off completion date, expected amounts): `local/work.test.ts`, `backup/work-backup.test.ts` (corrections appended on import; the same completion made on two devices stays one record), and the component test "completes and reopens today's occurrence".
 - Item 9 (trash): `local/work.test.ts` covers restore within 30 days, tombstones afterwards and when the trash is emptied, and a single output's trash. `backup/work-backup.test.ts` shows that an older backup is "older copy" after the trash is emptied.
+- Item 9, deletions on the other device (T-170): `backup/deletion-order.test.ts` uses fabricated data. A session with one output and two correction records is emptied from the trash on device A, and A's backup is imported on device B. The tests check that:
+  - each record arrives as its own decision, and the list puts corrections before the output and the output before the session;
+  - deleting the session first is refused, names its three blockers, and changes nothing;
+  - in all 24 orders, only decided records are deleted, each refusal leaves the data unchanged, and a second pass completes;
+  - afterwards all four tombstones stay, re-importing the same backup raises nothing, and the next backup carries them;
+  - deciding from the top of the list is never refused;
+  - keeping the output keeps the session blocked, and the session can still be kept;
+  - a bulk choice skips refused items with their reason and applies the others.
+  A component test in `App.test.tsx` checks the same flow on the Backup screen: the order, the blocker list with "Go to its decision", and the refusal shown next to the session with nothing changed.
 - Items 10, 10a (backup version 6, open sessions): `backup/work-backup.test.ts` covers:
   - identical round-trips, also encrypted;
   - `null` versus omitted fields;

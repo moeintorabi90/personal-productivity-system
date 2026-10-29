@@ -16,12 +16,23 @@ export type Resolution =
   | "deleteHere" // deleted in backup: delete on this device too
   | "keepHere"; // deleted in backup: keep it on this device
 
+/** A live record on this device that still links to a record whose deletion was asked for. */
+export interface LinkedItem {
+  type: string;
+  id: string;
+  /** Its own pending "deleted in the backup" decision, if any: decide that one first. */
+  conflictId: string | null;
+}
+
 export class ResolutionError extends Error {
   readonly code: "NOT_ALLOWED" | "HAS_LINKED_ITEMS" | "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "NOT_FOUND" | "STALE";
-  constructor(code: ResolutionError["code"], message: string) {
+  /** HAS_LINKED_ITEMS: the records that still block the deletion. */
+  readonly linkedItems: LinkedItem[];
+  constructor(code: ResolutionError["code"], message: string, linkedItems: LinkedItem[] = []) {
     super(message);
     this.name = "ResolutionError";
     this.code = code;
+    this.linkedItems = linkedItems;
   }
 }
 
@@ -79,12 +90,37 @@ export interface ConflictView {
   /** The snapshot taken when the conflict was found differs from `current` (and from the backup). */
   snapshotDiffers: boolean;
   options: Resolution[];
+  /** When "Delete it here too" is offered: the live records that still link to this one (restrict). */
+  blockedBy: LinkedItem[];
 }
 
 function snapshotDiffers(conflict: PendingConflictRow, current: VersionEntry | null): boolean {
   if (!conflict.local) return false;
   const snap = entryToken(conflict.local);
   return snap !== entryToken(current) && snap !== entryToken(conflict.incoming);
+}
+
+/**
+ * The list order: by detection, except that a deletion decision comes after the pending deletion
+ * decisions of the records that block it (a correction before its output, an output before its
+ * session), so deciding from top to bottom never meets a refusal that a later item explains.
+ */
+function blockersFirst(views: ConflictView[]): ConflictView[] {
+  const byId = new Map(views.map((v) => [v.conflict.conflictId, v]));
+  const placed = new Set<string>();
+  const ordered: ConflictView[] = [];
+  const place = (view: ConflictView) => {
+    const id = view.conflict.conflictId;
+    if (placed.has(id)) return;
+    placed.add(id); // before its blockers, so a link cycle cannot loop
+    for (const item of view.blockedBy) {
+      const blocker = item.conflictId ? byId.get(item.conflictId) : undefined;
+      if (blocker) place(blocker);
+    }
+    ordered.push(view);
+  };
+  for (const view of views) place(view);
+  return ordered;
 }
 
 export async function loadConflictViews(db: LocalDb, registry: Registry): Promise<ConflictView[]> {
@@ -101,9 +137,13 @@ export async function loadConflictViews(db: LocalDb, registry: Registry): Promis
         token: entryToken(current),
         snapshotDiffers: snapshotDiffers(conflict, current),
         options: availableResolutions(conflict, current, registry),
+        blockedBy: [],
       });
     }
-    return views;
+    const deletable = views.filter((v) => v.options.includes("deleteHere")).map((v) => v.conflict);
+    const linked = await linkedItems(db, registry, deletable, conflicts);
+    for (const view of views) view.blockedBy = linked.get(`${view.conflict.type}/${view.conflict.id}`) ?? [];
+    return blockersFirst(views);
   });
 }
 
@@ -111,18 +151,51 @@ async function archive(db: LocalDb, type: string, id: string, entry: VersionEntr
   await db.replacedVersions.put({ replacedId: crypto.randomUUID(), type, id, entry, replacedAt: nowIso(), reason });
 }
 
-/** Refuses to delete a record that other live records link to (restrict, never cascade). */
-async function assertNoLinkedItems(db: LocalDb, registry: Registry, type: string, id: string): Promise<void> {
+/**
+ * For each target ("type/id" key), the live records that link to it, each with its own pending
+ * "deleted in the backup" decision if any. One read per linking type; the matching is done in
+ * memory (no other awaits inside the caller's transaction).
+ */
+async function linkedItems(
+  db: LocalDb,
+  registry: Registry,
+  targets: { type: string; id: string }[],
+  pending: PendingConflictRow[],
+): Promise<Map<string, LinkedItem[]>> {
+  const result = new Map<string, LinkedItem[]>();
+  const wanted = new Set(targets.map((t) => `${t.type}/${t.id}`));
+  const targetTypes = new Set(targets.map((t) => t.type));
+  const deletionOf = new Map<string, string>();
+  for (const c of pending) if (c.incoming.deleted) deletionOf.set(`${c.type}/${c.id}`, c.conflictId);
   for (const def of registry.types.values()) {
-    for (const link of def.links) {
-      if (link.target !== type) continue;
-      const children = await db.records
-        .where("type")
-        .equals(def.type)
-        .filter((r) => linkTargets(link, r.data).includes(id))
-        .count();
-      if (children > 0) throw new ResolutionError("HAS_LINKED_ITEMS", `${type}/${id} still has linked ${def.type} items`);
+    const links = def.links.filter((link) => targetTypes.has(link.target));
+    if (links.length === 0) continue;
+    const children = await db.records.where("type").equals(def.type).toArray();
+    for (const child of children) {
+      for (const link of links) {
+        for (const target of linkTargets(link, child.data)) {
+          const key = `${link.target}/${String(target)}`;
+          if (!wanted.has(key)) continue;
+          const items = result.get(key) ?? [];
+          if (!items.some((i) => i.type === child.type && i.id === child.id)) {
+            items.push({ type: child.type, id: child.id, conflictId: deletionOf.get(`${child.type}/${child.id}`) ?? null });
+          }
+          result.set(key, items);
+        }
+      }
     }
+  }
+  for (const items of result.values()) items.sort((a, b) => a.type.localeCompare(b.type) || a.id.localeCompare(b.id));
+  return result;
+}
+
+/** Refuses to delete a record that other live records link to (restrict, never cascade), naming them. */
+async function assertNoLinkedItems(db: LocalDb, registry: Registry, type: string, id: string): Promise<void> {
+  const pending = await db.pendingConflicts.toArray();
+  const items = (await linkedItems(db, registry, [{ type, id }], pending)).get(`${type}/${id}`) ?? [];
+  if (items.length > 0) {
+    const names = items.map((i) => `${i.type}/${i.id}`).join(", ");
+    throw new ResolutionError("HAS_LINKED_ITEMS", `${type}/${id} still has linked items: ${names}`, items);
   }
 }
 
@@ -158,6 +231,33 @@ async function writeTombstone(db: LocalDb, type: string, id: string, version: Ve
 }
 
 /**
+ * Every check that can refuse a decision, before anything is written: a refused decision never
+ * leaves part of itself applied, and in a bulk action the other decisions still apply.
+ */
+async function checkResolution(
+  db: LocalDb,
+  registry: Registry,
+  conflict: PendingConflictRow,
+  resolution: Resolution,
+  expected: string,
+): Promise<VersionEntry | null> {
+  const { type, id, incoming } = conflict;
+  const current = await currentEntry(db, type, id);
+  if (entryToken(current) !== expected) {
+    throw new ResolutionError("STALE", `${type}/${id} changed on this device; review the updated comparison`);
+  }
+  if (!availableResolutions(conflict, current, registry).includes(resolution)) {
+    throw new ResolutionError("NOT_ALLOWED", `${resolution} is not available for ${type}/${id} now`);
+  }
+  if (resolution === "useBackup" || resolution === "restore" || resolution === "keepBoth") {
+    if (incoming.deleted) throw new ResolutionError("NOT_ALLOWED", "backup version is a deletion");
+    await assertLinksLive(db, registry, type, incoming.envelope.data);
+  }
+  if (resolution === "deleteHere") await assertNoLinkedItems(db, registry, type, id);
+  return current;
+}
+
+/**
  * Applies one decision in the caller's transaction. Refused (no change) if the device's version
  * differs from the one the user saw (`expected`), if the choice is not offered for the current
  * state, or if a version to activate has a broken link. Every outcome gets a version vector that
@@ -173,13 +273,7 @@ async function resolveInTx(
   expected: string,
 ): Promise<void> {
   const { type, id, incoming } = conflict;
-  const current = await currentEntry(db, type, id);
-  if (entryToken(current) !== expected) {
-    throw new ResolutionError("STALE", `${type}/${id} changed on this device; review the updated comparison`);
-  }
-  if (!availableResolutions(conflict, current, registry).includes(resolution)) {
-    throw new ResolutionError("NOT_ALLOWED", `${resolution} is not available for ${type}/${id} now`);
-  }
+  const current = await checkResolution(db, registry, conflict, resolution, expected);
   const device = await deviceIdentity(db);
   let merged = mergeAndBump(current ? versionOf(current) : {}, versionOf(incoming), device.id);
   if (conflict.local) merged = mergeAndBump(merged, versionOf(conflict.local), device.id);
@@ -196,7 +290,6 @@ async function resolveInTx(
     case "useBackup":
     case "restore": {
       if (incoming.deleted) throw new ResolutionError("NOT_ALLOWED", "backup version is a deletion");
-      await assertLinksLive(db, registry, type, incoming.envelope.data);
       if (current) await archive(db, type, id, current, "replacedByBackup");
       await writeRecord(db, type, id, incoming.envelope.data, incoming.envelope.createdAt, merged);
       await markImportedSessions(db, [{ type, id, data: incoming.envelope.data }], conflict.source.exportedAt);
@@ -204,14 +297,12 @@ async function resolveInTx(
     }
     case "deleteHere": {
       if (!current || current.deleted) throw new ResolutionError("NOT_ALLOWED", "nothing to delete");
-      await assertNoLinkedItems(db, registry, type, id);
       await archive(db, type, id, current, "deletedFromBackup");
       await writeTombstone(db, type, id, merged);
       break;
     }
     case "keepBoth": {
       if (incoming.deleted || !current || current.deleted) throw new ResolutionError("NOT_ALLOWED", "keep both needs two records");
-      await assertLinksLive(db, registry, type, incoming.envelope.data);
       await writeRecord(db, type, id, current.envelope.data, current.envelope.createdAt, merged);
       const copy: Envelope = makeEnvelope(crypto.randomUUID(), incoming.envelope.data, { [device.id]: 1 }, nowIso());
       await db.records.put({ type, ...copy, copyOf: id });
@@ -239,28 +330,40 @@ export async function resolveConflict(
   });
 }
 
+export interface BulkResult {
+  resolved: number;
+  /** Decisions left pending, with the reason (STALE, NOT_ALLOWED, HAS_LINKED_ITEMS, …). */
+  skipped: { conflictId: string; error: ResolutionError }[];
+}
+
 /**
- * Bulk action (D-015): the caller first shows and confirms the count. Applies the choice to each
- * listed conflict whose device version is still the one shown and where the choice is offered;
- * all others stay pending. One transaction. Returns how many were resolved.
+ * Bulk action (D-015): the caller first shows and confirms the count. Applies the choice, in the
+ * order given, to each listed conflict whose device version is still the one shown, where the
+ * choice is offered, and that passes its checks; every other one stays pending with its reason
+ * and does not stop the rest. One transaction.
  */
 export async function resolveConflicts(
   db: LocalDb,
   registry: Registry,
   shown: { conflictId: string; expected: string }[],
   resolution: Resolution,
-): Promise<number> {
+): Promise<BulkResult> {
   return db.transaction("rw", conflictTables(db), async () => {
-    let resolved = 0;
+    const result: BulkResult = { resolved: 0, skipped: [] };
     for (const { conflictId, expected } of shown) {
       const conflict = await db.pendingConflicts.get(conflictId);
       if (!conflict) continue;
-      const current = await currentEntry(db, conflict.type, conflict.id);
-      if (entryToken(current) !== expected || !availableResolutions(conflict, current, registry).includes(resolution)) continue;
+      try {
+        await checkResolution(db, registry, conflict, resolution, expected);
+      } catch (e) {
+        if (!(e instanceof ResolutionError)) throw e;
+        result.skipped.push({ conflictId, error: e });
+        continue;
+      }
       await resolveInTx(db, registry, conflict, resolution, expected);
-      resolved++;
+      result.resolved++;
     }
-    return resolved;
+    return result;
   });
 }
 

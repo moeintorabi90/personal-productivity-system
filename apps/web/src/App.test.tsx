@@ -330,6 +330,54 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     await waitFor(() => expect(screen.queryByTestId("backup-conflict")).toBeNull());
     expect((await loadOrganization(services.db)).projects[0]!.data.name).toBe("Thesis (laptop)");
   });
+
+  it("deletions of a session and what belongs to it: blockers listed first, a refusal names them and changes nothing", async () => {
+    const { addOutputs, correctOutputValue, createOutputDefinition, deleteSession, purgeTrash, recordPastSession } = await import("./local/work.ts");
+    const other = new LocalDb(`other-${++dbCounter}`);
+    await other.meta.put({ key: "device", value: { id: crypto.randomUUID(), name: "Laptop" } });
+    await updateSharedPreferences(other, { timeZone: "Asia/Tehran" });
+    const definition = await createOutputDefinition(other, { name: "Pages", unit: "pages" });
+    const session = await recordPastSession(other, { date: "2026-10-01", startTime: "08:00", durationMinutes: 30 });
+    const [output] = await addOutputs(other, session, [{ definitionId: definition, value: 5 }]);
+    await correctOutputValue(other, output!, 6, "typo");
+    const first = await createBackup(other, PRODUCT_REGISTRY);
+
+    renderApp();
+    await goTo("Backup");
+    const input = (await screen.findByLabelText("Choose a backup file")) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File([first.text], "a.json")] } });
+    fireEvent.click(within(await screen.findByTestId("import-preview")).getByRole("button", { name: "Import" }));
+    await screen.findByTestId("import-done");
+
+    await deleteSession(other, session);
+    await purgeTrash(other, { emptyNow: true });
+    const second = await createBackup(other, PRODUCT_REGISTRY);
+    other.close();
+    fireEvent.change(screen.getByLabelText("Choose a backup file"), { target: { files: [new File([second.text], "b.json")] } });
+    fireEvent.click(within(await screen.findByTestId("import-preview")).getByRole("button", { name: "Import" }));
+
+    await waitFor(() => expect(screen.getAllByTestId("backup-conflict")).toHaveLength(4));
+    const headings = () => screen.getAllByTestId("backup-conflict").map((c) => within(c).getByRole("heading", { level: 3 }).textContent);
+    expect(headings()).toEqual(["Correction record", "Correction record", "Output", "Session"]);
+    const sessionCard = screen.getAllByTestId("backup-conflict")[3]!;
+    const blocked = within(sessionCard).getByTestId("conflict-blocked");
+    expect(blocked.textContent).toContain("after the 3 item(s)");
+    expect(within(blocked).getAllByRole("button", { name: "Go to its decision" })).toHaveLength(3);
+
+    // Choosing the session first: refused next to it, naming the count; nothing changed.
+    const before = await services.db.records.count();
+    fireEvent.click(within(sessionCard).getByRole("button", { name: "Delete it here too" }));
+    expect((await within(sessionCard).findByRole("alert")).textContent).toContain("3 item(s) on this device still belong to it");
+    expect(await services.db.records.count()).toBe(before);
+    expect(screen.getAllByTestId("backup-conflict")).toHaveLength(4);
+
+    // From the top of the list, each choice goes through.
+    for (let left = 4; left > 0; left--) {
+      fireEvent.click(within(screen.getAllByTestId("backup-conflict")[0]!).getByRole("button", { name: "Delete it here too" }));
+      await waitFor(() => expect(screen.queryAllByTestId("backup-conflict")).toHaveLength(left - 1));
+    }
+    expect(await services.db.tombstones.where("type").anyOf("sessions", "outputRecords", "corrections").count()).toBe(4);
+  });
 });
 
 describe("Stage 2: inbox, projects, workstreams, tasks", () => {
