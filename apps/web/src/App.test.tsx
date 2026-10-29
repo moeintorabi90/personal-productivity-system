@@ -331,7 +331,8 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     expect((await loadOrganization(services.db)).projects[0]!.data.name).toBe("Thesis (laptop)");
   });
 
-  it("deletions of a session and what belongs to it: blockers listed first, a refusal names them and changes nothing", async () => {
+  /** A session, its output, and two correction records, emptied from the trash on another device; its backup is imported here. */
+  async function importSessionDeletions() {
     const { addOutputs, correctOutputValue, createOutputDefinition, deleteSession, purgeTrash, recordPastSession } = await import("./local/work.ts");
     const other = new LocalDb(`other-${++dbCounter}`);
     await other.meta.put({ key: "device", value: { id: crypto.randomUUID(), name: "Laptop" } });
@@ -355,8 +356,11 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     other.close();
     fireEvent.change(screen.getByLabelText("Choose a backup file"), { target: { files: [new File([second.text], "b.json")] } });
     fireEvent.click(within(await screen.findByTestId("import-preview")).getByRole("button", { name: "Import" }));
-
     await waitFor(() => expect(screen.getAllByTestId("backup-conflict")).toHaveLength(4));
+  }
+
+  it("deletions of a session and what belongs to it: blockers listed first, a refusal names them and changes nothing", async () => {
+    await importSessionDeletions();
     const headings = () => screen.getAllByTestId("backup-conflict").map((c) => within(c).getByRole("heading", { level: 3 }).textContent);
     expect(headings()).toEqual(["Correction record", "Correction record", "Output", "Session"]);
     const sessionCard = screen.getAllByTestId("backup-conflict")[3]!;
@@ -377,6 +381,24 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
       await waitFor(() => expect(screen.queryAllByTestId("backup-conflict")).toHaveLength(left - 1));
     }
     expect(await services.db.tombstones.where("type").anyOf("sessions", "outputRecords", "corrections").count()).toBe(4);
+  });
+
+  it("an output kept here although the backup deleted it: the session's blocker message states only that it is still here", async () => {
+    await importSessionDeletions();
+    const card = (heading: string) =>
+      screen.getAllByTestId("backup-conflict").find((c) => within(c).getByRole("heading", { level: 3 }).textContent === heading)!;
+    fireEvent.click(within(card("Output")).getByRole("button", { name: "Keep it here" }));
+    await waitFor(() => expect(screen.getAllByTestId("backup-conflict")).toHaveLength(3));
+
+    const items = within(within(card("Session")).getByTestId("conflict-blocked")).getAllByRole("listitem");
+    const output = items.find((li) => li.textContent!.startsWith("Output"))!;
+    expect(output.textContent).toBe(
+      "Output — still on this device and blocks deleting this item. To delete this item, first delete that one separately; otherwise keep this item.",
+    );
+    expect(output.textContent).not.toContain("not deleted");
+    expect(within(output).queryByRole("button", { name: "Go to its decision" })).toBeNull();
+    // The corrections still have their own decisions.
+    expect(items.filter((li) => li.textContent!.includes("also deleted in this backup"))).toHaveLength(2);
   });
 });
 
