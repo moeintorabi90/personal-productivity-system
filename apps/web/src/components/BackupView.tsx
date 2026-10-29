@@ -42,6 +42,9 @@ function errorMessage(t: Translate, error: unknown): string {
   if (error instanceof ResolutionError && error.code === "IMMUTABLE_FIELD") {
     return t("backup.resolve.error", { reason: t("backup.resolve.immutableField") });
   }
+  if (error instanceof ResolutionError && error.code === "INCONSISTENT_HISTORY") {
+    return t("backup.resolve.error", { reason: t("backup.resolve.inconsistentHistory") });
+  }
   if (error instanceof ResolutionError && error.code === "BROKEN_LINK") {
     return t("backup.resolve.error", { reason: t("backup.resolve.brokenLink") });
   }

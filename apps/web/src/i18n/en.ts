@@ -296,6 +296,8 @@ export const en = {
   "backup.blockingOutput.trash": "(in the trash: restore it to change its goal)",
   "backup.resolve.immutableField":
     "this version belongs to something else than the item on this device (for example a planned block for another task), which never changes. Keep this device's version.",
+  "backup.resolve.inconsistentHistory":
+    "the saved versions of this item disagree about what it belongs to (for example a planned block's task; from an older or foreign backup), so none is made current automatically. Nothing was changed, and all versions are kept.",
   "backup.resolve.brokenLink": "this version belongs to an item that is not on this device. Restore that item first.",
   "backup.resolve.invalidRelationship": "this version's workstream belongs to a different project.",
   "backup.resolve.stale":

@@ -32,6 +32,7 @@ export class ResolutionError extends Error {
     | "BROKEN_LINK"
     | "INVALID_RELATIONSHIP"
     | "IMMUTABLE_FIELD"
+    | "INCONSISTENT_HISTORY"
     | "NOT_FOUND"
     | "STALE";
   /** HAS_LINKED_ITEMS: the records that still block the deletion; LINKED_ITEMS_MISMATCH: those that would no longer fit. */
@@ -239,16 +240,35 @@ async function writeTombstone(db: LocalDb, type: string, id: string, version: Ve
 }
 
 /**
- * A version may replace the current record only if it keeps the type's immutable fields (a
- * block's task, a workstream's project, …). Imports already refuse files whose versions disagree;
- * this also covers versions stored on this device before a field became immutable (T-171).
+ * A version may become current only if it keeps the type's immutable fields (a block's task, a
+ * workstream's project, …): against the live record (IMMUTABLE_FIELD), and against every other
+ * version of the record known on this device — both versions of each pending conflict and every
+ * archived version (INCONSISTENT_HISTORY). Imports already refuse files whose versions disagree;
+ * this covers versions stored on this device before a field became immutable (T-171), also when
+ * the record is deleted here or missing. Nothing is activated or removed: those versions stay.
  */
-function assertImmutableKept(registry: Registry, type: string, current: VersionEntry | null, data: Record<string, unknown>): void {
-  if (!current || current.deleted) return;
-  for (const field of registry.get(type)?.immutableFields ?? []) {
-    if (JSON.stringify(data[field]) !== JSON.stringify(current.envelope.data[field])) {
-      throw new ResolutionError("IMMUTABLE_FIELD", `${type}.${field} cannot change`);
-    }
+async function assertImmutableKept(
+  db: LocalDb,
+  registry: Registry,
+  type: string,
+  id: string,
+  current: VersionEntry | null,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const fields = registry.get(type)?.immutableFields ?? [];
+  if (fields.length === 0) return;
+  const differs = (other: Record<string, unknown>) => fields.some((f) => JSON.stringify(data[f]) !== JSON.stringify(other[f]));
+  if (current && !current.deleted && differs(current.envelope.data)) {
+    throw new ResolutionError("IMMUTABLE_FIELD", `${type}/${id}: ${fields.join(", ")} cannot change`);
+  }
+  const known: VersionEntry[] = [];
+  for (const c of await db.pendingConflicts.where("[type+id]").equals([type, id]).toArray()) {
+    known.push(c.incoming);
+    if (c.local) known.push(c.local);
+  }
+  for (const r of await db.replacedVersions.where("[type+id]").equals([type, id]).toArray()) known.push(r.entry);
+  if (known.some((entry) => !entry.deleted && differs(entry.envelope.data))) {
+    throw new ResolutionError("INCONSISTENT_HISTORY", `${type}/${id}: known versions disagree on ${fields.join(", ")}`);
   }
 }
 
@@ -294,7 +314,7 @@ async function checkResolution(
     if (incoming.deleted) throw new ResolutionError("NOT_ALLOWED", "backup version is a deletion");
     await assertLinksLive(db, registry, type, incoming.envelope.data);
     if (resolution !== "keepBoth") {
-      assertImmutableKept(registry, type, current, incoming.envelope.data);
+      await assertImmutableKept(db, registry, type, id, current, incoming.envelope.data);
       await assertOutputsFitGoal(db, type, id, incoming.envelope.data);
     }
   }
@@ -429,7 +449,7 @@ export async function restoreReplacedVersion(db: LocalDb, registry: Registry, re
       await writeTombstone(db, row.type, row.id, merged);
     } else {
       await assertLinksLive(db, registry, row.type, row.entry.envelope.data);
-      assertImmutableKept(registry, row.type, current, row.entry.envelope.data);
+      await assertImmutableKept(db, registry, row.type, row.id, current, row.entry.envelope.data);
       await assertOutputsFitGoal(db, row.type, row.id, row.entry.envelope.data);
       if (current) await archive(db, row.type, row.id, current, "undo");
       await writeRecord(db, row.type, row.id, row.entry.envelope.data, row.entry.envelope.createdAt, merged);

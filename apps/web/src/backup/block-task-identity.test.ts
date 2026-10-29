@@ -142,4 +142,91 @@ describe("a planned block's task is fixed (T-171)", () => {
     expect(await s.b.db.replacedVersions.get(archived.replacedId)).toBeDefined();
     await sessionsStillLinked(s.b, [s.session, s.trashed], s.block, s.write);
   });
+
+  /** A second block of the first task, without sessions, on both devices. */
+  async function spareBlock() {
+    const s = await setup();
+    const spare = await createBlock(s.a.db, { taskId: s.write, date: "2026-11-03", startTime: "09:00", durationMinutes: 30 });
+    await importInto(s.b, await exportText(s.a), product);
+    return { ...s, spare };
+  }
+  /** Deletes the block on B as a deletion arriving earlier would have (a tombstone with a newer version). */
+  async function deleteOnB(d: TestDevice, id: string) {
+    const row = (await d.db.records.get([CALENDAR_BLOCKS, id]))!;
+    await d.db.transaction("rw", [d.db.records, d.db.tombstones], async () => {
+      await d.db.records.delete([CALENDAR_BLOCKS, id]);
+      await d.db.tombstones.put({ type: CALENDAR_BLOCKS, id, deletedAt: nowIso(), version: { ...row.version, [crypto.randomUUID()]: 1 } });
+    });
+  }
+  /** An archived version for another task, as a backup made before T-171 could have left on this device. */
+  async function archiveForOtherTask(d: TestDevice, id: string, data: Record<string, unknown>, taskId: string) {
+    const entry = { deleted: false as const, envelope: makeEnvelope(id, { ...data, taskId }, { [crypto.randomUUID()]: 1 }, nowIso()) };
+    const replacedId = crypto.randomUUID();
+    await d.db.replacedVersions.put({ replacedId, type: CALENDAR_BLOCKS, id, entry, replacedAt: nowIso(), reason: "notChosen" });
+    return replacedId;
+  }
+
+  /** B: the spare block's backup version archived (this device's kept), then the block deleted here. */
+  async function deletedWithArchive() {
+    const s = await spareBlock();
+    await updateBlock(s.a.db, s.spare, { date: "2026-11-03", startTime: "10:00", durationMinutes: 30 });
+    await updateBlock(s.b.db, s.spare, { date: "2026-11-03", startTime: "11:00", durationMinutes: 30 });
+    await importInto(s.b, await exportText(s.a), product);
+    const [view] = await loadConflictViews(s.b.db, registry);
+    await decide(s.b.db, view!.conflict.conflictId, "keepDevice", registry);
+    const archived = (await s.b.db.replacedVersions.toArray()).find((r) => r.type === CALENDAR_BLOCKS && r.id === s.spare)!;
+    if (archived.entry.deleted) throw new Error("expected a record version");
+    await deleteOnB(s.b, s.spare);
+    return { ...s, archived: archived.replacedId, data: archived.entry.envelope.data };
+  }
+
+  it("a deleted block whose archived versions name different tasks: no version is restored, and every version stays", async () => {
+    const s = await deletedWithArchive();
+    const other = await archiveForOtherTask(s.b, s.spare, s.data, s.read);
+    const before = await snapshot(s.b.db);
+    for (const replacedId of [s.archived, other]) {
+      expect(await codeOf(restoreReplacedVersion(s.b.db, registry, replacedId))).toBe("INCONSISTENT_HISTORY");
+      expect(await snapshot(s.b.db)).toEqual(before);
+    }
+    expect(await s.b.db.records.get([CALENDAR_BLOCKS, s.spare])).toBeUndefined();
+    expect(await s.b.db.tombstones.get([CALENDAR_BLOCKS, s.spare])).toBeDefined();
+    expect(await s.b.db.replacedVersions.where("[type+id]").equals([CALENDAR_BLOCKS, s.spare]).count()).toBe(2);
+  });
+
+  it("control: a deleted block whose archived versions agree is restored with its own task", async () => {
+    const s = await deletedWithArchive();
+    expect(await codeOf(restoreReplacedVersion(s.b.db, registry, s.archived))).toBe("OK");
+    expect((await blockOf(s.b, s.spare)).taskId).toBe(s.write);
+  });
+
+  /** B deleted the spare block; A edited it, so B's import holds a pending "deleted here" decision. */
+  async function deletedWithPendingRestore() {
+    const s = await spareBlock();
+    await deleteOnB(s.b, s.spare);
+    await updateBlock(s.a.db, s.spare, { date: "2026-11-03", startTime: "10:00", durationMinutes: 30 });
+    await importInto(s.b, await exportText(s.a), product);
+    const [view] = await loadConflictViews(s.b.db, registry);
+    expect(view!.conflict.type).toBe(CALENDAR_BLOCKS);
+    expect(view!.options).toEqual(["restore", "keepDeleted"]);
+    const incoming = view!.conflict.incoming;
+    if (incoming.deleted) throw new Error("expected a record version");
+    return { ...s, conflictId: view!.conflict.conflictId, data: incoming.envelope.data };
+  }
+
+  it("a pending restore of a deleted block whose archive names another task is refused; it can stay deleted", async () => {
+    const s = await deletedWithPendingRestore();
+    await archiveForOtherTask(s.b, s.spare, s.data, s.read);
+    const before = await snapshot(s.b.db);
+    expect(await codeOf(decide(s.b.db, s.conflictId, "restore", registry))).toBe("INCONSISTENT_HISTORY");
+    expect(await snapshot(s.b.db)).toEqual(before);
+    expect(await s.b.db.records.get([CALENDAR_BLOCKS, s.spare])).toBeUndefined();
+    expect(await codeOf(decide(s.b.db, s.conflictId, "keepDeleted", registry))).toBe("OK");
+    expect(await s.b.db.replacedVersions.where("[type+id]").equals([CALENDAR_BLOCKS, s.spare]).count()).toBe(2); // the other task's version and the backup's
+  });
+
+  it("control: the same pending restore with a consistent history brings the block back with its own task", async () => {
+    const s = await deletedWithPendingRestore();
+    expect(await codeOf(decide(s.b.db, s.conflictId, "restore", registry))).toBe("OK");
+    expect((await blockOf(s.b, s.spare)).taskId).toBe(s.write);
+  });
 });
