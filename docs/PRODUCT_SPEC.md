@@ -60,7 +60,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Every goal has a required name and an optional description (T-054).
 - [ ] Every milestone has a required name and an optional description (T-055).
 - [ ] A milestone may have an optional deadline (T-056); if set, it must be on or after its goal's start date and no later than the goal's deadline when one exists (T-057).
-- [ ] Numeric output goals use a custom unit label entered by the owner (T-050). From Stage 5 each output goal tracks exactly one output definition; existing output goals are migrated by asking the owner to choose or create a definition, keeping their target (T-137, T-139; the unit label's role afterwards is open, S-6).
+- [ ] Numeric output goals use a custom unit label entered by the owner (T-050). From Stage 5 each output goal tracks exactly one output definition; existing output goals are migrated by asking the owner to choose or create a definition, keeping their target (T-137, T-139). The unit shown for an output goal then comes from its definition and is not edited on the goal (T-154).
 - [ ] Numeric output goal targets are whole numbers in the initial release; decimal targets are deferred to a later, fuller version (T-051).
 - [ ] A goal may optionally link to a project (T-041) and has a date range whose start date defaults to today but can be changed to the past or future (T-042), one overall target (T-052), optional deadline (T-039), and status. Weekly objectives and choosing goal workdays are deferred until after Stage 5 (T-052, T-053).
 - [ ] The owner manually marks a goal complete; reaching its target does not automatically change its status (T-043).
@@ -86,7 +86,7 @@ A private, offline-first personal productivity app that helps one person set goa
 **Stage 4 goal and milestone rules (owner-approved 2026-10-25; DECISIONS T-077 to T-080, derived T-081 to T-087):**
 
 - A time goal's target is entered as hours and minutes and stored as whole minutes (T-077).
-- The target type is chosen when the goal is created and never changes; the amount and the unit label stay editable (T-079).
+- The target type is chosen when the goal is created and never changes; the amount and the unit label stay editable (T-079; from Stage 5 the unit comes from the goal's output definition instead, T-154).
 - A goal's deadline, when set, is on or after its start date. Changing a goal's dates so that a milestone deadline would fall outside them is refused, naming the milestones to adjust first; a milestone that a backup merge leaves outside the dates is shown with a warning (T-078, T-084).
 - Goal statuses: active, paused, completed; pause, resume, complete (also from paused), and reopen. Archiving keeps the status, and restoring returns to it. An archived goal and its milestones are read-only until restored (T-082).
 - A milestone can be completed, reopened, edited, or deleted (after a confirmation) while its goal is not archived; completing or reopening the goal never changes its milestones (T-080, T-083).
@@ -224,7 +224,7 @@ Palette identifiers and theme values, the default-color rule, snapping in the co
 
 ### Actual work and outputs
 
-Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-108, T-117, T-118, T-120 to T-125 (approval date not stated; recorded 2026-10-26) and T-129 to T-145 (approved 2026-10-26), derived technical choices T-109 to T-116, T-119, T-126 to T-128, T-146 to T-152, and the remaining open details (S-3, S-6, S-7, S-9, S-11 in part). Items below cite their source; items marked *(spec)* come from this specification without a specific owner decision.
+Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-108, T-117, T-118, T-120 to T-125 (approval date not stated; recorded 2026-10-26), T-129 to T-145 (approved 2026-10-26), and T-153 to T-159 (approved 2026-10-29), and derived technical choices T-109 to T-116, T-119, T-126 to T-128, T-146 to T-152, T-160, T-161. No Stage 5 open detail remains (S-1 to S-15 are resolved). Items below cite their source; items marked *(spec)* come from this specification without a specific owner decision.
 
 **Stage boundary (T-145):** Stage 5 records actual sessions and outputs. The planned-versus-actual calendar comparison and calendar drag interactions for actual sessions stay in Stage 6 (T-071, T-072).
 
@@ -235,7 +235,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 - [ ] A forgotten running session: the next time the app opens, it asks for the session's end time (T-093).
 - [ ] Linking a task is optional (T-095). A session started from a planned block is linked to it automatically only when the block is for the same task (T-094). A separately recorded session may later be linked to a planned block of the same task; linking never changes the session's recorded times (T-135).
 - [ ] A past session is entered as a start time and a duration; the app stores exact start and end instants. Any past date is allowed; a finished session cannot be in the future (T-096).
-- [ ] A session lasts at most 24 hours (T-136; whether pauses count toward the limit is open, S-11, proposed T-149).
+- [ ] A session has at most 24 hours of actual work time; paused time does not count toward the limit (T-136, T-158).
 - [ ] Overlapping manually entered sessions show a warning and can still be saved (T-097).
 - [ ] Ending a session needs no status label (no "incomplete" or "cancelled"), whether or not the intended output was achieved; results, including partial results, are recorded as outputs, and a session may be saved with none (T-098).
 - [ ] The session's actual duration and its measured outputs are separate values (T-099): a 2-hour Shadowing session that covered 15 minutes of audio/video content lasts 2 hours and has an output of 15 content minutes.
@@ -243,25 +243,26 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 - [ ] End time cannot precede start time *(spec)*. The session stores actual timestamps and historical task/project/workstream snapshots when a task is linked *(spec)*.
 - [ ] An incorrectly recorded session can be edited or deleted. Deleting moves it to a trash for 30 days, where it can be restored; the owner may empty the trash earlier, which deletes permanently. Deletion travels in backups, and an older backup never brings a permanently deleted session back (T-103, T-142).
 - [ ] Corrections of session times keep their history, also in backups; a reason is optional (T-102). Finished sessions are not silently reopened *(spec)*.
+- [ ] Changes to a session's note, energy and focus ratings, expected output amounts, task association, and planned-block association keep no edit history; only the current values are kept (T-157).
 - [ ] Running and paused sessions are included in backups. On another device an unfinished session is restored as paused and its timer does not continue; if that device already has an open session, the user must resolve the conflict (end or delete one) before continuing (T-144, T-152).
 - [ ] Editing a session never implicitly creates or changes a planned block *(spec; principle 1)*.
 
 **Outputs**
 
 - [ ] A session may have several output records, e.g. vocabulary count and minutes of source content covered; outputs are optional and are recorded only within a session (no standalone output entry) (T-104, T-141).
-- [ ] Output values are whole numbers in this stage; decimals may come later (T-104). Whether 0 is allowed is open (S-11).
+- [ ] Output values are whole numbers in this stage; decimals may come later (T-104). An output value of 0 is valid and differs from recording no output for that definition (T-159).
 - [ ] Output definitions are reusable across sessions, with a user-entered name and unit (T-104). A definition can be archived: it stays on historical records but cannot be chosen for new sessions (T-107).
 - [ ] Editing the name or unit of a definition already in use asks whether the change also applies to historical records or whether they keep the previous name and unit (T-107).
 - [ ] A task may store several suggested output definitions, offered during session entry; they never restrict which definitions can be recorded or which compatible goals can be chosen (T-138).
-- [ ] Corrections of output values keep their history, also in backups; a reason is optional (T-102). An individual output can be deleted; the deletion is kept in history and backups, and the output no longer counts toward progress (T-143). Planned output is never assumed achieved *(spec)*.
+- [ ] Corrections of output values keep their history, also in backups; a reason is optional (T-102). An individual output can be deleted; the deletion is kept in history and backups, and the output no longer counts toward progress (T-143). Like a deleted session, it can be restored for 30 days and is then deleted permanently; emptying the trash earlier also deletes it permanently (T-153). Planned output is never assumed achieved *(spec)*.
 - [ ] For each session, an expected output amount may be entered per applicable output definition; it is optional and separate from the actual output, which may be below or above it, e.g. expected 30 words, actual 20 (T-125). A session started from a planned block that has expected output amounts receives a copy of them; otherwise expected amounts stay unset unless the user enters them (T-141). When a session ends, the user may record several outputs and, optionally, expected values (T-141). Expected amounts never count toward goals.
 
 **Tasks and goals**
 
 - [ ] A task is completed only by a separate, explicit action; a task-count goal advances only when a task is explicitly marked complete (T-091, T-108).
 - [ ] Each occurrence of a recurring task can be marked complete on its own and counts as one completion toward a task-count goal; the recurring task itself stays active and is not completed or archived (T-118).
-- [ ] A completed one-off task can be reopened, and a completed occurrence can be reopened on its own; reopening reverses the task-count progress. A future occurrence cannot be marked complete before it has happened (T-133; whether today's occurrence counts as happened: S-7).
-- [ ] Completed tasks and occurrences leave the active-task list but stay visible on their date in the calendar and history with a completed marker; future occurrences of a recurring task stay scheduled (T-134).
+- [ ] A completed one-off task can be reopened, and a completed occurrence can be reopened on its own; reopening reverses the task-count progress. A future occurrence cannot be marked complete before it has happened; an occurrence scheduled for today may be marked complete at any time that day, even before its scheduled time (T-133, T-155).
+- [ ] Completed tasks and occurrences leave the active-task list but stay visible on their date in the calendar and history with a completed marker; future occurrences of a recurring task stay scheduled (T-134). A completed one-off task is shown on the actual local date it was completed (T-156).
 - [ ] A task may be linked to several goals of any type; a project's goal link does not link its tasks (T-120, T-121). Changing a task's links affects only later sessions and completions; earlier records keep the attribution chosen when they were recorded (T-132).
 - [ ] A session's work time counts toward at most one time goal. If its task is linked to time goals, the user chooses one of them or "none" for each session; otherwise the user may attribute it manually to a time goal (T-047, T-100, T-122, T-129).
 - [ ] A completed task or occurrence counts toward at most one task-count goal. If the task is linked to task-count goals, the user chooses one of them or "none" at completion; otherwise the user may attribute that completion manually, without adding a lasting link (T-048, T-123, T-130).
