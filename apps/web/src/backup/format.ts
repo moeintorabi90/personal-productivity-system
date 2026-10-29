@@ -260,7 +260,9 @@ function validateEntry(raw: z.infer<typeof entryShape>, type: string, id: string
  *
  * Upgrades (docs/BACKUP_FORMAT.md, "Versioning and upgrades"): 1 → 2 adds record types, 2 → 3
  * adds a type and optional fields (absent, never null), 3 → 4 adds types (goals, milestones), and
- * 4 → 5 adds the optional project `color`, so every upgrade is the identity. The
+ * 4 → 5 adds the optional project `color`, and 5 → 6 adds Stage 5 types and optional fields
+ * (output-goal `definitionId`, task `goalIds` and `outputDefinitionIds`, block `expectedOutputs`),
+ * so every upgrade is the identity. The
  * payload is checked against the types AND fields of ITS version: a version-1 file containing a
  * version-2 type is refused as an unknown record type, and a version-2 task with `recurrence` is
  * refused as invalid data.

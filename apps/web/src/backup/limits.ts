@@ -6,11 +6,13 @@ export const FORMAT_VERSION = 1;
  * preferences (Stage 1B). 2: adds projects, workstreams, and task definitions (Stage 2). 3: adds
  * calendar blocks and the optional fields task `recurrence` and preference `dailyCapacityMinutes`
  * (Stage 3, T-025). 4: adds goals and milestones (Stage 4, T-081). 5: adds the optional project
- * `color` (Stage 3 follow-up, T-070, T-088). Readers accept every version from 1 to this one;
+ * `color` (Stage 3 follow-up, T-070, T-088). 6: adds sessions, output definitions, output records,
+ * corrections, and task completions, and the optional fields goal `definitionId`, task `goalIds`
+ * and `outputDefinitionIds`, and block `expectedOutputs` (Stage 5, T-109, T-146). Readers accept every version from 1 to this one;
  * each record type declares the version that introduced it, and types whose fields changed keep
  * the schema of older versions.
  */
-export const DATA_SCHEMA_VERSION = 5;
+export const DATA_SCHEMA_VERSION = 6;
 
 export const MIB = 1024 * 1024;
 export const MAX_FILE_BYTES = 32 * MIB;

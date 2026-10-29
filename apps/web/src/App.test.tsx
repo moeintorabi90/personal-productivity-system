@@ -78,7 +78,7 @@ describe("v1 app shell (sync frozen and hidden, D-016)", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Welcome" })).toBeTruthy();
     await waitFor(() => expect(document.documentElement.dir).toBe("ltr"));
     const nav = screen.getByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Home", "Today", "Calendar", "Inbox", "Projects", "Goals", "Settings", "Backup"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Home", "Today", "Work", "Calendar", "Inbox", "Projects", "Goals", "Settings", "Backup"]);
     expect(screen.queryByTestId("sync-status")).toBeNull();
     expect(screen.queryByText("Sync check notes")).toBeNull();
     expect((await screen.findByTestId("last-backup")).textContent).toBe("No backup yet");
@@ -415,7 +415,7 @@ describe("Stage 2: inbox, projects, workstreams, tasks", () => {
     fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
     await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
     const nav = screen.getByRole("navigation", { name: "اصلی" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["خانه", "امروز", "تقویم", "صندوق ورودی", "پروژه‌ها", "اهداف", "تنظیمات", "پشتیبان"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["خانه", "امروز", "کار", "تقویم", "صندوق ورودی", "پروژه‌ها", "اهداف", "تنظیمات", "پشتیبان"]);
     fireEvent.click(within(nav).getByRole("button", { name: "صندوق ورودی" }));
     expect(await screen.findByLabelText("ثبت سریع کار یا ایده")).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "پروژه‌ها" }));
@@ -628,6 +628,8 @@ describe("Stage 4: goals and milestones (TESTING.md Stage 4 item 11)", () => {
     fireEvent.change(field("Target (whole number)"), { target: { value: "2.5" } });
     expect(await screen.findByText("Enter a whole number from 1 to 1,000,000,000.")).toBeTruthy();
     fireEvent.change(field("Target (whole number)"), { target: { value: "300" } });
+    // From Stage 5 an output goal tracks an output definition, created here with the goal (T-151, T-154).
+    fireEvent.change(field("Name of the output definition"), { target: { value: "Pages written" } });
     fireEvent.change(field("Unit (for example pages or words)"), { target: { value: "pages" } });
     await waitFor(() => expect(field("Project (optional)").querySelectorAll("option")).toHaveLength(2));
     fireEvent.change(field("Project (optional)"), { target: { value: project } });
@@ -638,10 +640,13 @@ describe("Stage 4: goals and milestones (TESTING.md Stage 4 item 11)", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: /Write the book/ })).toBeTruthy();
     const goal = (await loadGoals(services.db)).goals[0]!;
-    expect(goal.data).toMatchObject({ kind: "output", target: 300, unit: "pages", projectId: project, startDate: today, deadline: "2099-12-31", status: "active" });
-    expect(screen.getByText(/Progress is not calculated yet/)).toBeTruthy();
+    expect(goal.data).toMatchObject({ kind: "output", target: 300, projectId: project, startDate: today, deadline: "2099-12-31", status: "active" });
+    expect(goal.data).not.toHaveProperty("unit"); // the unit comes from the definition (T-161)
+    expect(goal.data.definitionId).toBeTruthy();
+    expect(screen.getByText(/Progress is calculated from recorded work sessions/)).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/%/);
-    expect(document.body.textContent).toContain("300 pages");
+    // The unit comes from the output definition, read by its own live query (T-154).
+    await waitFor(() => expect(document.body.textContent).toContain("300 pages"));
 
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
     await screen.findByRole("button", { name: "Resume" });
@@ -749,7 +754,7 @@ describe("Stage 4: goals and milestones (TESTING.md Stage 4 item 11)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "ساختن هدف" }));
     await screen.findByRole("heading", { level: 1, name: /مطالعه/ });
     expect((await loadGoals(services.db)).goals[0]!.data).toMatchObject({ kind: "taskCount", startDate: "2026-11-02", target: 12 });
-    expect(await screen.findByText(/پیشرفت هنوز محاسبه/)).toBeTruthy();
+    expect(await screen.findByText(/پیشرفت از جلسه‌های کار/)).toBeTruthy();
     // 2 Nov 2026 = 11 Aban 1405: wait until the date line uses the Jalali display calendar.
     await waitFor(() => expect(document.body.textContent).toContain("آبان"));
   });
@@ -828,7 +833,8 @@ describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-
     fireEvent.change(await screen.findByLabelText("Color"), { target: { value: "" } }); // back to the default
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(async () => expect((await loadOrganization(services.db)).projects[0]!.data).not.toHaveProperty("color"));
-    expect((await screen.findByTestId("project-color")).textContent).toMatch(/\(default\)/);
+    // The view follows the database through a live query: wait for it instead of reading once.
+    await waitFor(async () => expect((await screen.findByTestId("project-color")).textContent).toMatch(/\(default\)/));
     expect((await services.db.records.where("type").equals("calendarBlocks").toArray())[0]).toEqual(blockBefore);
 
     await goTo("Today");
@@ -999,5 +1005,112 @@ describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-
       shownDays().forEach((d) => seen.add(d));
     }
     expect([...seen].sort()).toEqual(["2026-10-31", "2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06"]);
+  });
+});
+
+describe("Stage 5: actual work sessions and outputs (TESTING.md Stage 5 items 1, 5, 6, 8a, 11)", () => {
+  const navTo = async (name: string) => fireEvent.click(await within(screen.getByRole("navigation")).findByRole("button", { name }));
+
+  it("starts, pauses, resumes, and ends a session with an output and a rating; the recorded session uses the strong color treatment with a label", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    const { createOutputDefinition, loadWork } = await import("./local/work.ts");
+    const content = await createOutputDefinition(services.db, { name: "Content covered", unit: "minutes" });
+    await navTo("Work");
+    expect(await screen.findByRole("heading", { level: 1, name: "Work" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Start" }));
+    const current = await screen.findByTestId("current-session");
+    fireEvent.click(await within(current).findByRole("button", { name: "Pause" }));
+    fireEvent.click(await within(current).findByRole("button", { name: "Resume" }));
+    // A second start is not offered while a session is open (T-092, T-117).
+    expect(await screen.findByText(/A session is open on this device/)).toBeTruthy();
+    fireEvent.click(await within(current).findByRole("button", { name: "End…" }));
+    const form = await screen.findByTestId("end-form");
+    fireEvent.click(within(form).getByRole("button", { name: "Add an output" }));
+    const row = await within(form).findByTestId("output-row");
+    fireEvent.change(within(row).getByLabelText("Output definition"), { target: { value: content } });
+    fireEvent.change(within(row).getByLabelText("Amount"), { target: { value: "15" } });
+    fireEvent.change(within(form).getByLabelText("Energy (1–5)"), { target: { value: "4" } });
+    fireEvent.click(within(form).getByRole("button", { name: "End session" }));
+
+    await waitFor(async () => expect((await loadWork(services.db)).sessions[0]!.data.endedAt).not.toBeNull());
+    const work = await loadWork(services.db);
+    expect(work.sessions[0]!.data).toMatchObject({ energy: 4, taskId: null });
+    expect(work.sessions[0]!.data.pauses).toHaveLength(1);
+    expect(work.outputs.map((o) => o.data.value)).toEqual([15]);
+    const history = await screen.findByTestId("session-history");
+    const recorded = await within(history).findByTestId("session-row");
+    await waitFor(() => expect(recorded.textContent).toContain("15 minutes · Content covered"));
+    expect(recorded.classList.contains("session-row")).toBe(true);
+    expect(recorded.dataset.color).toBe("neutral");
+    expect(recorded.textContent).toContain("Actual"); // a visible non-color cue (T-069)
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("completes and reopens today's occurrence of a recurring task from Today (T-118, T-133, T-134, T-155)", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    const { setRecurrence } = await import("./local/planning.ts");
+    const task = await createTask(services.db, { title: "Daily vocab" });
+    await setRecurrence(services.db, task, { kind: "weekdays", weekdays: [0, 1, 2, 3, 4, 5, 6], startDate: "2026-01-01", endDate: null });
+    await navTo("Today");
+    const item = await screen.findByTestId("unscheduled-row");
+    fireEvent.click(await within(item).findByRole("button", { name: "Mark complete: Daily vocab" }));
+    const done = await screen.findByTestId("completed-row");
+    expect(done.textContent).toContain("Daily vocab");
+    await waitFor(() => expect(screen.queryByTestId("unscheduled-row")).toBeNull());
+    fireEvent.click(within(done).getByRole("button", { name: "Reopen: Daily vocab" }));
+    expect(await screen.findByTestId("unscheduled-row")).toBeTruthy();
+  });
+
+  it("links a legacy output goal: an unknown pair asks the T-169 question; no leaves it unlinked, only yes links it", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    const { putRecord } = await import("./local/records.ts");
+    const { createOutputDefinition } = await import("./local/work.ts");
+    const goalId = crypto.randomUUID();
+    await putRecord(services.db, PRODUCT_REGISTRY, "goals", goalId, { name: "Lift", description: "", projectId: null, startDate: "2026-10-01", deadline: null, kind: "output", target: 500, unit: "kgs", status: "active", archivedAt: null });
+    const words = await createOutputDefinition(services.db, { name: "Writing", unit: "words" });
+    const kg = await createOutputDefinition(services.db, { name: "Lifting", unit: "kg" });
+    await navTo("Goals");
+    fireEvent.click(await screen.findByRole("button", { name: "Open goal: Lift" }));
+    const migration = await screen.findByTestId("goal-migration");
+    const select = within(migration).getByLabelText("Output definition") as HTMLSelectElement;
+    await waitFor(() => expect(select.querySelectorAll("option")).toHaveLength(3)); // definitions load through a live query
+    fireEvent.change(select, { target: { value: words } });
+    fireEvent.click(within(migration).getByRole("button", { name: "Connect" }));
+    // "kgs" and "words" are not listed forms of one unit and not in different scripts: the owner is asked.
+    let question = await within(migration).findByTestId("unit-question");
+    expect(question.textContent).toContain("only the singular and plural forms of the same unit");
+    fireEvent.click(within(question).getByRole("button", { name: "No" }));
+    expect((await within(migration).findByRole("alert")).textContent).toContain("Not connected");
+    expect((await loadGoals(services.db)).goals[0]!.data).not.toHaveProperty("definitionId");
+
+    fireEvent.change(within(migration).getByLabelText("Output definition"), { target: { value: kg } });
+    fireEvent.click(within(migration).getByRole("button", { name: "Connect" }));
+    question = await within(migration).findByTestId("unit-question");
+    expect(question.textContent).toContain("not for a translation, a synonym, or a different or convertible unit");
+    fireEvent.click(within(question).getByRole("button", { name: "Yes, the same unit" }));
+    await waitFor(async () => expect((await loadGoals(services.db)).goals[0]!.data).toMatchObject({ definitionId: kg, unit: "kgs", target: 500 }));
+    await waitFor(() => expect(screen.queryByTestId("goal-migration")).toBeNull());
+  });
+
+  it("the Work screen is translated in Persian (RTL)", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    await goTo("Settings");
+    fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
+    await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+    await navTo("کار");
+    expect(await screen.findByRole("heading", { level: 1, name: "کار" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "شروع جلسه" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "تعریف‌های خروجی" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "سطل بازیافت" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "شروع" }));
+    expect(await screen.findByRole("heading", { name: "جلسه‌ی جاری" })).toBeTruthy();
+    expect(await screen.findByText("در حال اجرا")).toBeTruthy();
   });
 });

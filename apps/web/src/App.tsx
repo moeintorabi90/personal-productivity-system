@@ -10,8 +10,9 @@ import { ProjectsView } from "./components/ProjectsView.tsx";
 import { SettingsView } from "./components/SettingsView.tsx";
 import { ConnectivityNotice, StatusBar } from "./components/StatusBar.tsx";
 import { TodayView } from "./components/TodayView.tsx";
+import { SessionPrompts, useTrashMaintenance, WorkScreen } from "./components/work-ui.tsx";
 
-type View = "home" | "today" | "calendar" | "inbox" | "projects" | "goals" | "settings" | "backup" | "account";
+type View = "home" | "today" | "work" | "calendar" | "inbox" | "projects" | "goals" | "settings" | "backup" | "account";
 
 export function App() {
   const prefs = usePreferences();
@@ -19,10 +20,12 @@ export function App() {
   const t = useT();
   const { syncEnabled } = useServices();
   const [view, setView] = useState<View>("home");
+  useTrashMaintenance();
 
   const navItems: { id: View; label: string }[] = [
     { id: "home", label: t("nav.home") },
     { id: "today", label: t("nav.today") },
+    { id: "work", label: t("nav.work") },
     { id: "calendar", label: t("nav.calendar") },
     { id: "inbox", label: t("nav.inbox") },
     { id: "projects", label: t("nav.projects") },
@@ -57,10 +60,13 @@ export function App() {
       </nav>
       <main id="main" className="app-main" tabIndex={-1}>
         <ConnectivityNotice />
+        <SessionPrompts />
         {view === "home" ? (
           <HomeView onOpenBackup={() => setView("backup")} />
         ) : view === "today" ? (
-          <TodayView onOpenSettings={() => setView("settings")} />
+          <TodayView onOpenSettings={() => setView("settings")} onOpenWork={() => setView("work")} />
+        ) : view === "work" ? (
+          <WorkScreen onOpenSettings={() => setView("settings")} />
         ) : view === "calendar" ? (
           <CalendarView onOpenSettings={() => setView("settings")} />
         ) : view === "inbox" ? (

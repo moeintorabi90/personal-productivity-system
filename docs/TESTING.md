@@ -163,7 +163,7 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Sta
 
 12. Consecutive days of recorded app use (fixed dates) give the expected current and longest streaks; a day without use breaks the current streak and keeps the longest; the value is labelled as this device's, is not exported as mergeable data, and is unchanged by an import; no points, penalties, or pressure appear. (What counts as use and the day boundary: open detail 7.)
 
-## Stage 5 acceptance tests (specified 2026-10-26; not implemented)
+## Stage 5 acceptance tests (specified 2026-10-26; implemented 2026-10-29 on `feat/stage-5-sessions-outputs`, see "Stage 5 test report")
 
 Contract: DECISIONS "Stage 5 decisions" (owner-approved T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-153 to T-159, T-162, T-163, T-165, T-166, T-168, T-169; proposed T-109 to T-116, T-119, T-126 to T-128, T-146 to T-152, T-160, T-161, T-164, T-167); S-1 to S-15 are resolved; the plural-recognition method behind item 6 follows the implementation review of T-167 (its expected results for singular/plural pairs and for translations and different units are owner-approved, T-168, as is the question for unknown pairs, T-169; the harmless-difference case and which pairs count as confidently recognized are derived; the examples assume the reviewed method knows the listed forms). Fixed dates and zones.
 
@@ -183,6 +183,45 @@ Contract: DECISIONS "Stage 5 decisions" (owner-approved T-091 to T-108, T-117, T
 11. UI: English and Persian (RTL, Jalali dates), keyboard and screen-reader paths for every action; actual work uses the stronger project color with a non-color cue (T-069).
 11a. Stage boundary (T-145): Stage 5 adds no planned-versus-actual calendar lanes and no drag interaction for actual sessions.
 12. Manual on the owner's Windows laptop and Android phone: a real session with pauses, a forgotten session, past entry, outputs, deletion and restore, completing and reopening a task, and moving the data (including an open session) by backup.
+
+## Stage 5 test report (2026-10-29; branch `feat/stage-5-sessions-outputs`, version 0.7.0; not merged)
+
+Commands run on the Windows development machine (Edge for end-to-end tests):
+
+- `npm.cmd run typecheck`: passed.
+- `npm.cmd test`: 32 files, 359 tests passed (306 on `main` before Stage 5). New test files: `local/work.test.ts` 32, `backup/work-backup.test.ts` 12, `work/units.test.ts` 5. There are also 4 new Stage 5 component tests in `App.test.tsx`.
+- `npm.cmd run test:e2e`: 12 passed (11 before), including the new "Stage 5 offline" test.
+
+Earlier tests were updated for approved Stage 5 changes:
+
+- Output goals now create or choose an output definition instead of typing their own unit (T-151, T-154, T-161). The Stage 4 backup tests write that kind of goal directly, as a legacy (pre-Stage-5) record.
+- Exports now carry `dataSchemaVersion` 6, so "newer" in the tests is now 7.
+- The navigation has a Work item.
+- The goal progress note changed.
+- Two component tests now wait for their live query before reading text. One is the project-color test, a pre-existing timing issue that more live queries made likelier; the other is the definition's unit on the goal screen.
+
+Coverage per item:
+
+- Items 1–5 (sessions, forgotten and long-paused sessions, block links, past entry and limits, no end status, separate values, note and ratings): `local/work.test.ts`, the component test "starts, pauses, resumes, and ends a session", and the end-to-end Stage 5 test. That end-to-end test records a real session with a pause and an output, then a past session, and reloads offline.
+- Item 6 (outputs, definitions, the different-unit rule, suggested definitions, legacy-goal migration with match, mismatch, and unknown): `local/work.test.ts`, `work/units.test.ts` (harmless differences, English and Persian singular/plural forms including irregular ones, translations, synonyms, different units, and unknown pairs), and the component test for the T-169 question (no keeps the goal unlinked; yes links it with target and unit unchanged).
+- Items 7–8b (corrections, attribution, completions, reopening, today's and future occurrences, one-off completion date, expected amounts): `local/work.test.ts`, `backup/work-backup.test.ts` (corrections appended on import; the same completion made on two devices stays one record), and the component test "completes and reopens today's occurrence".
+- Item 9 (trash): `local/work.test.ts` covers restore within 30 days, tombstones afterwards and when the trash is emptied, and a single output's trash. `backup/work-backup.test.ts` shows that an older backup is "older copy" after the trash is emptied.
+- Items 10, 10a (backup version 6, open sessions): `backup/work-backup.test.ts` covers:
+  - identical round-trips, also encrypted;
+  - `null` versus omitted fields;
+  - version 5 unchanged and refusals by version;
+  - samples 1–5 and the new version-6 sample;
+  - a running session arriving paused from the backup's creation time;
+  - two open sessions blocking start and resume.
+  The end-to-end test moves an open session to a fresh browser profile, where it shows "Paused (from a backup)".
+- Item 11 (English and Persian, RTL, labels, non-color cue): the Persian Work-screen component test. The session rows carry an "Actual" label and a solid accent edge; in a manual check in the dev preview (dark theme), the computed edge was 6px solid accent on `--surface`.
+- Item 11a (stage boundary): no planned-versus-actual lanes or drag interaction for sessions were added.
+
+Not tested yet:
+
+- Item 12 (manual checks on the owner's Windows laptop and Android phone).
+- Screen-reader use of the new forms.
+- The app-open prompts' buttons in the browser. The prompt logic (left running, 24 hours of work, pause over 24 hours) is tested in `local/work.test.ts`; the UI is not.
 
 ## Release gate
 

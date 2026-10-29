@@ -31,7 +31,10 @@ import {
 } from "../planning/planning.ts";
 import { type ColorKey, itemColor } from "../planning/colors.ts";
 import { formatOffset, fromJalali, isLocalDate, isWallTime, localDateOf, MINUTE_MS, resolveWallTime, toJalali, wallTimeOf } from "../planning/time.ts";
-import { useOrganization } from "./data-hooks.ts";
+import { completedOn, type CompletionItem, isOccurrenceCompleted, isTaskCompleted, occurrenceHasHappened } from "../work/completions.ts";
+import type { WorkData } from "../local/work.ts";
+import { useOrganization, useWork } from "./data-hooks.ts";
+import { CompleteControl, type ExpectedDraft, ExpectedEditor, expectedDraftsOf, expectedOf, ReopenButton, StartFromBlockButton } from "./work-actions.tsx";
 
 /* ---------------- data ---------------- */
 
@@ -48,6 +51,10 @@ export function useBlocks(): BlockItem[] | undefined {
 export interface PlanningContext {
   org: Organization;
   blocks: BlockItem[];
+  /** Task completions (Stage 5): completed occurrences leave the unscheduled list (T-134). */
+  completions: CompletionItem[];
+  /** Output definitions, for expected amounts on blocks (T-150). */
+  definitions: WorkData["definitions"];
   tasks: Map<string, TaskDefinitionData>;
   projects: Map<string, ProjectData>;
   zone: string;
@@ -61,13 +68,16 @@ export interface PlanningContext {
 export function usePlanning(): { ctx: PlanningContext | null; loading: boolean; zone: string | null } {
   const org = useOrganization();
   const blocks = useBlocks();
+  const work = useWork();
   const shared = useSharedPreferences();
   const prefs = usePreferences();
   const ctx = useMemo(() => {
-    if (!org || !blocks || !shared.timeZone) return null;
+    if (!org || !blocks || !work || !shared.timeZone) return null;
     return {
       org,
       blocks,
+      completions: work.completions,
+      definitions: work.definitions,
       tasks: new Map(org.tasks.map((t) => [t.id, t.data])),
       projects: new Map(org.projects.map((p) => [p.id, p.data])),
       zone: shared.timeZone,
@@ -76,8 +86,8 @@ export function usePlanning(): { ctx: PlanningContext | null; loading: boolean; 
       calendarDisplay: prefs.calendarDisplay,
       weekStart: prefs.weekStart,
     };
-  }, [org, blocks, shared, prefs.language, prefs.calendarDisplay, prefs.weekStart]);
-  return { ctx, loading: !org || !blocks, zone: shared.timeZone };
+  }, [org, blocks, work, shared, prefs.language, prefs.calendarDisplay, prefs.weekStart]);
+  return { ctx, loading: !org || !blocks || !work, zone: shared.timeZone };
 }
 
 /** Today's local date in the configured zone; re-reads the clock every minute (passing midnight writes nothing). */
@@ -96,11 +106,14 @@ export interface DayPlan {
   overlaps: Set<string>;
   unscheduled: UnscheduledItem[];
   capacity: CapacityStatus;
+  /** Completed one-off tasks (on their completion date) and occurrences (on their date), T-134, T-156. */
+  completed: CompletionItem[];
 }
 
 /** One date as the views show it: filtered blocks and items; capacity always from ALL planned work. */
 export function dayPlan(ctx: PlanningContext, date: string, filter: PlanFilter): DayPlan {
-  const allItems = unscheduledItemsOn(ctx.org.tasks, ctx.blocks, date);
+  // A completed occurrence is no longer open work: it leaves the unscheduled list (T-134).
+  const allItems = unscheduledItemsOn(ctx.org.tasks, ctx.blocks, date).filter((item) => !isOccurrenceCompleted(ctx.completions, item.taskId, date));
   const shown = blocksOn(filterBlocks(ctx.blocks, filter, ctx.tasks), date, ctx.zone);
   return {
     date,
@@ -108,6 +121,7 @@ export function dayPlan(ctx: PlanningContext, date: string, filter: PlanFilter):
     overlaps: overlappingBlockIds(ctx.blocks, date, ctx.zone),
     unscheduled: filterUnscheduled(allItems, filter, ctx.tasks),
     capacity: capacityStatus(ctx.capacity, plannedMinutesOn(ctx.blocks, date, ctx.zone), allItems, ctx.tasks),
+    completed: completedOn(ctx.completions, date, ctx.zone),
   };
 }
 
@@ -275,14 +289,16 @@ export function BlockForm({ ctx, mode, onDone }: { ctx: PlanningContext; mode: B
           ? String(mode.durationMinutes)
           : "",
   );
+  const [expected, setExpected] = useState<ExpectedDraft[]>(expectedDraftsOf(editing?.data.expectedOutputs ?? []));
   const [error, setError] = useState<string | null>(null);
+  const expectedList = expectedOf(expected);
 
   const activeTasks = ctx.org.tasks.filter((task) => task.data.archivedAt === null).sort((a, b) => a.data.title.localeCompare(b.data.title));
   const minutes = Number(duration);
   const durationValid = duration.trim() !== "" && Number.isInteger(minutes) && minutes >= 1 && minutes <= BLOCK_MAX_MINUTES;
   const wall = isLocalDate(date) && isWallTime(startTime) ? resolveWallTime(date, startTime, ctx.zone) : null;
   const needsTitle = mode.kind === "new" && taskChoice === "";
-  const ready = !!wall && wall.kind === "ok" && durationValid && (!needsTitle || title.trim() !== "");
+  const ready = !!wall && wall.kind === "ok" && durationValid && (!needsTitle || title.trim() !== "") && expectedList !== null;
 
   // Capacity after this save, for every date the block touches (informational only).
   const overDates = useMemo(() => {
@@ -302,7 +318,7 @@ export function BlockForm({ ctx, mode, onDone }: { ctx: PlanningContext; mode: B
     event.preventDefault();
     if (!ready) return;
     setError(null);
-    const time = { date, startTime, durationMinutes: minutes };
+    const time = { date, startTime, durationMinutes: minutes, expectedOutputs: expectedList ?? [] };
     try {
       if (mode.kind === "edit") await updateBlock(db, mode.block.id, time);
       else if (mode.kind === "schedule") await createBlock(db, { ...time, taskId: mode.taskId, occurrenceDate: mode.occurrenceDate });
@@ -379,6 +395,7 @@ export function BlockForm({ ctx, mode, onDone }: { ctx: PlanningContext; mode: B
         />
         {duration !== "" && !durationValid ? <p className="hint hint-error">{t("plan.form.durationInvalid", { max: BLOCK_MAX_MINUTES })}</p> : null}
       </div>
+      <ExpectedEditor defs={ctx.definitions} tasks={ctx.tasks} taskId={fixedTaskId ?? (taskChoice || null)} drafts={expected} onChange={setExpected} />
       {overDates.map((o) => (
         <p key={o.date} className="notice notice-warn" data-testid="form-capacity-warning">
           {t("plan.form.overCapacity", { date: formatLocalDate(o.date, ctx, "medium"), planned: formatMinutes(t, o.planned), capacity: formatMinutes(t, ctx.capacity!) })}
@@ -421,6 +438,11 @@ export function BlockRow({ ctx, block, date, overlaps }: { ctx: PlanningContext;
   }
   const time = `${formatTime(block.data.startsAt, ctx.zone, ctx.language)}–${formatTime(block.data.endsAt, ctx.zone, ctx.language)}`;
   const minutes = (Date.parse(block.data.endsAt) - Date.parse(block.data.startsAt)) / MINUTE_MS;
+  // What this block's completion refers to (T-118, T-134): its occurrence, or the one-off task.
+  const task = ctx.tasks.get(block.data.taskId);
+  const occurrence = task?.recurrence ? block.data.occurrenceDate : null;
+  const completable = !!task && (task.recurrence ? occurrence !== null : true);
+  const completed = completable && (occurrence !== null ? isOccurrenceCompleted(ctx.completions, block.data.taskId, occurrence) : isTaskCompleted(ctx.completions, block.data.taskId));
   async function toggle() {
     setError(null);
     try {
@@ -435,6 +457,11 @@ export function BlockRow({ ctx, block, date, overlaps }: { ctx: PlanningContext;
         <span className="block-time">{time}</span> <span className="item-title">{label.title}</span>{" "}
         {cancelled ? <span className="pill pill-muted">{t("plan.cancelled")}</span> : <span className="pill">{t("plan.planned")}</span>}
         {overlaps && !cancelled ? <span className="pill pill-warn">{t("plan.overlap")}</span> : null}
+        {completed ? (
+          <span className="pill pill-ok" data-testid="completed-marker">
+            {t("work.completed")}
+          </span>
+        ) : null}
         <p className="hint">
           {formatMinutes(t, minutes)}
           {startDate !== date ? ` · ${t("plan.fromPreviousDay")}` : ""}
@@ -451,6 +478,10 @@ export function BlockRow({ ctx, block, date, overlaps }: { ctx: PlanningContext;
         ) : null}
       </div>
       <div className="button-row">
+        {!cancelled && task ? <StartFromBlockButton blockId={block.id} title={label.title} /> : null}
+        {!cancelled && completable && !completed && (occurrence === null || occurrenceHasHappened(occurrence, ctx.zone)) ? (
+          <CompleteControl taskId={block.data.taskId} occurrenceDate={occurrence} title={label.title} />
+        ) : null}
         {!cancelled ? (
           <button type="button" className="secondary" aria-label={t("plan.editLabel", { title: label.title })} onClick={() => setEditing(true)}>
             {t("org.edit")}
@@ -486,6 +517,7 @@ export function UnscheduledRow({ ctx, item }: { ctx: PlanningContext; item: Unsc
         <button type="button" aria-label={t("plan.scheduleLabel", { title: task.title })} onClick={() => setScheduling(true)}>
           {t("plan.schedule")}
         </button>
+        {occurrenceHasHappened(item.date, ctx.zone) ? <CompleteControl taskId={item.taskId} occurrenceDate={item.date} title={task.title} /> : null}
       </div>
     </li>
   );
@@ -532,7 +564,7 @@ export function DayPanel({ ctx, plan, heading, headingLevel = 2 }: { ctx: Planni
     <section className="day-panel" aria-label={heading ?? formatLocalDate(plan.date, ctx)} data-testid="day-panel" data-date={plan.date}>
       <Heading>{heading ?? formatLocalDate(plan.date, ctx)}</Heading>
       <CapacitySummary ctx={ctx} status={plan.capacity} />
-      {plan.blocks.length === 0 && plan.unscheduled.length === 0 ? <p className="muted">{t("plan.emptyDay")}</p> : null}
+      {plan.blocks.length === 0 && plan.unscheduled.length === 0 && plan.completed.length === 0 ? <p className="muted">{t("plan.emptyDay")}</p> : null}
       {plan.blocks.length > 0 ? (
         <ul className="item-list" aria-label={t("plan.blocks")}>
           {overlapGroups(plan.blocks, plan.date, ctx.zone).map((group) =>
@@ -558,6 +590,26 @@ export function DayPanel({ ctx, plan, heading, headingLevel = 2 }: { ctx: Planni
             {plan.unscheduled.map((item) => (
               <UnscheduledRow key={`${item.taskId}/${item.date}`} ctx={ctx} item={item} />
             ))}
+          </ul>
+        </>
+      ) : null}
+      {plan.completed.length > 0 ? (
+        <>
+          <p className="hint">{t("work.completedHeading")}</p>
+          <ul className="item-list" aria-label={t("work.completedHeading")}>
+            {plan.completed.map((c) => {
+              const title = ctx.tasks.get(c.data.taskId)?.title ?? t("org.unknownItem");
+              return (
+                <li key={c.id} className="item completed-row" data-testid="completed-row">
+                  <div className="item-main">
+                    <span className="item-title">{title}</span> <span className="pill pill-ok">{t("work.completed")}</span>
+                  </div>
+                  <div className="button-row">
+                    <ReopenButton taskId={c.data.taskId} occurrenceDate={c.data.occurrenceDate} title={title} />
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </>
       ) : null}

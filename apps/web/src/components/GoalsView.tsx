@@ -1,11 +1,13 @@
 /**
- * Stage 4 — goals and milestones (PRODUCT_SPEC "Goals and measures"; DECISIONS T-037 to T-065,
- * T-077 to T-087). Every write is an explicit user action. No progress is shown: it needs the
- * recorded work and outputs of Stage 5 (T-037, T-087).
+ * Goals and milestones (PRODUCT_SPEC "Goals and measures"; DECISIONS T-037 to T-065, T-077 to
+ * T-087). Every write is an explicit user action. From Stage 5 an output goal tracks one output
+ * definition and shows its unit (T-137, T-151, T-154); a pre-Stage-5 output goal is linked to a
+ * definition with a matching unit (T-139, T-166 to T-169). Progress is calculated from recorded
+ * work but shown only from Stage 6 (T-116, T-145).
  */
 import { type FormEvent, useId, useState } from "react";
 import { usePreferences, useServices, useT } from "../app-context.tsx";
-import { type GoalData, type GoalKind, NAME_MAX, TARGET_MAX, TEXT_MAX, UNIT_MAX } from "../backup/registry.ts";
+import { type GoalData, type GoalKind, NAME_MAX, type OutputDefinitionData, TARGET_MAX, TEXT_MAX, UNIT_MAX } from "../backup/registry.ts";
 import { formatLocalDate, type MessageKey, type Translate } from "../i18n/index.ts";
 import {
   createGoal,
@@ -28,12 +30,15 @@ import {
 } from "../local/goals.ts";
 import type { Organization } from "../local/organization.ts";
 import { RecordRuleError } from "../local/records.ts";
-import { useGoals, useOrganization } from "./data-hooks.ts";
+import { createOutputDefinition, definitionLabel, goalUnit, linkGoalDefinition, type WorkData, WorkError } from "../local/work.ts";
+import { matchUnits } from "../work/units.ts";
+import { useGoals, useOrganization, useWork } from "./data-hooks.ts";
 import { ArchivedPill } from "./organization-ui.tsx";
 import { DateField, formatMinutes, useSharedPreferences } from "./planning-ui.tsx";
 
 export function goalError(t: Translate, error: unknown): string {
   if (error instanceof GoalError) return t(`goal.error.${error.code}` as MessageKey, { names: error.milestoneNames.join(t("goals.nameSeparator")) });
+  if (error instanceof WorkError) return t(`work.error.${error.code}` as MessageKey);
   if (error instanceof RecordRuleError) return t(`org.error.${error.code}` as MessageKey);
   return t("org.error.generic");
 }
@@ -46,11 +51,14 @@ function ErrorNotice({ error }: { error: string | null }) {
   ) : null;
 }
 
-export function formatTarget(t: Translate, goal: Pick<GoalData, "kind" | "target" | "unit">): string {
+/** The target with its unit: an output goal shows its definition's unit (T-154), or its legacy label until linked. */
+export function formatTarget(t: Translate, goal: GoalData, definitions: ReadonlyMap<string, OutputDefinitionData>): string {
   if (goal.kind === "time") return formatMinutes(t, goal.target);
   if (goal.kind === "taskCount") return t("goals.targetCount", { count: goal.target });
-  return t("goals.targetOutput", { amount: goal.target, unit: goal.unit ?? "" });
+  return t("goals.targetOutput", { amount: goal.target, unit: goalUnit(goal, definitions) ?? "" });
 }
+
+const definitionsOf = (work: WorkData | undefined) => new Map((work?.definitions ?? []).map((d) => [d.id, d.data]));
 
 function StatusPill({ goal }: { goal: GoalData }) {
   const t = useT();
@@ -81,6 +89,8 @@ const FILTERS: GoalFilter[] = ["current", "active", "paused", "completed", "arch
 function GoalList({ goals, org, onOpen }: { goals: Goals; org: Organization; onOpen: (id: string) => void }) {
   const t = useT();
   const prefs = usePreferences();
+  const work = useWork();
+  const definitions = definitionsOf(work);
   const filterId = useId();
   const [filter, setFilter] = useState<GoalFilter>("current");
   const shown = filterGoals(goals.goals, filter);
@@ -110,8 +120,9 @@ function GoalList({ goals, org, onOpen }: { goals: Goals; org: Organization; onO
               <li key={g.id} className="item">
                 <div className="item-main">
                   <span className="item-title">{g.data.name}</span> <StatusPill goal={g.data} />
+                  {g.data.kind === "output" && !g.data.definitionId ? <span className="pill pill-warn">{t("goals.needsDefinition")}</span> : null}
                   <p className="hint">
-                    {[t(`goals.kind.${g.data.kind}`), formatTarget(t, g.data), projectName(g.data.projectId), goalDates(t, g.data, prefs)].filter(Boolean).join(" · ")}
+                    {[t(`goals.kind.${g.data.kind}`), formatTarget(t, g.data, definitions), projectName(g.data.projectId), goalDates(t, g.data, prefs)].filter(Boolean).join(" · ")}
                   </p>
                 </div>
                 <button type="button" className="secondary" aria-label={t("goals.openLabel", { name: g.data.name })} onClick={() => onOpen(g.id)}>
@@ -136,20 +147,18 @@ function goalDates(t: Translate, goal: Pick<GoalData, "startDate" | "deadline">,
 
 interface TargetDraft {
   amount: string;
-  unit: string;
   hours: string;
   minutes: string;
 }
 
-const draftOfTarget = (goal?: Pick<GoalData, "kind" | "target" | "unit">): TargetDraft =>
+const draftOfTarget = (goal?: Pick<GoalData, "kind" | "target">): TargetDraft =>
   goal
     ? {
         amount: goal.kind === "time" ? "" : String(goal.target),
-        unit: goal.unit ?? "",
         hours: goal.kind === "time" ? String(Math.floor(goal.target / 60)) : "",
         minutes: goal.kind === "time" ? String(goal.target % 60) : "",
       }
-    : { amount: "", unit: "", hours: "", minutes: "" };
+    : { amount: "", hours: "", minutes: "" };
 
 const wholeNumber = (text: string) => (/^\d+$/.test(text.trim()) ? Number(text.trim()) : null);
 
@@ -166,9 +175,9 @@ function targetOf(kind: GoalKind, d: TargetDraft): number | null {
   return n !== null && n >= 1 && n <= TARGET_MAX[kind] ? n : null;
 }
 
-function TargetFields({ kind, draft, onChange }: { kind: GoalKind; draft: TargetDraft; onChange: (d: TargetDraft) => void }) {
+function TargetFields({ kind, draft, onChange, unit }: { kind: GoalKind; draft: TargetDraft; onChange: (d: TargetDraft) => void; unit?: string | null }) {
   const t = useT();
-  const ids = { amount: useId(), unit: useId(), hours: useId(), minutes: useId() };
+  const ids = { amount: useId(), hours: useId(), minutes: useId() };
   const touched = kind === "time" ? draft.hours !== "" || draft.minutes !== "" : draft.amount !== "";
   const invalid = touched && targetOf(kind, draft) === null;
   if (kind === "time") {
@@ -191,11 +200,40 @@ function TargetFields({ kind, draft, onChange }: { kind: GoalKind; draft: Target
         <label htmlFor={ids.amount}>{t(kind === "output" ? "goals.target.amount" : "goals.target.count")}</label>
         <input id={ids.amount} inputMode="numeric" value={draft.amount} aria-invalid={invalid} onChange={(e) => onChange({ ...draft, amount: e.target.value })} />
         {invalid ? <p className="hint hint-error">{t("goals.target.invalid", { max: TARGET_MAX[kind] })}</p> : null}
+        {kind === "output" && unit ? <p className="hint">{t("goals.target.unitFromDefinition", { unit })}</p> : null}
       </div>
-      {kind === "output" ? (
-        <div className="field">
+    </>
+  );
+}
+
+/**
+ * The output definition of a new output goal (T-137, T-151): an existing one that is not archived,
+ * or a new one created with the goal. The goal shows the definition's unit (T-154).
+ */
+function DefinitionChoice({ work, value, onChange, draft, onDraft }: { work: WorkData | undefined; value: string; onChange: (v: string) => void; draft: { name: string; unit: string }; onDraft: (d: { name: string; unit: string }) => void }) {
+  const t = useT();
+  const ids = { def: useId(), name: useId(), unit: useId() };
+  const active = (work?.definitions ?? []).filter((d) => d.data.archivedAt === null);
+  return (
+    <>
+      <div className="field">
+        <label htmlFor={ids.def}>{t("goals.definition")}</label>
+        <select id={ids.def} value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">{t("goals.definition.new")}</option>
+          {active.map((d) => (
+            <option key={d.id} value={d.id}>
+              {`${definitionLabel(d.data).name} (${definitionLabel(d.data).unit})`}
+            </option>
+          ))}
+        </select>
+        <p className="hint">{t("goals.definition.hint")}</p>
+      </div>
+      {value === "" ? (
+        <div className="inline-form">
+          <label htmlFor={ids.name}>{t("goals.definition.name")}</label>
+          <input id={ids.name} value={draft.name} maxLength={NAME_MAX} onChange={(e) => onDraft({ ...draft, name: e.target.value })} />
           <label htmlFor={ids.unit}>{t("goals.target.unit")}</label>
-          <input id={ids.unit} value={draft.unit} maxLength={UNIT_MAX} onChange={(e) => onChange({ ...draft, unit: e.target.value })} />
+          <input id={ids.unit} value={draft.unit} maxLength={UNIT_MAX} onChange={(e) => onDraft({ ...draft, unit: e.target.value })} />
         </div>
       ) : null}
     </>
@@ -233,20 +271,26 @@ function NewGoal({ org, onCreated }: { org: Organization; onCreated: (id: string
   const [description, setDescription] = useState("");
   const [kind, setKind] = useState<GoalKind>("output");
   const [target, setTarget] = useState<TargetDraft>(draftOfTarget());
+  const work = useWork();
+  const [definitionId, setDefinitionId] = useState("");
+  const [newDefinition, setNewDefinition] = useState({ name: "", unit: "" });
   const [projectId, setProjectId] = useState("");
   const [startDate, setStartDate] = useState<string | null>(null); // null = today's default (T-086)
   const [deadline, setDeadline] = useState("");
   const [error, setError] = useState<string | null>(null);
   const start = startDate ?? defaultStartDate(shared.timeZone);
   const value = targetOf(kind, target);
-  const ready = !!name.trim() && value !== null && !!start && (kind !== "output" || !!target.unit.trim());
+  const definitionReady = definitionId !== "" || (!!newDefinition.name.trim() && !!newDefinition.unit.trim());
+  const ready = !!name.trim() && value !== null && !!start && (kind !== "output" || definitionReady);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
     if (value === null) return;
     try {
-      const id = await createGoal(db, { name, description, kind, target: value, unit: target.unit, projectId: projectId || null, startDate: start, deadline: deadline || null });
+      const outputDefinition = kind === "output" ? definitionId || (await createOutputDefinition(db, newDefinition)) : undefined;
+      if (outputDefinition) setDefinitionId(outputDefinition);
+      const id = await createGoal(db, { name, description, kind, target: value, definitionId: outputDefinition, projectId: projectId || null, startDate: start, deadline: deadline || null });
       onCreated(id);
     } catch (e) {
       setError(goalError(t, e));
@@ -276,6 +320,7 @@ function NewGoal({ org, onCreated }: { org: Organization; onCreated: (id: string
           </select>
           <p className="hint">{t("goals.kindFixed")}</p>
         </div>
+        {kind === "output" ? <DefinitionChoice work={work} value={definitionId} onChange={setDefinitionId} draft={newDefinition} onDraft={setNewDefinition} /> : null}
         <TargetFields kind={kind} draft={target} onChange={setTarget} />
         <ProjectSelect org={org} value={projectId} current={null} onChange={setProjectId} />
         <DateField label={t("goals.startDate")} value={start} onChange={setStartDate} required />
@@ -302,7 +347,8 @@ function GoalEditor({ goal, org, onDone }: { goal: Goal; org: Organization; onDo
   const [error, setError] = useState<string | null>(null);
   const kind = goal.data.kind;
   const value = targetOf(kind, target);
-  const ready = !!name.trim() && value !== null && !!startDate && (kind !== "output" || !!target.unit.trim());
+  const work = useWork();
+  const ready = !!name.trim() && value !== null && !!startDate;
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -313,7 +359,6 @@ function GoalEditor({ goal, org, onDone }: { goal: Goal; org: Organization; onDo
         name,
         description,
         target: value,
-        ...(kind === "output" ? { unit: target.unit } : {}),
         projectId: projectId || null,
         startDate,
         deadline: deadline || null,
@@ -337,7 +382,7 @@ function GoalEditor({ goal, org, onDone }: { goal: Goal; org: Organization; onDo
       <p className="hint">
         {t("goals.kind")}: {t(`goals.kind.${kind}`)} — {t("goals.kindFixed")}
       </p>
-      <TargetFields kind={kind} draft={target} onChange={setTarget} />
+      <TargetFields kind={kind} draft={target} onChange={setTarget} unit={goalUnit(goal.data, definitionsOf(work))} />
       <ProjectSelect org={org} value={projectId} current={goal.data.projectId} onChange={setProjectId} />
       <DateField label={t("goals.startDate")} value={startDate} onChange={setStartDate} required />
       <DateField label={t("goals.deadline")} value={deadline} onChange={setDeadline} hint={t("goals.deadlineHint")} />
@@ -360,6 +405,8 @@ function GoalDetail({ goal, goals, org, onBack }: { goal: Goal; goals: Goals; or
   const t = useT();
   const prefs = usePreferences();
   const { db } = useServices();
+  const work = useWork();
+  const definitions = definitionsOf(work);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const archived = goal.data.archivedAt !== null;
@@ -398,8 +445,14 @@ function GoalDetail({ goal, goals, org, onBack }: { goal: Goal; goals: Goals; or
               </div>
               <div>
                 <dt>{t("goals.field.target")}</dt>
-                <dd>{formatTarget(t, goal.data)}</dd>
+                <dd>{formatTarget(t, goal.data, definitions)}</dd>
               </div>
+              {goal.data.kind === "output" && goal.data.definitionId && definitions.get(goal.data.definitionId) ? (
+                <div>
+                  <dt>{t("goals.definition")}</dt>
+                  <dd>{definitionLabel(definitions.get(goal.data.definitionId)!).name}</dd>
+                </div>
+              ) : null}
               <div>
                 <dt>{t("goals.field.project")}</dt>
                 <dd>{project ? project.data.name : goal.data.projectId ? t("org.unknownItem") : t("goals.noProject")}</dd>
@@ -410,6 +463,7 @@ function GoalDetail({ goal, goals, org, onBack }: { goal: Goal; goals: Goals; or
               </div>
             </dl>
             <p className="notice notice-info">{t("goals.progressNote")}</p>
+            {goal.data.kind === "output" && !goal.data.definitionId && !archived ? <LegacyGoalMigration goal={goal} work={work} /> : null}
             {archived ? (
               <>
                 <p className="hint">{t("goals.archivedHint")}</p>
@@ -631,5 +685,90 @@ function NewMilestone({ goal }: { goal: Goal }) {
         {t("milestones.add")}
       </button>
     </form>
+  );
+}
+
+/* ---------------- legacy output goals (T-139, T-166 to T-169) ---------------- */
+
+/**
+ * Links a pre-Stage-5 output goal to an output definition. The definition's unit must match the
+ * goal's unit: singular and plural forms of the same unit match (T-168); a recognized mismatch —
+ * a translation, a synonym, or a different unit — is refused (T-166); a pair the app cannot
+ * recognize is put to the owner as an explicit question, and only a yes links the goal (T-169).
+ * Nothing is converted and no rule is saved: the same pair on another goal is asked again.
+ */
+function LegacyGoalMigration({ goal, work }: { goal: Goal; work: WorkData | undefined }) {
+  const t = useT();
+  const { db } = useServices();
+  const ids = { title: useId() };
+  const legacyUnit = goal.data.unit ?? "";
+  const [definitionId, setDefinitionId] = useState("");
+  const [draft, setDraft] = useState({ name: goal.data.name, unit: legacyUnit });
+  const [question, setQuestion] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const chosen = definitionId ? work?.definitions.find((d) => d.id === definitionId) : undefined;
+  const unit = chosen ? definitionLabel(chosen.data).unit : draft.unit.trim();
+  const ready = definitionId !== "" || (!!draft.name.trim() && !!draft.unit.trim());
+
+  async function link(confirmed: boolean) {
+    setError(null);
+    try {
+      const result = matchUnits(legacyUnit, unit);
+      if (result === "mismatch") {
+        setError(t("goals.migrate.mismatch", { goalUnit: legacyUnit, unit }));
+        return;
+      }
+      if (result === "unknown" && !confirmed) {
+        setQuestion(unit);
+        return;
+      }
+      const id = definitionId || (await createOutputDefinition(db, draft));
+      await linkGoalDefinition(db, goal.id, id, result === "unknown" && confirmed);
+      setQuestion(null);
+    } catch (e) {
+      setError(goalError(t, e));
+    }
+  }
+
+  return (
+    <section className="notice notice-warn" aria-labelledby={ids.title} data-testid="goal-migration">
+      <h2 id={ids.title}>{t("goals.migrate.title")}</h2>
+      <p>{t("goals.migrate.intro", { unit: legacyUnit })}</p>
+      {question === null ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (ready) void link(false);
+          }}
+        >
+          <DefinitionChoice work={work} value={definitionId} onChange={setDefinitionId} draft={draft} onDraft={setDraft} />
+          <ErrorNotice error={error} />
+          <button type="submit" disabled={!ready}>
+            {t("goals.migrate.link")}
+          </button>
+        </form>
+      ) : (
+        <div role="alertdialog" aria-label={t("goals.migrate.questionTitle")} data-testid="unit-question">
+          <p>{t("goals.migrate.question", { goalUnit: legacyUnit, unit: question })}</p>
+          <p className="hint">{t("goals.migrate.questionHint")}</p>
+          <ErrorNotice error={error} />
+          <div className="button-row">
+            <button type="button" onClick={() => void link(true)}>
+              {t("goals.migrate.yes")}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setQuestion(null);
+                setError(t("goals.migrate.declined", { goalUnit: legacyUnit }));
+              }}
+            >
+              {t("goals.migrate.no")}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

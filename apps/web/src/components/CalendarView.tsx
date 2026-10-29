@@ -5,6 +5,7 @@ import type { BlockTimeInput } from "../local/planning.ts";
 import { NO_FILTER, type PlanFilter } from "../planning/planning.ts";
 import { addDays, monthDates, shiftMonth, weekDates, weekdayOf } from "../planning/time.ts";
 import { SearchField } from "./organization-ui.tsx";
+import { ReopenButton } from "./work-actions.tsx";
 import { BlockForm, BlockRow, DateField, DayPanel, dayPlan, type PlanningContext, TimeZonePrompt, UnscheduledRow, usePlanning, useToday } from "./planning-ui.tsx";
 import { TimeGrid } from "./TimeGrid.tsx";
 import { UndoBar, type UndoOffer } from "./UndoBar.tsx";
@@ -238,6 +239,7 @@ function GridView({ ctx, dates, focus, filter, week }: { ctx: PlanningContext; d
         </ul>
       ) : null}
       <GridUnscheduled ctx={ctx} dates={shown} filter={filter} />
+      <GridCompleted ctx={ctx} dates={shown} filter={filter} />
     </div>
   );
 }
@@ -257,6 +259,38 @@ function GridUnscheduled({ ctx, dates, filter }: { ctx: PlanningContext; dates: 
             {items.map((item) => (
               <UnscheduledRow key={`${item.taskId}/${item.date}`} ctx={ctx} item={item} />
             ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** Completed tasks and occurrences of the shown dates (T-134), listed below the grid with a marker and "Reopen". */
+function GridCompleted({ ctx, dates, filter }: { ctx: PlanningContext; dates: string[]; filter: PlanFilter }) {
+  const t = useT();
+  const groups = dates.map((date) => ({ date, items: dayPlan(ctx, date, filter).completed })).filter((g) => g.items.length > 0);
+  if (groups.length === 0) return null;
+  return (
+    <section className="day-panel" aria-label={t("work.completedHeading")} data-testid="grid-completed">
+      <h3>{t("work.completedHeading")}</h3>
+      {groups.map(({ date, items }) => (
+        <div key={date}>
+          <p className="hint">{formatLocalDate(date, ctx, "medium")}</p>
+          <ul className="item-list">
+            {items.map((c) => {
+              const title = ctx.tasks.get(c.data.taskId)?.title ?? t("org.unknownItem");
+              return (
+                <li key={c.id} className="item completed-row" data-testid="completed-row">
+                  <div className="item-main">
+                    <span className="item-title">{title}</span> <span className="pill pill-ok">{t("work.completed")}</span>
+                  </div>
+                  <div className="button-row">
+                    <ReopenButton taskId={c.data.taskId} occurrenceDate={c.data.occurrenceDate} title={title} />
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ))}
@@ -315,7 +349,7 @@ function MonthView({
             date: formatLocalDate(date, ctx),
             blocks: plan.blocks.length,
             unscheduled: plan.unscheduled.length,
-          });
+          }) + (plan.completed.length ? ` ${t("calendar.completedCount", { count: plan.completed.length })}` : "");
           return (
             <li key={date} className={`month-cell${over ? " month-over" : ""}`} data-date={date}>
               <button type="button" className="month-day" aria-label={over ? `${label} ${t("calendar.overCapacity")}` : label} onClick={() => onOpenDay(date)}>
@@ -323,11 +357,13 @@ function MonthView({
                 {ctx.calendarDisplay === "both" ? <span className="month-alt">{formatDayNumber(date, "jalali", ctx.language)}</span> : null}
                 {plan.blocks.length ? <span className="month-count">{t("calendar.blocksCount", { count: plan.blocks.length })}</span> : null}
                 {plan.unscheduled.length ? <span className="month-count">{t("calendar.unscheduledCount", { count: plan.unscheduled.length })}</span> : null}
+                {plan.completed.length ? <span className="month-count">{t("calendar.completedCount", { count: plan.completed.length })}</span> : null}
                 {over ? <span className="pill pill-warn month-over-pill">{t("calendar.overCapacity")}</span> : null}
                 {/* Phone width: compact marks; the full text is in the button's label. */}
                 <span className="month-compact" aria-hidden="true">
                   {plan.blocks.length ? `▪${plan.blocks.length} ` : ""}
                   {plan.unscheduled.length ? `○${plan.unscheduled.length} ` : ""}
+                  {plan.completed.length ? `✓${plan.completed.length} ` : ""}
                   {over ? "!" : ""}
                 </span>
               </button>

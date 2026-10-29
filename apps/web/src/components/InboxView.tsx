@@ -55,7 +55,7 @@ export function InboxView() {
       </div>
       {org && items.length === 0 ? <p className="muted">{query.trim() ? t("org.noMatches") : t("inbox.empty")}</p> : null}
       <ul className="item-list" data-testid="inbox-list">
-        {org ? items.map((task) => <TaskRow key={task.id} task={task} org={org} />) : null}
+        {org ? items.map((task) => <TaskRow key={task.id} task={task} org={org} listStatus={status} />) : null}
       </ul>
       {items.length > 0 ? <p className="hint">{t("inbox.organizeHint")}</p> : null}
     </section>

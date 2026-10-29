@@ -1,10 +1,11 @@
 import type { DeviceSettings, ImportLogRow, LocalDb, PendingConflictRow, ReplacedVersionRow, VersionEntry } from "../local/db.ts";
 import { deviceIdentity, getDeviceSettings, toEnvelope } from "../local/records.ts";
 import { ensureSharedPreferences } from "../local/settings.ts";
+import { markImportedSessions } from "../local/work.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
 import type { BackupHeader, BackupPayload } from "./format.ts";
-import type { DataLookup, Registry } from "./registry.ts";
+import { type DataLookup, linkTargets, type Registry } from "./registry.ts";
 import { compareVersions, isContainedIn } from "./versions.ts";
 
 /** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
@@ -153,10 +154,10 @@ function localEntry(local: LocalState): VersionEntry | null {
 function linkKeys(registry: Registry, type: string, data: Record<string, unknown>, where: string): string[] {
   const keys: string[] = [];
   for (const link of registry.get(type)?.links ?? []) {
-    const target = data[link.field];
-    if (target === null || target === undefined) continue;
-    if (typeof target !== "string") throw new BackupError("UNRESOLVED_REFERENCE", `${where}.${link.field}`);
-    keys.push(`${link.target}/${target}`);
+    for (const target of linkTargets(link, data)) {
+      if (typeof target !== "string") throw new BackupError("UNRESOLVED_REFERENCE", `${where}.${link.field}`);
+      keys.push(`${link.target}/${target}`);
+    }
   }
   return keys;
 }
@@ -422,12 +423,16 @@ export async function applyImport(
     const at = nowIso();
     let appliedUpdates = 0;
     let skippedUpdates = 0;
+    const written: { type: string; id: string; data: Record<string, unknown> }[] = [];
 
     for (const item of items) {
       const incoming = item.incoming;
       switch (item.category) {
         case "new":
-          if (!incoming.deleted) await db.records.put({ type: item.type, ...incoming.envelope });
+          if (!incoming.deleted) {
+            await db.records.put({ type: item.type, ...incoming.envelope });
+            written.push({ type: item.type, id: item.id, data: incoming.envelope.data });
+          }
           break;
         case "newTombstone":
           if (incoming.deleted) await db.tombstones.put(incoming.tombstone);
@@ -448,6 +453,7 @@ export async function applyImport(
             });
           }
           await db.records.put({ type: item.type, ...incoming.envelope });
+          written.push({ type: item.type, id: item.id, data: incoming.envelope.data });
           appliedUpdates++;
           break;
         default:
@@ -466,6 +472,8 @@ export async function applyImport(
           }
       }
     }
+    // Running sessions from the backup are treated as paused here from its creation time (T-152).
+    await markImportedSessions(db, written, header.createdAt);
     for (const conflict of carried.conflicts) await db.pendingConflicts.put(conflict);
     for (const replaced of carried.replaced) await db.replacedVersions.put(replaced);
     if (choices.applyDisplaySettings) {

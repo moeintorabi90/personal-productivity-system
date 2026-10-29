@@ -5,6 +5,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
+import { DATA_SCHEMA_VERSION } from "./limits.ts";
 import {
   captureToInbox,
   createProject,
@@ -66,11 +67,11 @@ const recordsOf = async (d: TestDevice) =>
     .sort((a, b) => `${a.type}/${a.id}`.localeCompare(`${b.type}/${b.id}`));
 
 describe("1–3. round-trip, merge without loss, idempotent re-import", () => {
-  it("an empty device receives every project, workstream, and task unchanged (written as dataSchemaVersion 5 since the Stage 3 follow-up)", async () => {
+  it("an empty device receives every project, workstream, and task unchanged (written as dataSchemaVersion 6 since Stage 5)", async () => {
     const a = await organizedDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(5);
+    expect(doc.app.dataSchemaVersion).toBe(6);
     expect(Object.keys(doc.payload.records).sort()).toEqual(["preferences", PROJECTS, TASK_DEFINITIONS, WORKSTREAMS].sort());
 
     const b = await device("B");
@@ -326,12 +327,13 @@ describe("11. versioning: dataSchemaVersion 1 files still import; types are chec
 
   it("a newer dataSchemaVersion is refused before anything else", async () => {
     const a = await organizedDevice();
-    const newer = mutate(await exportText(a.d), (doc) => (doc.app.dataSchemaVersion = 6));
+    const newer = mutate(await exportText(a.d), (doc) => (doc.app.dataSchemaVersion = 7));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
   });
 
   it("writes the dataSchemaVersion-2 sample when PPS_WRITE_SAMPLE=1 (maintainers only)", async () => {
-    if (process.env.PPS_WRITE_SAMPLE !== "1") return;
+    // The app writes its current version; this sample stays the committed version-2 file.
+    if (process.env.PPS_WRITE_SAMPLE !== "1" || (DATA_SCHEMA_VERSION as number) !== 2) return;
     const d = await device("Sample device");
     const project = await createProject(d.db, { name: "Sample project", description: "Fabricated sample data" });
     const workstream = await createWorkstream(d.db, { projectId: project, name: "Sample workstream" });

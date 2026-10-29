@@ -9,6 +9,7 @@ import {
   BLOCK_MAX_MINUTES,
   CALENDAR_BLOCKS,
   type CalendarBlockData,
+  type ExpectedOutput,
   PRODUCT_REGISTRY,
   PROJECTS,
   type ProjectData,
@@ -37,6 +38,18 @@ export interface BlockTimeInput {
 }
 
 const planningTables = (db: LocalDb) => [db.records, db.tombstones, db.meta];
+
+/**
+ * Optional expected output amounts of a block (T-141, T-150): absent when none (field added in
+ * data schema version 6, T-025); 0 is a stored amount, distinct from no entry (T-163).
+ */
+function withExpected(data: Record<string, unknown>, expected: readonly ExpectedOutput[] | undefined): Record<string, unknown> {
+  if (expected === undefined) return data;
+  const next = { ...data };
+  if (expected.length === 0) delete next.expectedOutputs;
+  else next.expectedOutputs = expected.map((e) => ({ definitionId: e.definitionId, amount: e.amount }));
+  return next;
+}
 
 /** Instants of the entered time in `zone`: a daylight-saving gap is refused, never shifted (T-030). */
 export function blockInstants(input: BlockTimeInput, zone: string): { startsAt: string; endsAt: string; localDate: string } {
@@ -71,7 +84,7 @@ async function snapshotOf(db: LocalDb, taskId: string): Promise<CalendarBlockDat
  */
 export async function createBlock(
   db: LocalDb,
-  input: BlockTimeInput & { taskId: string; occurrenceDate?: string | null },
+  input: BlockTimeInput & { taskId: string; occurrenceDate?: string | null; expectedOutputs?: ExpectedOutput[] },
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<string> {
   return db.transaction("rw", planningTables(db), async () => {
@@ -85,7 +98,7 @@ export async function createBlock(
       status: "planned",
       snapshot: await snapshotOf(db, input.taskId),
     };
-    await putRecord(db, registry, CALENDAR_BLOCKS, id, data);
+    await putRecord(db, registry, CALENDAR_BLOCKS, id, withExpected(data, input.expectedOutputs));
     return id;
   });
 }
@@ -93,7 +106,7 @@ export async function createBlock(
 /** Quick add (T-032): a new inbox task and its planned block, in ONE transaction. */
 export async function quickAddBlock(
   db: LocalDb,
-  input: BlockTimeInput & { title: string },
+  input: BlockTimeInput & { title: string; expectedOutputs?: ExpectedOutput[] },
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<{ taskId: string; blockId: string }> {
   return db.transaction("rw", planningTables(db), async () => {
@@ -116,16 +129,22 @@ async function currentBlock(db: LocalDb, id: string): Promise<CalendarBlockData>
  * in the configured zone, which becomes its planning zone, and a refreshed snapshot (T-036). Its
  * task, occurrence link, and status never change here.
  */
-export async function updateBlock(db: LocalDb, id: string, input: BlockTimeInput, registry: Registry = PRODUCT_REGISTRY): Promise<void> {
+export async function updateBlock(
+  db: LocalDb,
+  id: string,
+  input: BlockTimeInput & { expectedOutputs?: ExpectedOutput[] },
+  registry: Registry = PRODUCT_REGISTRY,
+): Promise<void> {
   await db.transaction("rw", planningTables(db), async () => {
     const zone = await requireZone(db);
     const current = await currentBlock(db, id);
-    await putRecord(db, registry, CALENDAR_BLOCKS, id, {
+    const next = {
       ...current,
       ...blockInstants(input, zone),
       timeZone: zone,
       snapshot: await snapshotOf(db, current.taskId),
-    });
+    };
+    await putRecord(db, registry, CALENDAR_BLOCKS, id, withExpected(next, input.expectedOutputs));
   });
 }
 

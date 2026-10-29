@@ -351,12 +351,13 @@ test("Stage 4 offline: a goal with milestones, status changes, reload, and the s
   await a.getByRole("button", { name: "Goals" }).click();
   await a.getByLabel("Name", { exact: true }).fill("Write the book");
   await a.getByLabel("Target (whole number)").fill("300");
+  await a.getByLabel("Name of the output definition").fill("Pages written"); // Stage 5: output goals track a definition (T-151)
   await a.getByLabel("Unit (for example pages or words)").fill("pages");
   await a.getByLabel("Start date").fill("2026-11-01");
   await a.getByLabel("Deadline (optional)").fill("2026-12-31");
   await a.getByRole("button", { name: "Create goal" }).click();
   await expect(a.getByRole("heading", { level: 1, name: /Write the book/ })).toBeVisible();
-  await expect(a.getByText(/Progress is not calculated yet/)).toBeVisible();
+  await expect(a.getByText(/Progress is calculated from recorded work sessions/)).toBeVisible();
 
   const milestones = a.getByTestId("milestones");
   await milestones.getByLabel("Milestone name").fill("First draft");
@@ -388,9 +389,9 @@ test("Stage 4 offline: a goal with milestones, status changes, reload, and the s
   await target.setOffline(true);
   await b.getByRole("button", { name: "Backup" }).click();
   await b.getByLabel("Choose a backup file").setInputFiles(filePath);
-  await expect(b.getByTestId("import-preview")).toContainText("New items to add: 2");
+  await expect(b.getByTestId("import-preview")).toContainText("New items to add: 3"); // goal, milestone, output definition
   await b.getByTestId("import-preview").getByRole("button", { name: "Import" }).click();
-  await expect(b.getByTestId("import-done")).toContainText("Added: 2");
+  await expect(b.getByTestId("import-done")).toContainText("Added: 3");
   await b.getByRole("button", { name: "Goals" }).click();
   await b.getByRole("button", { name: "Open goal: Write the book" }).click();
   await expect(b.getByRole("button", { name: "Resume" })).toBeVisible(); // still paused
@@ -554,4 +555,87 @@ test("Stage 3 follow-up on a phone-sized touch screen: two days at a time, Previ
   await expect(form.getByLabel("Duration (minutes)")).toHaveValue("30");
   expect(offenders).toEqual([]);
   await phone.close();
+});
+
+test("Stage 5 offline: a session with a pause and an output, a past session, reload, and an open session moved to a fresh device by backup arrives paused", async ({ browser }) => {
+  const source = await browser.newContext({ acceptDownloads: true });
+  const a = await source.newPage();
+  const offendersA = forbidNetworkUse(a);
+  await a.goto(BASE_URL);
+  await waitForServiceWorkerControl(a);
+  await source.setOffline(true);
+  await setTehran(a);
+
+  await a.getByRole("button", { name: "Work", exact: true }).click();
+  const definitions = a.getByTestId("definitions");
+  await definitions.getByLabel("Name", { exact: true }).fill("Content covered");
+  await definitions.getByLabel("Unit", { exact: true }).fill("minutes");
+  await definitions.getByRole("button", { name: "Add definition" }).click();
+  await expect(definitions).toContainText("Content covered (minutes)");
+
+  // A live session: start, pause, resume, end with an output of 15 and an energy rating.
+  await a.getByRole("button", { name: "Start", exact: true }).click();
+  const current = a.getByTestId("current-session");
+  await current.getByRole("button", { name: "Pause" }).click();
+  await current.getByRole("button", { name: "Resume" }).click();
+  await current.getByRole("button", { name: "End…" }).click();
+  const end = a.getByTestId("end-form");
+  await end.getByRole("button", { name: "Add an output" }).click();
+  await end.getByTestId("output-row").getByLabel("Output definition").selectOption({ label: "Content covered (minutes)" });
+  await end.getByTestId("output-row").getByLabel("Amount").fill("15");
+  await end.getByLabel("Energy (1–5)").selectOption("4");
+  await end.getByRole("button", { name: "End session" }).click();
+  const history = a.getByTestId("session-history");
+  await expect(history).toContainText("15 minutes · Content covered");
+  await expect(history).toContainText("energy 4/5");
+
+  // A past session: yesterday, start plus duration.
+  const today = todayIn("Asia/Tehran");
+  const yesterday = new Date(Date.parse(`${today}T12:00:00Z`) - 24 * 3600 * 1000).toISOString().slice(0, 10);
+  await a.getByRole("button", { name: "Record a past session…" }).click();
+  const past = a.getByTestId("past-form");
+  await past.getByLabel("Date").fill(yesterday);
+  await past.getByLabel("Start time").fill("08:00");
+  await past.getByLabel("Duration (minutes)").fill("45");
+  await past.getByRole("button", { name: "Save" }).click();
+  await expect(history.getByTestId("session-row")).toHaveCount(2);
+  await expect(history).toContainText("45 min");
+
+  // Survives a reload while offline.
+  await a.reload();
+  await a.getByRole("button", { name: "Work", exact: true }).click();
+  await expect(a.getByTestId("session-history").getByTestId("session-row")).toHaveCount(2);
+
+  // An open session travels in the backup.
+  await a.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(a.getByTestId("current-session")).toContainText("Running");
+  await a.getByRole("button", { name: "Backup" }).click();
+  const downloadPromise = a.waitForEvent("download");
+  await a.getByRole("button", { name: "Export backup" }).click();
+  const download = await downloadPromise;
+  const filePath = path.join(mkdtempSync(path.join(tmpdir(), "pps-backup-")), download.suggestedFilename());
+  await download.saveAs(filePath);
+
+  const target = await browser.newContext();
+  const b = await target.newPage();
+  const offendersB = forbidNetworkUse(b);
+  await b.goto(BASE_URL);
+  await target.setOffline(true);
+  await b.getByRole("button", { name: "Backup" }).click();
+  await b.getByLabel("Choose a backup file").setInputFiles(filePath);
+  const preview = b.getByTestId("import-preview");
+  await preview.getByLabel(/Apply 1 newer version/).check(); // the shared time zone
+  await preview.getByRole("button", { name: "Import" }).click();
+  await expect(b.getByTestId("import-done")).toBeVisible();
+  await b.getByRole("button", { name: "Work", exact: true }).click();
+  await expect(b.getByTestId("session-history").getByTestId("session-row")).toHaveCount(2);
+  await expect(b.getByTestId("session-history")).toContainText("15 minutes · Content covered");
+  // Restored as paused on this device: its timer does not continue (T-144, T-152).
+  await expect(b.getByTestId("open-session")).toHaveAttribute("data-state", "paused");
+  await expect(b.getByTestId("current-session")).toContainText("Paused (from a backup)");
+
+  expect([...offendersA, ...offendersB]).toEqual([]);
+  rmSync(path.dirname(filePath), { recursive: true, force: true });
+  await source.close();
+  await target.close();
 });

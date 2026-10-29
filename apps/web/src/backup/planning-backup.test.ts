@@ -5,6 +5,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
+import { DATA_SCHEMA_VERSION } from "./limits.ts";
 import { createTask, loadOrganization, setArchived, updateTask } from "../local/organization.ts";
 import { createBlock, loadBlocks, setBlockCancelled, setRecurrence, updateBlock } from "../local/planning.ts";
 import { deleteRecord } from "../local/records.ts";
@@ -61,11 +62,11 @@ async function plannedDevice(label = "A") {
 }
 
 describe("21. round-trip and merge of blocks, recurrence, and capacity", () => {
-  it("an empty device receives everything with identical IDs, hashes, and versions (written as dataSchemaVersion 5 since the Stage 3 follow-up)", async () => {
+  it("an empty device receives everything with identical IDs, hashes, and versions (written as dataSchemaVersion 6 since Stage 5)", async () => {
     const a = await plannedDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(5);
+    expect(doc.app.dataSchemaVersion).toBe(6);
     expect(doc.payload.records[CALENDAR_BLOCKS]).toHaveLength(3);
     const b = await device("B", null);
     const { preview } = await importInto(b, text, { ...product, applyUpdates: true });
@@ -219,7 +220,7 @@ describe("23. versioning and per-version fields", () => {
     expect(await codeOf(importInto(b, asV2((doc) => (withoutBlocks(doc), plainPrefs(doc))), product))).toBe("INVALID_PAYLOAD");
     expect(await codeOf(importInto(b, asV2((doc) => (withoutBlocks(doc), plainTasks(doc))), product))).toBe("INVALID_PAYLOAD");
     expect(await codeOf(importInto(b, asV2((doc) => (withoutBlocks(doc), plainTasks(doc), plainPrefs(doc))), product))).toBe("OK");
-    const newer = mutate(text, (doc) => (doc.app.dataSchemaVersion = 6));
+    const newer = mutate(text, (doc) => (doc.app.dataSchemaVersion = 7));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
     const b2 = await device("B2", null);
     expect(await snapshot(b2.db)).toEqual(before);
@@ -246,7 +247,8 @@ describe("23. versioning and per-version fields", () => {
   });
 
   it("writes the dataSchemaVersion-3 sample when PPS_WRITE_SAMPLE=1 (maintainers only)", async () => {
-    if (process.env.PPS_WRITE_SAMPLE !== "1") return;
+    // The app writes its current version; this sample stays the committed version-3 file.
+    if (process.env.PPS_WRITE_SAMPLE !== "1" || (DATA_SCHEMA_VERSION as number) !== 3) return;
     const d = await device("Sample device");
     await updateSharedPreferences(d.db, { dailyCapacityMinutes: 240 });
     const recurring = await createTask(d.db, { title: "Sample recurring task", estimateMinutes: 30 });

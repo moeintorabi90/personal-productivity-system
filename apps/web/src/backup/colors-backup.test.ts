@@ -6,6 +6,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
+import { DATA_SCHEMA_VERSION } from "./limits.ts";
 import { createProject, createTask, loadOrganization, updateProject } from "../local/organization.ts";
 import { createBlock } from "../local/planning.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
@@ -54,11 +55,11 @@ async function coloredDevice(label = "A") {
 }
 
 describe("8. round-trip and merge of the project color", () => {
-  it("an empty device receives the color unchanged (dataSchemaVersion 5); an unchosen color stays absent", async () => {
+  it("an empty device receives the color unchanged (written as dataSchemaVersion 6 since Stage 5); an unchosen color stays absent", async () => {
     const a = await coloredDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(5);
+    expect(doc.app.dataSchemaVersion).toBe(6);
     const projects = doc.payload.records[PROJECTS] as { id: string; data: Record<string, unknown> }[];
     expect(projects.find((p) => p.id === a.colored)!.data.color).toBe("teal");
     expect(projects.find((p) => p.id === a.plain)!.data).not.toHaveProperty("color");
@@ -144,7 +145,7 @@ describe("8. upgrade and older files", () => {
     expect(await codeOf(importInto(b, withColor("magenta"), product))).toBe("INVALID_PAYLOAD");
     expect(await codeOf(importInto(b, withColor("Teal"), product))).toBe("INVALID_PAYLOAD");
     expect(await snapshot(b.db)).toEqual(before);
-    const newer = mutate(text, (doc) => (doc.app.dataSchemaVersion = 6));
+    const newer = mutate(text, (doc) => (doc.app.dataSchemaVersion = 7));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
     // Without the color, the same content is a valid version-4 file.
     const plainV4 = mutate(text, (doc) => {
@@ -185,7 +186,8 @@ describe("8. upgrade and older files", () => {
   });
 
   it("writes the dataSchemaVersion-5 sample when PPS_WRITE_SAMPLE=1 (maintainers only)", async () => {
-    if (process.env.PPS_WRITE_SAMPLE !== "1") return;
+    // The app writes its current version; this sample stays the committed version-5 file.
+    if (process.env.PPS_WRITE_SAMPLE !== "1" || (DATA_SCHEMA_VERSION as number) !== 5) return;
     const d = await device("Sample device");
     const colored = await createProject(d.db, { name: "Sample project with a color", color: "green" });
     await createProject(d.db, { name: "Sample project with the default color" });

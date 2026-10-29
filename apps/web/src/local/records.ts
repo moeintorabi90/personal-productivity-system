@@ -1,5 +1,5 @@
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "../backup/envelope.ts";
-import type { Registry } from "../backup/registry.ts";
+import { linkTargets, type Registry } from "../backup/registry.ts";
 import { bumpVersion } from "../backup/versions.ts";
 import { DEFAULT_DEVICE_SETTINGS, type DeviceIdentity, type DeviceSettings, type LocalDb, type MetaRow, type RecordRow } from "./db.ts";
 
@@ -50,11 +50,11 @@ export async function putRecord(
     if (await db.tombstones.get([type, id])) throw new Error("Record was deleted on this device");
     const live = new Map<string, Record<string, unknown>>();
     for (const link of def.links) {
-      const target = parsed[link.field];
-      if (target === null || target === undefined) continue;
-      const row = await db.records.get([link.target, target as string]);
-      if (!row) throw new RecordRuleError("BROKEN_LINK", `${type}.${link.field} → ${link.target}/${String(target)} does not exist`);
-      live.set(`${link.target}/${target}`, row.data);
+      for (const target of linkTargets(link, parsed)) {
+        const row = await db.records.get([link.target, target as string]);
+        if (!row) throw new RecordRuleError("BROKEN_LINK", `${type}.${link.field} → ${link.target}/${String(target)} does not exist`);
+        live.set(`${link.target}/${target}`, row.data);
+      }
     }
     const problem = def.rule?.(parsed, (targetType, targetId) => live.get(`${targetType}/${targetId}`));
     if (problem) throw new RecordRuleError("INVALID_RELATIONSHIP", `${type}: ${problem}`);

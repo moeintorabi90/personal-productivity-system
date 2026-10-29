@@ -39,7 +39,9 @@ export type GoalErrorCode =
   | "INVALID_TARGET"
   | "DEADLINE_BEFORE_START"
   | "DEADLINE_OUTSIDE_GOAL"
-  | "MILESTONES_OUTSIDE_RANGE";
+  | "MILESTONES_OUTSIDE_RANGE"
+  /** An output goal needs its output definition (T-137, T-151). */
+  | "NO_DEFINITION";
 
 export class GoalError extends Error {
   readonly code: GoalErrorCode;
@@ -99,6 +101,11 @@ function checkTarget(kind: GoalKind, target: number): void {
   if (!Number.isInteger(target) || target < 1 || target > TARGET_MAX[kind]) throw new GoalError("INVALID_TARGET", `target out of range for ${kind}`);
 }
 
+function requireDefinition(definitionId: string | undefined): string {
+  if (!definitionId) throw new GoalError("NO_DEFINITION", "an output goal tracks one output definition (T-137)");
+  return definitionId;
+}
+
 function checkDates(startDate: string, deadline: string | null): void {
   if (deadline !== null && deadline < startDate) throw new GoalError("DEADLINE_BEFORE_START", "deadline before start date");
 }
@@ -114,8 +121,11 @@ export interface GoalInput {
   kind: GoalKind;
   /** Whole number; whole minutes for a time goal (T-077). */
   target: number;
-  /** Required for output goals, ignored otherwise (T-050). */
-  unit?: string;
+  /**
+   * Required for output goals, ignored otherwise: the one output definition the goal tracks and
+   * whose unit it shows (T-137, T-151, T-154). Goals created from Stage 5 on have no own unit (T-161).
+   */
+  definitionId?: string;
 }
 
 export async function createGoal(db: LocalDb, input: GoalInput, registry: Registry = PRODUCT_REGISTRY): Promise<string> {
@@ -130,7 +140,7 @@ export async function createGoal(db: LocalDb, input: GoalInput, registry: Regist
     deadline: input.deadline ?? null,
     kind: input.kind,
     target: input.target,
-    ...(input.kind === "output" ? { unit: (input.unit ?? "").trim() } : {}),
+    ...(input.kind === "output" ? { definitionId: requireDefinition(input.definitionId) } : {}),
     status: "active",
     archivedAt: null,
   };
@@ -158,21 +168,28 @@ async function milestonesOf(db: LocalDb, goalId: string): Promise<Milestone[]> {
 const WRITE_TABLES = (db: LocalDb) => [db.records, db.tombstones, db.meta];
 
 /**
- * Edits a goal. The kind never changes (T-079). A date change that would put a milestone deadline
- * outside the goal's range is refused and names those milestones (T-078). Status and archive have
- * their own commands.
+ * Edits a goal. The kind never changes (T-079). From Stage 5 the unit is not edited on the goal:
+ * it comes from the goal's output definition (T-154), and a stored legacy unit is never rewritten
+ * (T-161); linking the definition is `linkGoalDefinition` (local/work.ts). A date change that would
+ * put a milestone deadline outside the goal's range is refused and names those milestones (T-078).
+ * Status and archive have their own commands.
  */
 export async function updateGoal(
   db: LocalDb,
   id: string,
-  patch: Partial<Pick<GoalData, "name" | "description" | "projectId" | "startDate" | "deadline" | "target" | "unit">>,
+  patch: Partial<Pick<GoalData, "name" | "description" | "projectId" | "startDate" | "deadline" | "target">>,
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<void> {
   await db.transaction("rw", WRITE_TABLES(db), async () => {
     const goal = await editableGoal(db, id);
-    const next: GoalData = { ...goal, ...patch };
-    for (const key of ["name", "description", "unit"] as const) if (typeof next[key] === "string") next[key] = next[key].trim();
-    if (next.kind !== "output") delete next.unit;
+    const { name, description, projectId, startDate, deadline, target } = patch;
+    const next: GoalData = { ...goal };
+    if (name !== undefined) next.name = name.trim();
+    if (description !== undefined) next.description = description.trim();
+    if (projectId !== undefined) next.projectId = projectId;
+    if (startDate !== undefined) next.startDate = startDate;
+    if (deadline !== undefined) next.deadline = deadline;
+    if (target !== undefined) next.target = target;
     checkTarget(next.kind, next.target);
     checkDates(next.startDate, next.deadline);
     if (next.startDate !== goal.startDate || next.deadline !== goal.deadline) {

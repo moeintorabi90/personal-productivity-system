@@ -206,7 +206,7 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up"; decisions T-066 to T-070, T-075, T-0
 - **Commands** `apps/web/src/local/planning.ts`: `dragBlockTimes` (the `updateBlock` edit, refused for a cancelled block, returning the times before and after and the version written) and `undoBlockTimes` (writes the previous instants, zone, and local date as a new version with a refreshed snapshot; refused with `CHANGED` when the block's version is no longer the one the drag wrote).
 - **UI:** `TimeGrid.tsx` (Pointer Events; mouse drags after 4 px; touch drags after a 400 ms long press, while a moving finger scrolls or, on a phone, swipes the shown days; resize handles drag at once; a non-passive `touchmove` listener stops scrolling only during a drag), `UndoBar.tsx` (5 seconds, kept while focused, hidden when the block changes), `CalendarView.tsx` (Layout grid/list, phone two-day view below 560 px with Previous/Next days), project color select and swatches in `ProjectsView.tsx`, colored rows in `planning-ui.tsx`, color labels in the backup conflict view.
 
-## Design outline: Stage 5 sessions and outputs (contract recorded 2026-10-26; not implemented)
+## Design outline: Stage 5 sessions and outputs (contract recorded 2026-10-26; implemented on `feat/stage-5-sessions-outputs`, not merged; see the implementation notes below)
 
 Contract: PRODUCT_SPEC "Actual work and outputs"; decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-153 to T-159, T-162, T-163, T-165, T-166, T-168, T-169 (owner) and T-109 to T-116, T-119, T-126 to T-128, T-146 to T-152, T-160, T-161, T-164, T-167 (derived); data: DATA_MODEL "Stage 5 record types (proposed)"; backup: BACKUP_FORMAT "Data schema version 6". Everything below is a technical design choice, not an owner decision.
 
@@ -216,6 +216,40 @@ Contract: PRODUCT_SPEC "Actual work and outputs"; decisions T-091 to T-108, T-11
 - **Progress** is a pure, derived computation over sessions, output records, and completions (T-116), recomputed on display like capacity; it is shown from Stage 6.
 - **Import:** open sessions follow T-152 (a running session arrives paused; a second open session must be ended or deleted before any session is started or resumed). Everything else uses the existing import categories and conflict choices.
 - **Not in Stage 5** (T-145): the dual-lane planned-versus-actual calendar and drag corrections of actual sessions (Stage 6, below).
+
+## Stage 5 implementation notes (2026-10-29; branch `feat/stage-5-sessions-outputs`, not merged)
+
+Contract: the design outline above. Everything here is a technical choice, not an owner decision; the owner may revise it.
+
+- **Registry and links:** `LinkDef` gained an optional `key`, and `linkTargets()` returns every target of a link — one ID, a list of IDs (`goalIds`, `outputDefinitionIds`), or a list of objects (`expectedOutputs[].definitionId`). `putRecord`, the import's reference and active-link checks, and conflict resolution (restrict and live-link checks) all use it. New types: `outputDefinitions`, `sessions`, `outputRecords`, `corrections` (append-only), `taskCompletions`, all since data version 6. Older schemas are kept for `taskDefinitions` (versions 3–5), `calendarBlocks` (3–5), and `goals` (4–5). `DATA_SCHEMA_VERSION` = 6, app version 0.7.0. No IndexedDB change: all records stay in `records`.
+- **Rules in the registry:** a session's block is of its task and its goal is a time goal; an output's goals are output goals; a completion's goal is a task-count goal. Each rule reads only fields that never change (a block's task, a goal's kind). The same-definition rule for outputs (T-137) and the "linked goal or none" rules (T-129, T-130) are enforced by the commands. The registry does not enforce them: a goal's `definitionId` can be set later by migration.
+- **Field choices:**
+  - `corrections` store `sessionId` and `outputId` (null for a change of the session itself) instead of one `target`. `field` is `times`, `value`, `goal`, `goals`, `added`, `deleted`, or `restored`; `before` and `after` are JSON values.
+  - A completion's ID is a version-8 UUID made from SHA-256 of `pps:taskCompletion:<task ID>:<occurrence date | once>` (`work/completions.ts`).
+  - Session instants are whole minutes, rounded down.
+- **Imported running sessions (T-152):** device-local metadata `importedPausedSessions` (session ID → backup creation time) is written by `applyImport` for sessions it adds or updates, and by a conflict resolution that uses the backup's version. The session counts as paused from that time; its first resume or end writes the pause. The mark is removed by that resume or end, and by trash maintenance. It is never exported.
+- **Commands** (`apps/web/src/local/work.ts`):
+  - Sessions: start (optionally from a block, copying its expected amounts), pause, resume, end, record past, edit details (no history), correct times, set the time goal, delete and restore.
+  - Outputs: add, correct the value, set goals, delete and restore.
+  - Trash: `purgeTrash`, which runs at app start and when the owner empties the trash.
+  - Output definitions: create, edit (with apply to history or keep previous, and the "same unit" confirmation), archive.
+  - Goals and tasks: `linkGoalDefinition`, task goal links and suggestions, `completeTask` and `reopenTask`, and the open-session prompts.
+  - Pure helpers live in `apps/web/src/work/`: `session-time.ts` (work time, states, overlaps), `completions.ts`, `progress.ts` (goal progress, computed and tested but not displayed, T-116, T-145), and `units.ts`.
+- **Unit matcher (T-167, implementation review requested from the owner and Codex):**
+  - **Method:** a reviewed list of unit forms, with no dependency. It holds 68 English units with explicit irregular plurals, and 34 Persian units with their broken or Arabic plurals. For listed Persian stems only, «ها» is listed in three forms: with a zero-width non-joiner, with a space, and joined.
+  - **Harmless differences:** only surrounding spaces and English letter case. Persian spelling variants (ی/ي, ک/ك, zero-width non-joiner) are not normalized.
+  - **Mismatch:** both labels are listed forms of different units (synonyms are separate entries), or one is written in Latin and the other in Arabic script.
+  - **Compound labels:** match only when they have the same number of words and exactly one differing word pair.
+  - **Unknown:** everything else. The Goals screen then asks the T-169 question.
+- **UI:**
+  - **Work screen:** current session(s); start; past entry with an overlap warning and "Save anyway"; history (last 30 days, then "Show all"), with corrections and details edits; output definitions; trash.
+  - **Today:** shows the open session and the day's completions.
+  - **Calendar:** block rows have "Start session" and "Complete". Unscheduled items have "Complete" from their own date on. Completed items are listed per day (day panel, below the time grid, and counted in month cells), with "Reopen".
+  - **Tasks:** one-off tasks have "Complete" and "Reopen" and a "Completed" status filter. The task editor has goal links and suggested outputs.
+  - **Goals:** a new output goal chooses or creates its definition. A pre-Stage-5 output goal shows a "connect" panel with the T-169 question.
+  - **Recorded sessions** use a solid accent edge on the normal surface plus an "Actual" label (T-069).
+  - **App-open prompts:** a session left running, 24 hours of work, or a pause over 24 hours. "Still working" or "Later" hides a prompt only until the app opens again; the 24-hour prompt cannot be hidden.
+- **Known limitation:** after a device empties its trash, its tombstones reach another device that still has the session as separate "deleted in backup" decisions for the session, its outputs, and its corrections (D-015). Deleting the session there is refused while its outputs or corrections still link to it (restrict), so those are decided first. This is the existing rule for every linked type, not new behavior.
 
 ## Design outline: calendar interactions, project colors, streaks (approved 2026-10-25; Stage 3 follow-up parts implemented, see above; Stage 6 and Stage 8 parts not implemented)
 

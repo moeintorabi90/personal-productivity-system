@@ -1,0 +1,427 @@
+{
+  "format": "pps-backup",
+  "formatVersion": 1,
+  "backupId": "6b7f9a3c-2d14-4e8b-9f61-0c5a7d3e2b18",
+  "createdAt": "2026-11-03T08:00:00.000Z",
+  "app": {
+    "version": "0.7.0",
+    "dataSchemaVersion": 6
+  },
+  "sourceDevice": {
+    "id": "1e094572-2b14-4a56-a451-f76bfa950c44",
+    "name": "Sample device"
+  },
+  "encryption": null,
+  "payload": {
+    "records": {
+      "preferences": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "createdAt": "2026-10-29T10:02:29.014Z",
+          "updatedAt": "2026-10-29T10:02:29.026Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "861e9e291205f11199f25ffc8113c6062d5d6c62d07013ba91f30e7d7c599c1e",
+          "data": {
+            "timeZone": "Asia/Tehran",
+            "weekStart": 6,
+            "calendarDisplay": "gregorian"
+          }
+        }
+      ],
+      "taskDefinitions": [
+        {
+          "id": "b0a4e970-8fc8-461a-8529-883327ae05e5",
+          "createdAt": "2026-10-29T10:02:29.050Z",
+          "updatedAt": "2026-10-29T10:02:29.058Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 3
+          },
+          "contentHash": "d20d0cf878d406b449f32f270dd633aa6d1c820ded69e8f451e97873e12cde5f",
+          "data": {
+            "title": "Write",
+            "notes": "",
+            "projectId": null,
+            "workstreamId": null,
+            "nextAction": "",
+            "estimateMinutes": null,
+            "archivedAt": null,
+            "goalIds": [
+              "4b7eed26-14e2-4203-aca9-1e8f297ebcac",
+              "4b924687-ed60-4f7c-924e-c7c55b00920b",
+              "bec8f782-d684-4866-a355-f78563316e52"
+            ],
+            "outputDefinitionIds": [
+              "b87a371b-13fd-4c8f-adb4-000f0b936842"
+            ]
+          }
+        },
+        {
+          "id": "cb827111-3400-45d5-8eff-6e177636c0d8",
+          "createdAt": "2026-10-29T10:02:29.051Z",
+          "updatedAt": "2026-10-29T10:02:29.051Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "ea5a7b129b96a702e5de4edb8b84fccda7f96289b01592577a46be051bd34391",
+          "data": {
+            "title": "Plain",
+            "notes": "",
+            "projectId": null,
+            "workstreamId": null,
+            "nextAction": "",
+            "estimateMinutes": null,
+            "archivedAt": null
+          }
+        }
+      ],
+      "calendarBlocks": [
+        {
+          "id": "12bdcc30-266f-4a94-8093-a84902c919e0",
+          "createdAt": "2026-10-29T10:02:29.066Z",
+          "updatedAt": "2026-10-29T10:02:29.070Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 2
+          },
+          "contentHash": "070b74c2308648c6a952e897fee26837536ba904f2e335bf4185f9167f77ff48",
+          "data": {
+            "taskId": "b0a4e970-8fc8-461a-8529-883327ae05e5",
+            "startsAt": "2026-11-02T06:30:00.000Z",
+            "endsAt": "2026-11-02T07:30:00.000Z",
+            "timeZone": "Asia/Tehran",
+            "localDate": "2026-11-02",
+            "occurrenceDate": null,
+            "status": "planned",
+            "snapshot": {
+              "taskTitle": "Write",
+              "projectId": null,
+              "projectName": null,
+              "workstreamId": null,
+              "workstreamName": null
+            },
+            "expectedOutputs": [
+              {
+                "definitionId": "92e3eece-1297-4a9e-aace-c67624c307b4",
+                "amount": 0
+              }
+            ]
+          }
+        }
+      ],
+      "goals": [
+        {
+          "id": "4b7eed26-14e2-4203-aca9-1e8f297ebcac",
+          "createdAt": "2026-10-29T10:02:29.041Z",
+          "updatedAt": "2026-10-29T10:02:29.041Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "4f28c813bee7f4a6a77d306ba7ef6edfded6730a8c3219b888c9372cdfe911e5",
+          "data": {
+            "name": "Study",
+            "description": "",
+            "projectId": null,
+            "startDate": "2026-10-01",
+            "deadline": null,
+            "kind": "time",
+            "target": 600,
+            "status": "active",
+            "archivedAt": null
+          }
+        },
+        {
+          "id": "4b924687-ed60-4f7c-924e-c7c55b00920b",
+          "createdAt": "2026-10-29T10:02:29.042Z",
+          "updatedAt": "2026-10-29T10:02:29.042Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "1baf89e211675de857dccf224730e46d1bfe7bde5742a283e771ee72c098ebaf",
+          "data": {
+            "name": "Book",
+            "description": "",
+            "projectId": null,
+            "startDate": "2026-10-01",
+            "deadline": null,
+            "kind": "output",
+            "target": 300,
+            "status": "active",
+            "archivedAt": null,
+            "definitionId": "b87a371b-13fd-4c8f-adb4-000f0b936842"
+          }
+        },
+        {
+          "id": "bec8f782-d684-4866-a355-f78563316e52",
+          "createdAt": "2026-10-29T10:02:29.043Z",
+          "updatedAt": "2026-10-29T10:02:29.043Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "da5411c4cebdfa2aae8ec649cefd57b495f7f8bbcd66709ef38ae950e948afa5",
+          "data": {
+            "name": "Done",
+            "description": "",
+            "projectId": null,
+            "startDate": "2026-10-01",
+            "deadline": null,
+            "kind": "taskCount",
+            "target": 5,
+            "status": "active",
+            "archivedAt": null
+          }
+        }
+      ],
+      "outputDefinitions": [
+        {
+          "id": "92e3eece-1297-4a9e-aace-c67624c307b4",
+          "createdAt": "2026-10-29T10:02:29.036Z",
+          "updatedAt": "2026-10-29T10:02:29.036Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "8f5e6fba2330ef11f7b6586292c50ffef5933463832e5fdda127311aac81e160",
+          "data": {
+            "revisions": [
+              {
+                "name": "Words",
+                "unit": "words"
+              }
+            ],
+            "archivedAt": null
+          }
+        },
+        {
+          "id": "b87a371b-13fd-4c8f-adb4-000f0b936842",
+          "createdAt": "2026-10-29T10:02:29.034Z",
+          "updatedAt": "2026-10-29T10:02:29.034Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "4c120bbeb05a5fa960e0eaa5118a45bfdbca46a206129325c3a09a2897659923",
+          "data": {
+            "revisions": [
+              {
+                "name": "Pages",
+                "unit": "pages"
+              }
+            ],
+            "archivedAt": null
+          }
+        }
+      ],
+      "sessions": [
+        {
+          "id": "2a7608c2-2e47-4c43-ab76-760c56bb5551",
+          "createdAt": "2026-10-29T10:02:29.078Z",
+          "updatedAt": "2026-10-29T10:02:29.088Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 4
+          },
+          "contentHash": "7f781008939dbe7bfe9e1507a281aeb96cd895d5cd1cf5738b8a30553e57f6e5",
+          "data": {
+            "taskId": "b0a4e970-8fc8-461a-8529-883327ae05e5",
+            "blockId": "12bdcc30-266f-4a94-8093-a84902c919e0",
+            "startedAt": "2026-11-02T06:00:00.000Z",
+            "endedAt": "2026-11-02T07:00:00.000Z",
+            "pauses": [
+              {
+                "start": "2026-11-02T06:20:00.000Z",
+                "end": "2026-11-02T06:30:00.000Z"
+              }
+            ],
+            "timeZone": "Asia/Tehran",
+            "localDate": "2026-11-02",
+            "goalId": "4b7eed26-14e2-4203-aca9-1e8f297ebcac",
+            "expectedOutputs": [
+              {
+                "definitionId": "92e3eece-1297-4a9e-aace-c67624c307b4",
+                "amount": 0
+              }
+            ],
+            "snapshot": {
+              "taskTitle": "Write",
+              "projectId": null,
+              "projectName": null,
+              "workstreamId": null,
+              "workstreamName": null
+            },
+            "startedOnDevice": "1e094572-2b14-4a56-a451-f76bfa950c44",
+            "notes": "ok",
+            "energy": 3,
+            "focus": 4,
+            "deletedAt": null
+          }
+        },
+        {
+          "id": "6cfdab8e-324b-4ac6-81ce-6c9535f20edb",
+          "createdAt": "2026-10-29T10:02:29.107Z",
+          "updatedAt": "2026-10-29T10:02:29.108Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 2
+          },
+          "contentHash": "083e1bd9043eb028203f119f9f4b4741b93dfaf95ccb464fd7e2c1cd28fb8bc6",
+          "data": {
+            "taskId": null,
+            "blockId": null,
+            "startedAt": "2026-10-31T04:30:00.000Z",
+            "endedAt": "2026-10-31T05:00:00.000Z",
+            "pauses": [],
+            "timeZone": "Asia/Tehran",
+            "localDate": "2026-10-31",
+            "goalId": null,
+            "expectedOutputs": [],
+            "snapshot": null,
+            "startedOnDevice": "1e094572-2b14-4a56-a451-f76bfa950c44",
+            "notes": "",
+            "energy": null,
+            "focus": null,
+            "deletedAt": "2026-11-02T06:00:00.000Z"
+          }
+        },
+        {
+          "id": "afb5e4fc-f3da-40f0-98c6-2d8327214e89",
+          "createdAt": "2026-10-29T10:02:29.098Z",
+          "updatedAt": "2026-10-29T10:02:29.100Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 2
+          },
+          "contentHash": "2a119094ffe5ca7ae4a234f71f26b4e9bb490f458eb5ec4df662ff380367bb26",
+          "data": {
+            "taskId": null,
+            "blockId": null,
+            "startedAt": "2026-11-01T04:30:00.000Z",
+            "endedAt": "2026-11-01T05:15:00.000Z",
+            "pauses": [],
+            "timeZone": "Asia/Tehran",
+            "localDate": "2026-11-01",
+            "goalId": null,
+            "expectedOutputs": [],
+            "snapshot": null,
+            "startedOnDevice": "1e094572-2b14-4a56-a451-f76bfa950c44",
+            "notes": "",
+            "energy": null,
+            "focus": null,
+            "deletedAt": null
+          }
+        }
+      ],
+      "outputRecords": [
+        {
+          "id": "3a9d4f5b-90d0-4019-871f-493e9dbed7a6",
+          "createdAt": "2026-10-29T10:02:29.094Z",
+          "updatedAt": "2026-10-29T10:02:29.094Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "277c496f3e44573127e97a5f95a822742a7175c11448f07722dd191f8f2d3292",
+          "data": {
+            "sessionId": "2a7608c2-2e47-4c43-ab76-760c56bb5551",
+            "definitionId": "b87a371b-13fd-4c8f-adb4-000f0b936842",
+            "revision": 0,
+            "value": 12,
+            "goalIds": [
+              "4b924687-ed60-4f7c-924e-c7c55b00920b"
+            ],
+            "deletedAt": null
+          }
+        },
+        {
+          "id": "54ca4414-ff35-45f3-999d-b90e7bc2f074",
+          "createdAt": "2026-10-29T10:02:29.096Z",
+          "updatedAt": "2026-10-29T10:02:29.111Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 2
+          },
+          "contentHash": "e3f5abd47cab42d5b856c82016e2ddc2fc50e51ce687eef0ae615e787338d9ce",
+          "data": {
+            "sessionId": "2a7608c2-2e47-4c43-ab76-760c56bb5551",
+            "definitionId": "92e3eece-1297-4a9e-aace-c67624c307b4",
+            "revision": 0,
+            "value": 0,
+            "goalIds": [],
+            "deletedAt": "2026-11-02T06:00:00.000Z"
+          }
+        }
+      ],
+      "corrections": [
+        {
+          "id": "245ae78e-79dc-48bc-b12a-b669ec4ee99e",
+          "createdAt": "2026-10-29T10:02:29.105Z",
+          "updatedAt": "2026-10-29T10:02:29.105Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "5185e9d4d11abf71fde873fd3bd13fa636bdd2ca7d484e68464ef91e9df3959a",
+          "data": {
+            "sessionId": "afb5e4fc-f3da-40f0-98c6-2d8327214e89",
+            "outputId": null,
+            "field": "times",
+            "before": {
+              "startedAt": "2026-11-01T04:30:00.000Z",
+              "endedAt": "2026-11-01T05:00:00.000Z",
+              "pauses": []
+            },
+            "after": {
+              "startedAt": "2026-11-01T04:30:00.000Z",
+              "endedAt": "2026-11-01T05:15:00.000Z",
+              "pauses": []
+            },
+            "reason": "typo",
+            "device": "1e094572-2b14-4a56-a451-f76bfa950c44",
+            "at": "2026-10-29T10:02:29.101Z"
+          }
+        },
+        {
+          "id": "a509c7ed-cc38-4693-a728-d69da3a68839",
+          "createdAt": "2026-10-29T10:02:29.112Z",
+          "updatedAt": "2026-10-29T10:02:29.112Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "4559520e2ff54563edfcd7d381473dc43d573f1c5b07733db7fe3380e8153bfd",
+          "data": {
+            "sessionId": "2a7608c2-2e47-4c43-ab76-760c56bb5551",
+            "outputId": "54ca4414-ff35-45f3-999d-b90e7bc2f074",
+            "field": "deleted",
+            "before": 0,
+            "after": null,
+            "reason": null,
+            "device": "1e094572-2b14-4a56-a451-f76bfa950c44",
+            "at": "2026-10-29T10:02:29.111Z"
+          }
+        }
+      ],
+      "taskCompletions": [
+        {
+          "id": "01a6432e-d22a-808b-9e0e-822ac40b6b96",
+          "createdAt": "2026-10-29T10:02:29.114Z",
+          "updatedAt": "2026-10-29T10:02:29.114Z",
+          "version": {
+            "1e094572-2b14-4a56-a451-f76bfa950c44": 1
+          },
+          "contentHash": "475c890f80dbbf627d432cad4c68308413b7f45e510c8cf435e3a03552db085a",
+          "data": {
+            "taskId": "b0a4e970-8fc8-461a-8529-883327ae05e5",
+            "occurrenceDate": null,
+            "completedAt": "2026-11-02T06:00:00.000Z",
+            "goalId": "bec8f782-d684-4866-a355-f78563316e52",
+            "reopenedAt": null
+          }
+        }
+      ]
+    },
+    "tombstones": [],
+    "pendingConflicts": [],
+    "replacedVersions": [],
+    "sourceDeviceSettings": {
+      "language": "en",
+      "theme": "system"
+    }
+  },
+  "integrity": {
+    "algorithm": "SHA-256",
+    "canonicalization": "JCS-RFC8785",
+    "hash": "bdf5c3206e6dd045eabe17f82c457e411ea177deeb8e2c988e9aa84593ddf990"
+  }
+}

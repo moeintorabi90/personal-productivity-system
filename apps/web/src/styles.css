@@ -983,3 +983,30 @@ textarea {
     animation: none !important;
   }
 }
+
+/* Stage 5: recorded actual work uses the STRONGER treatment of its project color (T-069): a solid
+   accent edge on the normal surface (accent ≥ 3:1 against --surface, DECISIONS "Contrast
+   requirements"), plus the visible "Actual" label, so color is never the only cue. Planned blocks
+   keep the tint and a dashed edge. */
+.session-row.colored.colored {
+  background: var(--surface);
+  color: var(--text);
+  border-inline-start: 6px solid var(--c-accent);
+}
+.pill-actual {
+  border: 1px solid currentColor;
+  font-weight: 600;
+}
+.completed-row .item-title::before {
+  content: "✓ ";
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-block: 0.2rem;
+}
+.output-list {
+  margin: 0.25rem 0 0;
+  padding-inline-start: 1.25rem;
+}

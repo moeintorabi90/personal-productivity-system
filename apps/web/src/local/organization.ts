@@ -209,10 +209,11 @@ function trimmed<T extends object>(patch: T): T {
 
 /* ---------- queries (pure; unit-tested) ---------- */
 
-export type StatusFilter = "active" | "archived" | "all";
+/** "completed" (Stage 5) lists not-archived items; the task views then keep only completed one-off tasks (T-134). */
+export type StatusFilter = "active" | "completed" | "archived" | "all";
 
 const matchesStatus = (archivedAt: string | null, status: StatusFilter) =>
-  status === "all" || (status === "active" ? archivedAt === null : archivedAt !== null);
+  status === "all" || (status === "archived" ? archivedAt !== null : archivedAt === null);
 
 /** Case-insensitive search that also folds Arabic/Persian letter variants and ignores ZWNJ. */
 export function normalizeForSearch(text: string): string {

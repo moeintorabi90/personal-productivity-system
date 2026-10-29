@@ -7,7 +7,10 @@ import { type Organization, setArchived, type StatusFilter, type TaskDefinition,
 import { PlanningError } from "../local/planning.ts";
 import { RecordRuleError } from "../local/records.ts";
 import { isLocalDate, localDateOf } from "../planning/time.ts";
+import { setTaskGoals, setTaskSuggestedDefinitions, definitionLabel } from "../local/work.ts";
+import { useCompletedTaskIds, useGoals, useWork } from "./data-hooks.ts";
 import { BlockForm, DateField, usePlanning, useSharedPreferences } from "./planning-ui.tsx";
+import { CompleteControl, ReopenButton } from "./work-actions.tsx";
 
 export { useOrganization } from "./data-hooks.ts";
 
@@ -25,6 +28,7 @@ export function StatusFilterSelect({ value, onChange }: { value: StatusFilter; o
       <label htmlFor={id}>{t("org.filter.status")}</label>
       <select id={id} value={value} onChange={(e) => onChange(e.target.value as StatusFilter)}>
         <option value="active">{t("org.filter.active")}</option>
+        <option value="completed">{t("org.filter.completed")}</option>
         <option value="archived">{t("org.filter.archived")}</option>
         <option value="all">{t("org.filter.all")}</option>
       </select>
@@ -59,7 +63,12 @@ export function TaskEditor({ task, org, onDone }: { task: TaskDefinition; org: O
   const [estimate, setEstimate] = useState(task.data.estimateMinutes === null ? "" : String(task.data.estimateMinutes));
   const [notes, setNotes] = useState(task.data.notes);
   const [recurrence, setRecurrence] = useState<RecurrenceDraft>(() => draftOf(task.data.recurrence));
+  const [goalIds, setGoalIds] = useState<string[]>(task.data.goalIds ?? []);
+  const [definitionIds, setDefinitionIds] = useState<string[]>(task.data.outputDefinitionIds ?? []);
   const [error, setError] = useState<string | null>(null);
+  const goals = useGoals();
+  const work = useWork();
+  const sameList = (a: readonly string[], b: readonly string[]) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
   const recurrenceProblem = recurrenceError(recurrence);
 
   // Active choices, plus the current ones even if archived (so editing never silently moves a task).
@@ -85,6 +94,9 @@ export function TaskEditor({ task, org, onDone }: { task: TaskDefinition; org: O
         // Unchanged recurrence is left out, so the record is not rewritten for it.
         ...recurrencePatch(task.data.recurrence, recurrence),
       });
+      // Explicit task–goal links of any kind (T-120; never inherited from the project, T-121) and suggested definitions (T-138).
+      if (!sameList(goalIds, task.data.goalIds ?? [])) await setTaskGoals(db, task.id, goalIds);
+      if (!sameList(definitionIds, task.data.outputDefinitionIds ?? [])) await setTaskSuggestedDefinitions(db, task.id, definitionIds);
       onDone();
     } catch (e) {
       setError(organizationError(t, e));
@@ -152,6 +164,35 @@ export function TaskEditor({ task, org, onDone }: { task: TaskDefinition; org: O
         <textarea id={ids.notes} value={notes} maxLength={TEXT_MAX} rows={3} onChange={(e) => setNotes(e.target.value)} />
       </div>
       <RecurrenceFields draft={recurrence} onChange={setRecurrence} problem={recurrenceProblem} />
+      {goals && goals.goals.length > 0 ? (
+        <fieldset className="field" data-testid="task-goal-links">
+          <legend>{t("work.taskGoals")}</legend>
+          {goals.goals
+            .filter((g) => g.data.archivedAt === null || goalIds.includes(g.id))
+            .sort((a, b) => a.data.name.localeCompare(b.data.name))
+            .map((g) => (
+              <label key={g.id} className="check">
+                <input type="checkbox" checked={goalIds.includes(g.id)} onChange={(e) => setGoalIds(e.target.checked ? [...goalIds, g.id] : goalIds.filter((id) => id !== g.id))} />{" "}
+                {g.data.name} ({t(`goals.kind.${g.data.kind}`)})
+              </label>
+            ))}
+          <p className="hint">{t("work.taskGoalsHint")}</p>
+        </fieldset>
+      ) : null}
+      {work && work.definitions.length > 0 ? (
+        <fieldset className="field" data-testid="task-suggested-definitions">
+          <legend>{t("work.taskDefinitions")}</legend>
+          {work.definitions
+            .filter((d) => d.data.archivedAt === null || definitionIds.includes(d.id))
+            .map((d) => (
+              <label key={d.id} className="check">
+                <input type="checkbox" checked={definitionIds.includes(d.id)} onChange={(e) => setDefinitionIds(e.target.checked ? [...definitionIds, d.id] : definitionIds.filter((id) => id !== d.id))} />{" "}
+                {definitionLabel(d.data).name} ({definitionLabel(d.data).unit})
+              </label>
+            ))}
+          <p className="hint">{t("work.taskDefinitionsHint")}</p>
+        </fieldset>
+      ) : null}
       {error ? (
         <p className="notice notice-error" role="alert">
           {error}
@@ -284,14 +325,22 @@ function PlanTask({ taskId, onDone }: { taskId: string; onDone: () => void }) {
   return <BlockForm ctx={ctx} mode={{ kind: "task", taskId, date: localDateOf(Date.now(), ctx.zone) }} onDone={onDone} />;
 }
 
-/** One task in a list: title, next action, estimate, recurrence, and edit/plan/archive actions. */
-export function TaskRow({ task, org, context }: { task: TaskDefinition; org: Organization; context?: string }) {
+/**
+ * One task in a list: title, next action, estimate, recurrence, and edit/plan/archive actions. A
+ * one-off task can be completed and reopened here (T-108, T-133); a completed one leaves the
+ * active list and appears under "Completed" (T-134). Occurrences of recurring tasks are
+ * completed on their date (Today, Calendar).
+ */
+export function TaskRow({ task, org, context, listStatus }: { task: TaskDefinition; org: Organization; context?: string; listStatus?: StatusFilter }) {
   const t = useT();
   const prefs = usePreferences();
   const { db } = useServices();
+  const completedIds = useCompletedTaskIds();
   const [editing, setEditing] = useState(false);
   const [planning, setPlanning] = useState(false);
   const archived = task.data.archivedAt !== null;
+  const completed = !task.data.recurrence && completedIds.has(task.id);
+  if ((listStatus === "active" && completed) || (listStatus === "completed" && !completed)) return null;
   if (editing) {
     return (
       <li className="item">
@@ -310,6 +359,7 @@ export function TaskRow({ task, org, context }: { task: TaskDefinition; org: Org
     <li className="item" data-testid="task-row">
       <div className="item-main">
         <span className="item-title">{task.data.title}</span> {archived ? <ArchivedPill /> : null}
+        {completed ? <span className="pill pill-ok">{t("work.completed")}</span> : null}
         {context ? <span className="hint"> · {context}</span> : null}
         {task.data.nextAction ? <p className="hint">{t("org.task.nextShort", { action: task.data.nextAction })}</p> : null}
         {task.data.estimateMinutes !== null ? <p className="hint">{t("org.task.estimateShort", { minutes: task.data.estimateMinutes })}</p> : null}
@@ -319,10 +369,17 @@ export function TaskRow({ task, org, context }: { task: TaskDefinition; org: Org
         <button type="button" className="secondary" aria-label={t("org.task.editLabel", { title: task.data.title })} onClick={() => setEditing(true)}>
           {t("org.edit")}
         </button>
-        {!archived ? (
+        {!archived && !completed ? (
           <button type="button" className="secondary" aria-label={t("plan.planLabel", { title: task.data.title })} onClick={() => setPlanning(true)}>
             {t("plan.plan")}
           </button>
+        ) : null}
+        {!task.data.recurrence && !archived ? (
+          completed ? (
+            <ReopenButton taskId={task.id} occurrenceDate={null} title={task.data.title} />
+          ) : (
+            <CompleteControl taskId={task.id} occurrenceDate={null} title={task.data.title} />
+          )
         ) : null}
         <button
           type="button"

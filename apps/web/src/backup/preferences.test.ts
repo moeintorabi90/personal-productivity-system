@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { Dexie } from "dexie";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { afterEach, describe, expect, it } from "vitest";
+import { DATA_SCHEMA_VERSION } from "./limits.ts";
 import { LocalDb } from "../local/db.ts";
 import { getDeviceSettings, updateDeviceSettings } from "../local/records.ts";
 import { getSharedPreferences, updateSharedPreferences } from "../local/settings.ts";
@@ -134,7 +135,8 @@ describe("11. versioning: committed format-version-1 sample (fabricated data onl
   const samplePath = new URL("./samples/pps-backup-format-v1.json", import.meta.url);
 
   it("writes the sample when PPS_WRITE_SAMPLE=1 (maintainers only)", async () => {
-    if (process.env.PPS_WRITE_SAMPLE !== "1") return;
+    // The app writes its current version; this sample stays the committed version-1 file.
+    if (process.env.PPS_WRITE_SAMPLE !== "1" || (DATA_SCHEMA_VERSION as number) !== 1) return;
     const d = await device("Sample device");
     await updateSharedPreferences(d.db, { timeZone: "Europe/London", weekStart: 1, calendarDisplay: "both" });
     const file = await createBackup(d.db, PRODUCT_REGISTRY, {

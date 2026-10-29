@@ -1,12 +1,26 @@
 import { CALENDAR_DISPLAYS, isValidTimeZone, timeZoneSchema } from "@pps/shared";
 import { z } from "zod";
 import { isLocalDate, localDateOf } from "../planning/time.ts";
+import { sessionTimesProblem } from "../work/session-time.ts";
 import { SHARED_PREFERENCES_ID } from "./limits.ts";
 
-/** A reference from one record type to another, e.g. a task's `projectId`. */
+/**
+ * A reference from one record type to another, e.g. a task's `projectId`. The field holds one ID
+ * (or null/absent), a list of IDs, or — with `key` — a list of objects holding the ID in `key`
+ * (data schema version 6: task `goalIds`, expected outputs' `definitionId`).
+ */
 export interface LinkDef {
   field: string;
   target: string;
+  key?: string;
+}
+
+/** The raw target values of one link in `data` (null/absent: none). Non-string values are returned as they are, so callers can refuse them. */
+export function linkTargets(link: LinkDef, data: Record<string, unknown>): unknown[] {
+  const value = data[link.field];
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value)) return [value];
+  return link.key ? value.map((item) => (item && typeof item === "object" ? (item as Record<string, unknown>)[link.key!] : item)) : value;
 }
 
 /** Finds the data of a known version of another record (any version, or undefined if none is known). */
@@ -208,13 +222,31 @@ export const recurrenceSchema = z
   .refine((r) => r.endDate === null || r.endDate >= r.startDate, { message: "endDate must not be before startDate" });
 export type Recurrence = z.infer<typeof recurrenceSchema>;
 
+/** A task definition as written by data schema versions 3 to 5 (recurrence; no goal links or suggestions). */
+const taskDefinitionV5Schema = z.object({ ...taskDefinitionV2Shape, recurrence: recurrenceSchema.optional() }).strict();
+
+/** A non-empty list of distinct IDs (fields added in data schema version 6 are absent when empty, T-025). */
+const idListSchema = (max: number) =>
+  z
+    .array(z.uuid())
+    .min(1)
+    .max(max)
+    .refine((ids) => new Set(ids).size === ids.length, { message: "IDs must be distinct" });
+
 /**
  * A task definition: reusable task details, not evidence that work happened. Without a project it
  * is in the quick-capture inbox. `recurrence` (Stage 3, data schema version 3) is absent for a
- * task that does not recur — never null (T-025). Output metrics belong to Stage 5.
+ * task that does not recur — never null (T-025). Data schema version 6 (Stage 5) adds `goalIds`
+ * (explicit links to goals of any kind, T-120, T-126) and `outputDefinitionIds` (suggested output
+ * definitions, the T-024 output-metric field, T-138), both absent when empty.
  */
 export const taskDefinitionSchema = z
-  .object({ ...taskDefinitionV2Shape, recurrence: recurrenceSchema.optional() })
+  .object({
+    ...taskDefinitionV2Shape,
+    recurrence: recurrenceSchema.optional(),
+    goalIds: idListSchema(100).optional(),
+    outputDefinitionIds: idListSchema(50).optional(),
+  })
   .strict();
 export type TaskDefinitionData = z.infer<typeof taskDefinitionSchema>;
 
@@ -255,10 +287,15 @@ export const taskDefinitionsType: RecordTypeDef = {
   links: [
     { field: "projectId", target: PROJECTS },
     { field: "workstreamId", target: WORKSTREAMS },
+    { field: "goalIds", target: "goals" },
+    { field: "outputDefinitionIds", target: "outputDefinitions" },
   ],
   sinceDataSchemaVersion: 2,
   rule: taskDefinitionRule,
-  olderSchemas: [{ untilDataSchemaVersion: 2, schema: taskDefinitionV2Schema as unknown as RecordTypeDef["schema"] }],
+  olderSchemas: [
+    { untilDataSchemaVersion: 2, schema: taskDefinitionV2Schema as unknown as RecordTypeDef["schema"] },
+    { untilDataSchemaVersion: 5, schema: taskDefinitionV5Schema as unknown as RecordTypeDef["schema"] },
+  ],
 };
 
 /* ---------- Stage 3: calendar and planning (dataSchemaVersion 3) ---------- */
@@ -287,39 +324,66 @@ const blockSnapshotSchema = z
   })
   .refine((s) => s.workstreamId === null || s.projectId !== null, { message: "a snapshot workstream needs a project" });
 
+/** Largest output value, expected amount, and output-goal target (T-085, T-104). */
+export const OUTPUT_VALUE_MAX = 1_000_000_000;
+
+/**
+ * Expected output amounts (T-125, T-128, T-141, T-150): at most one entry per definition; a whole
+ * number of 0 or more, where 0 means "0 expected" and no entry means unset (T-163).
+ */
+const expectedOutputsShape = (min: number) =>
+  z
+    .array(z.object({ definitionId: z.uuid(), amount: z.number().int().min(0).max(OUTPUT_VALUE_MAX) }).strict())
+    .min(min)
+    .max(50)
+    .refine((list) => new Set(list.map((e) => e.definitionId)).size === list.length, { message: "one expected amount per definition" });
+export type ExpectedOutput = { definitionId: string; amount: number };
+
+const calendarBlockV3Shape = {
+  taskId: z.uuid(),
+  startsAt: minuteInstantSchema,
+  endsAt: minuteInstantSchema,
+  timeZone: timeZoneSchema,
+  localDate: localDateSchema,
+  occurrenceDate: localDateSchema.nullable(),
+  status: z.enum(["planned", "cancelled"]),
+  snapshot: blockSnapshotSchema,
+};
+
+function checkBlock(b: { startsAt: string; endsAt: string; timeZone: string; localDate: string }, ctx: z.RefinementCtx) {
+  const minutes = (Date.parse(b.endsAt) - Date.parse(b.startsAt)) / 60_000;
+  if (!(minutes > 0)) ctx.addIssue({ code: "custom", message: "endsAt must be after startsAt" });
+  else if (minutes > BLOCK_MAX_MINUTES) ctx.addIssue({ code: "custom", message: "a block lasts at most 24 hours" });
+  if (isValidTimeZone(b.timeZone) && isLocalDate(b.localDate) && localDateOf(b.startsAt, b.timeZone) !== b.localDate) {
+    ctx.addIssue({ code: "custom", message: "localDate must be the local date of startsAt in timeZone" });
+  }
+}
+
+/** A block as written by data schema versions 3 to 5 (no expected outputs). */
+const calendarBlockV3Schema = z.object(calendarBlockV3Shape).strict().superRefine(checkBlock);
+
 /**
  * A planned block (T-027, T-030, D-022): fixed UTC instants, the zone it was planned in and its
  * local date there, the recurring occurrence it schedules (if any), and planned/cancelled status.
- * Plans only: no completion or actual time (Stage 5).
+ * Plans only: no completion or actual time. Data schema version 6 adds the optional
+ * `expectedOutputs` (T-141, T-150), absent when none — a plan, never an output.
  */
 export const calendarBlockSchema = z
-  .object({
-    taskId: z.uuid(),
-    startsAt: minuteInstantSchema,
-    endsAt: minuteInstantSchema,
-    timeZone: timeZoneSchema,
-    localDate: localDateSchema,
-    occurrenceDate: localDateSchema.nullable(),
-    status: z.enum(["planned", "cancelled"]),
-    snapshot: blockSnapshotSchema,
-  })
+  .object({ ...calendarBlockV3Shape, expectedOutputs: expectedOutputsShape(1).optional() })
   .strict()
-  .superRefine((b, ctx) => {
-    const minutes = (Date.parse(b.endsAt) - Date.parse(b.startsAt)) / 60_000;
-    if (!(minutes > 0)) ctx.addIssue({ code: "custom", message: "endsAt must be after startsAt" });
-    else if (minutes > BLOCK_MAX_MINUTES) ctx.addIssue({ code: "custom", message: "a block lasts at most 24 hours" });
-    if (isValidTimeZone(b.timeZone) && isLocalDate(b.localDate) && localDateOf(b.startsAt, b.timeZone) !== b.localDate) {
-      ctx.addIssue({ code: "custom", message: "localDate must be the local date of startsAt in timeZone" });
-    }
-  });
+  .superRefine(checkBlock);
 export type CalendarBlockData = z.infer<typeof calendarBlockSchema>;
 
 /** Blocks link to a task definition; a task with live blocks cannot be deleted (restrict). */
 export const calendarBlocksType: RecordTypeDef = {
   type: CALENDAR_BLOCKS,
   schema: calendarBlockSchema as unknown as RecordTypeDef["schema"],
-  links: [{ field: "taskId", target: TASK_DEFINITIONS }],
+  links: [
+    { field: "taskId", target: TASK_DEFINITIONS },
+    { field: "expectedOutputs", target: "outputDefinitions", key: "definitionId" },
+  ],
   sinceDataSchemaVersion: 3,
+  olderSchemas: [{ untilDataSchemaVersion: 5, schema: calendarBlockV3Schema as unknown as RecordTypeDef["schema"] }],
 };
 
 /* ---------- Stage 4: goals and milestones (dataSchemaVersion 4) ---------- */
@@ -339,24 +403,54 @@ export const TARGET_MAX: Record<GoalKind, number> = { output: 1_000_000_000, tim
  * minutes), a date range, and a status. Archive is separate from status, so restoring returns to
  * the pre-archive status (T-065). No progress is stored (Stage 5 derives it).
  */
-export const goalSchema = z
-  .object({
-    name: nameSchema,
-    description: textSchema,
-    projectId: z.uuid().nullable(),
-    startDate: localDateSchema,
-    deadline: localDateSchema.nullable(),
-    kind: z.enum(GOAL_KINDS),
-    target: z.number().int().min(1),
-    unit: z.string().max(UNIT_MAX).regex(/\S/, "must not be blank").optional(),
-    status: z.enum(GOAL_STATUSES),
-    archivedAt: archivedAtSchema,
-  })
+const unitSchema = z.string().max(UNIT_MAX).regex(/\S/, "must not be blank");
+
+const goalV4Shape = {
+  name: nameSchema,
+  description: textSchema,
+  projectId: z.uuid().nullable(),
+  startDate: localDateSchema,
+  deadline: localDateSchema.nullable(),
+  kind: z.enum(GOAL_KINDS),
+  target: z.number().int().min(1),
+  unit: unitSchema.optional(),
+  status: z.enum(GOAL_STATUSES),
+  archivedAt: archivedAtSchema,
+};
+
+function checkGoalBasics(g: { deadline: string | null; startDate: string; target: number; kind: GoalKind }, ctx: z.RefinementCtx) {
+  if (g.deadline !== null && g.deadline < g.startDate) ctx.addIssue({ code: "custom", message: "deadline must not be before startDate" });
+  if (g.target > TARGET_MAX[g.kind]) ctx.addIssue({ code: "custom", message: `target must be at most ${TARGET_MAX[g.kind]}` });
+}
+
+/** A goal as written by data schema versions 4 and 5: an output goal has its own unit label (T-050). */
+const goalV4Schema = z
+  .object(goalV4Shape)
   .strict()
   .superRefine((g, ctx) => {
-    if (g.deadline !== null && g.deadline < g.startDate) ctx.addIssue({ code: "custom", message: "deadline must not be before startDate" });
-    if (g.target > TARGET_MAX[g.kind]) ctx.addIssue({ code: "custom", message: `target must be at most ${TARGET_MAX[g.kind]}` });
+    checkGoalBasics(g, ctx);
     if ((g.kind === "output") !== (g.unit !== undefined)) ctx.addIssue({ code: "custom", message: "a unit is present exactly for output goals" });
+  });
+
+/**
+ * A goal (T-037 to T-065, T-077 to T-087): one overall target of a fixed kind (`time` in whole
+ * minutes), a date range, and a status. Archive is separate from status, so restoring returns to
+ * the pre-archive status (T-065). No progress is stored (derived, T-116). Data schema version 6:
+ * an output goal tracks one output definition (`definitionId`, T-137) whose unit it shows (T-154);
+ * it has `definitionId` or a legacy `unit` (or both); goals created from Stage 5 on omit `unit`,
+ * and a stored legacy unit is never rewritten (T-161). Other kinds have neither.
+ */
+export const goalSchema = z
+  .object({ ...goalV4Shape, definitionId: z.uuid().optional() })
+  .strict()
+  .superRefine((g, ctx) => {
+    checkGoalBasics(g, ctx);
+    if (g.kind === "output" && g.unit === undefined && g.definitionId === undefined) {
+      ctx.addIssue({ code: "custom", message: "an output goal needs a definition or a unit" });
+    }
+    if (g.kind !== "output" && (g.unit !== undefined || g.definitionId !== undefined)) {
+      ctx.addIssue({ code: "custom", message: "only output goals have a unit or an output definition" });
+    }
   });
 export type GoalData = z.infer<typeof goalSchema>;
 
@@ -376,9 +470,13 @@ export type MilestoneData = z.infer<typeof milestoneSchema>;
 export const goalsType: RecordTypeDef = {
   type: GOALS,
   schema: goalSchema as unknown as RecordTypeDef["schema"],
-  links: [{ field: "projectId", target: PROJECTS }],
+  links: [
+    { field: "projectId", target: PROJECTS },
+    { field: "definitionId", target: "outputDefinitions" },
+  ],
   sinceDataSchemaVersion: 4,
   immutableFields: ["kind"],
+  olderSchemas: [{ untilDataSchemaVersion: 5, schema: goalV4Schema as unknown as RecordTypeDef["schema"] }],
 };
 
 /** A milestone belongs to one goal for its whole life (T-083). */
@@ -388,6 +486,218 @@ export const milestonesType: RecordTypeDef = {
   links: [{ field: "goalId", target: GOALS }],
   sinceDataSchemaVersion: 4,
   immutableFields: ["goalId"],
+};
+
+/* ---------- Stage 5: actual work sessions and outputs (dataSchemaVersion 6) ---------- */
+
+export const SESSIONS = "sessions";
+export const OUTPUT_DEFINITIONS = "outputDefinitions";
+export const OUTPUT_RECORDS = "outputRecords";
+export const CORRECTIONS = "corrections";
+export const TASK_COMPLETIONS = "taskCompletions";
+export const RATING_MIN = 1;
+export const RATING_MAX = 5;
+export const REASON_MAX = 2_000;
+const instantSchema = z.iso.datetime();
+
+/**
+ * One period of actual work (T-091 to T-099, T-110, T-117, T-136, T-140, T-158): whole-minute UTC
+ * instants, pause intervals (paused time is not work time), the zone and local date at start, an
+ * optional task and a planned block of that task, the one time goal its work time counts toward
+ * (`null` = none, T-127, T-129), expected output amounts (T-125, T-128), names at recording time
+ * (`null` without a task, T-036 pattern), the device that started it, an optional note and 1–5
+ * energy/focus ratings, and the deletion state of the trash (T-103, T-142). Every field is
+ * present; `null` means none (new type, T-109). No end status (T-098).
+ */
+export const sessionSchema = z
+  .object({
+    taskId: z.uuid().nullable(),
+    blockId: z.uuid().nullable(),
+    startedAt: minuteInstantSchema,
+    endedAt: minuteInstantSchema.nullable(),
+    pauses: z.array(z.object({ start: minuteInstantSchema, end: minuteInstantSchema.nullable() }).strict()).max(1_000),
+    timeZone: timeZoneSchema,
+    localDate: localDateSchema,
+    goalId: z.uuid().nullable(),
+    expectedOutputs: expectedOutputsShape(0),
+    snapshot: blockSnapshotSchema.nullable(),
+    startedOnDevice: z.uuid(),
+    notes: textSchema,
+    energy: z.number().int().min(RATING_MIN).max(RATING_MAX).nullable(),
+    focus: z.number().int().min(RATING_MIN).max(RATING_MAX).nullable(),
+    deletedAt: instantSchema.nullable(),
+  })
+  .strict()
+  .superRefine((s, ctx) => {
+    const problem = sessionTimesProblem(s);
+    if (problem) ctx.addIssue({ code: "custom", message: problem });
+    if (s.blockId !== null && s.taskId === null) ctx.addIssue({ code: "custom", message: "a block link needs a task" });
+    if ((s.taskId === null) !== (s.snapshot === null)) ctx.addIssue({ code: "custom", message: "a snapshot is present exactly when a task is linked" });
+    if (isValidTimeZone(s.timeZone) && isLocalDate(s.localDate) && localDateOf(s.startedAt, s.timeZone) !== s.localDate) {
+      ctx.addIssue({ code: "custom", message: "localDate must be the local date of startedAt in timeZone" });
+    }
+  });
+export type SessionData = z.infer<typeof sessionSchema>;
+
+/**
+ * A session's block is of the same task (T-094, T-135); its goal is a time goal (T-122). Both read
+ * only fields that never change (a block's task, a goal's kind).
+ */
+export function sessionRule(data: Record<string, unknown>, lookup: DataLookup): string | null {
+  if (data.blockId) {
+    const block = lookup(CALENDAR_BLOCKS, data.blockId as string);
+    if (block && block.taskId !== data.taskId) return "a session can be linked only to a block of its own task";
+  }
+  if (data.goalId) {
+    const goal = lookup(GOALS, data.goalId as string);
+    if (goal && goal.kind !== "time") return "a session's work time counts toward a time goal only";
+  }
+  return null;
+}
+
+/**
+ * A reusable, user-defined measure (T-104, T-107, T-111): revisions of name and unit, all of the
+ * SAME unit (a different unit is a new definition, T-165); outputs point to the revision current
+ * when they were recorded. Archived: kept for history, not offered for new sessions.
+ */
+export const outputDefinitionSchema = z
+  .object({
+    revisions: z.array(z.object({ name: nameSchema, unit: unitSchema }).strict()).min(1).max(100),
+    archivedAt: archivedAtSchema,
+  })
+  .strict();
+export type OutputDefinitionData = z.infer<typeof outputDefinitionSchema>;
+
+/**
+ * One measured result of a session (T-099, T-104, T-105, T-112, T-137, T-143, T-159): a whole
+ * number of 0 or more (0 is a recorded result, unlike no record), the definition and revision,
+ * the goals it is explicitly attributed to (output goals of the same definition), and its own
+ * trash state for a deletion of this output alone (T-153).
+ */
+export const outputRecordSchema = z
+  .object({
+    sessionId: z.uuid(),
+    definitionId: z.uuid(),
+    revision: z.number().int().min(0).max(99),
+    value: z.number().int().min(0).max(OUTPUT_VALUE_MAX),
+    goalIds: z
+      .array(z.uuid())
+      .max(50)
+      .refine((ids) => new Set(ids).size === ids.length, { message: "IDs must be distinct" }),
+    deletedAt: instantSchema.nullable(),
+  })
+  .strict();
+export type OutputRecordData = z.infer<typeof outputRecordSchema>;
+
+export function outputRecordRule(data: Record<string, unknown>, lookup: DataLookup): string | null {
+  for (const goalId of data.goalIds as string[]) {
+    const goal = lookup(GOALS, goalId);
+    if (goal && goal.kind !== "output") return "an output counts toward output goals only";
+  }
+  return null;
+}
+
+export const CORRECTION_FIELDS = ["times", "value", "goal", "goals", "added", "deleted", "restored"] as const;
+export type CorrectionField = (typeof CORRECTION_FIELDS)[number];
+
+/**
+ * History of one change (T-102, T-113, T-131, T-148, T-157): session times, an output's value or
+ * goal attribution, an output added to an ended session, or a single output deleted or restored.
+ * `outputId` is null for changes of the session itself. Append-only: never edited, appended on
+ * import. Other edits (note, ratings, expected amounts, task or block link) keep no history.
+ */
+export const correctionSchema = z
+  .object({
+    sessionId: z.uuid(),
+    outputId: z.uuid().nullable(),
+    field: z.enum(CORRECTION_FIELDS),
+    before: z.json(),
+    after: z.json(),
+    reason: z.string().max(REASON_MAX).nullable(),
+    device: z.uuid(),
+    at: instantSchema,
+  })
+  .strict();
+export type CorrectionData = z.infer<typeof correctionSchema>;
+
+/**
+ * An explicit completion of a one-off task (`occurrenceDate` null) or of one occurrence of a
+ * recurring task (T-108, T-118, T-119): its ID is derived from the task and the occurrence date,
+ * so the same completion made on two devices is one record. `goalId` is the one task-count goal it
+ * counts toward (null = none, T-123, T-130). Reopening sets `reopenedAt` on the same record (T-133,
+ * T-147); completing again clears it. The task definition itself never changes.
+ */
+export const taskCompletionSchema = z
+  .object({
+    taskId: z.uuid(),
+    occurrenceDate: localDateSchema.nullable(),
+    completedAt: instantSchema,
+    goalId: z.uuid().nullable(),
+    reopenedAt: instantSchema.nullable(),
+  })
+  .strict();
+export type TaskCompletionData = z.infer<typeof taskCompletionSchema>;
+
+export function taskCompletionRule(data: Record<string, unknown>, lookup: DataLookup): string | null {
+  if (!data.goalId) return null;
+  const goal = lookup(GOALS, data.goalId as string);
+  return goal && goal.kind !== "taskCount" ? "a completion counts toward a task-count goal only" : null;
+}
+
+export const sessionsType: RecordTypeDef = {
+  type: SESSIONS,
+  schema: sessionSchema as unknown as RecordTypeDef["schema"],
+  links: [
+    { field: "taskId", target: TASK_DEFINITIONS },
+    { field: "blockId", target: CALENDAR_BLOCKS },
+    { field: "goalId", target: GOALS },
+    { field: "expectedOutputs", target: OUTPUT_DEFINITIONS, key: "definitionId" },
+  ],
+  sinceDataSchemaVersion: 6,
+  rule: sessionRule,
+};
+
+export const outputDefinitionsType: RecordTypeDef = {
+  type: OUTPUT_DEFINITIONS,
+  schema: outputDefinitionSchema as unknown as RecordTypeDef["schema"],
+  links: [],
+  sinceDataSchemaVersion: 6,
+};
+
+export const outputRecordsType: RecordTypeDef = {
+  type: OUTPUT_RECORDS,
+  schema: outputRecordSchema as unknown as RecordTypeDef["schema"],
+  links: [
+    { field: "sessionId", target: SESSIONS },
+    { field: "definitionId", target: OUTPUT_DEFINITIONS },
+    { field: "goalIds", target: GOALS },
+  ],
+  sinceDataSchemaVersion: 6,
+  immutableFields: ["sessionId", "definitionId"],
+  rule: outputRecordRule,
+};
+
+export const correctionsType: RecordTypeDef = {
+  type: CORRECTIONS,
+  schema: correctionSchema as unknown as RecordTypeDef["schema"],
+  links: [
+    { field: "sessionId", target: SESSIONS },
+    { field: "outputId", target: OUTPUT_RECORDS },
+  ],
+  sinceDataSchemaVersion: 6,
+  appendOnly: true,
+};
+
+export const taskCompletionsType: RecordTypeDef = {
+  type: TASK_COMPLETIONS,
+  schema: taskCompletionSchema as unknown as RecordTypeDef["schema"],
+  links: [
+    { field: "taskId", target: TASK_DEFINITIONS },
+    { field: "goalId", target: GOALS },
+  ],
+  sinceDataSchemaVersion: 6,
+  immutableFields: ["taskId", "occurrenceDate"],
+  rule: taskCompletionRule,
 };
 
 /**
@@ -402,6 +712,11 @@ export const PRODUCT_REGISTRY = createRegistry([
   calendarBlocksType,
   goalsType,
   milestonesType,
+  outputDefinitionsType,
+  sessionsType,
+  outputRecordsType,
+  correctionsType,
+  taskCompletionsType,
 ]);
 
 /** Data of the frozen sync code; never exported, and a file containing it is refused. */

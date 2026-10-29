@@ -93,7 +93,7 @@ function ProjectList({ org, onOpen }: { org: Organization; onOpen: (id: string) 
             {result.tasks.length === 0 ? <p className="muted">{t("org.noMatches")}</p> : null}
             <ul className="item-list" data-testid="task-results">
               {result.tasks.map((task) => (
-                <TaskRow key={task.id} task={task} org={org} context={projectName(task.data.projectId) ?? t("inbox.title")} />
+                <TaskRow key={task.id} task={task} org={org} context={projectName(task.data.projectId) ?? t("inbox.title")} listStatus={status} />
               ))}
             </ul>
           </>
@@ -316,7 +316,7 @@ function ProjectDetail({ project, org, onBack }: { project: Project; org: Organi
         {outline.directTasks.length === 0 ? <p className="muted">{t("projects.noTasks")}</p> : null}
         <ul className="item-list">
           {outline.directTasks.map((task) => (
-            <TaskRow key={task.id} task={task} org={org} />
+            <TaskRow key={task.id} task={task} org={org} listStatus={status} />
           ))}
         </ul>
         <NewTask projectId={project.id} org={org} />
@@ -327,7 +327,7 @@ function ProjectDetail({ project, org, onBack }: { project: Project; org: Organi
           {tasks.length === 0 ? <p className="muted">{t("projects.noTasks")}</p> : null}
           <ul className="item-list">
             {tasks.map((task) => (
-              <TaskRow key={task.id} task={task} org={org} />
+              <TaskRow key={task.id} task={task} org={org} listStatus={status} />
             ))}
           </ul>
           <NewTask projectId={project.id} workstreamId={workstream.id} org={org} />

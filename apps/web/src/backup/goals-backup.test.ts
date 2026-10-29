@@ -5,6 +5,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
+import { DATA_SCHEMA_VERSION } from "./limits.ts";
 import {
   createGoal,
   createMilestone,
@@ -17,7 +18,7 @@ import {
   updateGoal,
 } from "../local/goals.ts";
 import { createProject } from "../local/organization.ts";
-import { deleteRecord } from "../local/records.ts";
+import { deleteRecord, putRecord } from "../local/records.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
 import { loadConflictViews, resolveConflict } from "./conflicts.ts";
 import { contentHashOf, makeEnvelope, nowIso } from "./envelope.ts";
@@ -28,6 +29,16 @@ import { blobOf, decide, exportFrom, importInto, mutate, snapshot } from "./test
 
 const registry = PRODUCT_REGISTRY;
 const product = { registry };
+
+/** A pre-Stage-5 output goal with its own unit label (T-050), as Stage 4 wrote it; Stage 5 creates goals with a definition instead (T-161). */
+async function legacyOutputGoal(
+  db: TestDevice["db"],
+  input: { name: string; projectId: string | null; startDate: string; deadline: string | null; target: number; unit: string },
+): Promise<string> {
+  const id = crypto.randomUUID();
+  await putRecord(db, registry, GOALS, id, { ...input, description: "", kind: "output", status: "active", archivedAt: null });
+  return id;
+}
 const devices: TestDevice[] = [];
 async function device(label: string, zone: string | null = "Asia/Tehran") {
   const d = await createTestDevice(label);
@@ -57,7 +68,7 @@ const recordsOf = async (d: TestDevice) =>
 async function goalDevice(label = "A") {
   const d = await device(label);
   const project = await createProject(d.db, { name: "Thesis" });
-  const book = await createGoal(d.db, { name: "Write", projectId: project, startDate: "2026-11-01", deadline: "2026-12-31", kind: "output", target: 300, unit: "pages" });
+  const book = await legacyOutputGoal(d.db, { name: "Write", projectId: project, startDate: "2026-11-01", deadline: "2026-12-31", target: 300, unit: "pages" });
   const draft = await createMilestone(d.db, { goalId: book, name: "Draft", deadline: "2026-11-30" });
   const review = await createMilestone(d.db, { goalId: book, name: "Review" });
   await setMilestoneCompleted(d.db, draft, true);
@@ -69,11 +80,11 @@ async function goalDevice(label = "A") {
 }
 
 describe("8. round-trip and merge of goals and milestones", () => {
-  it("an empty device receives everything with identical IDs, hashes, and versions (written as dataSchemaVersion 5 since the Stage 3 follow-up)", async () => {
+  it("an empty device receives everything with identical IDs, hashes, and versions (written as dataSchemaVersion 6 since Stage 5)", async () => {
     const a = await goalDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(5);
+    expect(doc.app.dataSchemaVersion).toBe(6);
     expect(doc.payload.records[GOALS]).toHaveLength(3);
     expect(doc.payload.records[MILESTONES]).toHaveLength(2);
     const b = await device("B", null);
@@ -175,7 +186,7 @@ describe("9. upgrade from Stage 3 without loss", () => {
     await d.restart();
     expect(await recordsOf(d)).toEqual(before);
     const exported = await exportText(d);
-    expect(JSON.parse(exported).app.dataSchemaVersion).toBe(5);
+    expect(JSON.parse(exported).app.dataSchemaVersion).toBe(6);
     const target = await device("Holds Stage 3 backup", null);
     await importInto(target, sample, { ...product, applyUpdates: true });
     const { preview } = await importInto(target, exported, product);
@@ -227,7 +238,7 @@ describe("10. versioning and validation", () => {
     expect(await codeOf(importInto(s.b, milestonesOnly, product))).toBe("UNKNOWN_RECORD_TYPE");
     expect(await snapshot(s.b.db)).toEqual(s.before);
     expect(await codeOf(importInto(s.b, plainV3, product))).toBe("OK");
-    const newer = mutate(s.text, (doc) => (doc.app.dataSchemaVersion = 6));
+    const newer = mutate(s.text, (doc) => (doc.app.dataSchemaVersion = 7));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
   });
 
@@ -289,10 +300,11 @@ describe("10. versioning and validation", () => {
   });
 
   it("writes the dataSchemaVersion-4 sample when PPS_WRITE_SAMPLE=1 (maintainers only)", async () => {
-    if (process.env.PPS_WRITE_SAMPLE !== "1") return;
+    // The app writes its current version; this sample stays the committed version-4 file.
+    if (process.env.PPS_WRITE_SAMPLE !== "1" || (DATA_SCHEMA_VERSION as number) !== 4) return;
     const d = await device("Sample device");
     const project = await createProject(d.db, { name: "Sample project" });
-    const output = await createGoal(d.db, { name: "Sample output goal", projectId: project, startDate: "2026-11-01", deadline: "2026-12-31", kind: "output", target: 120, unit: "pages" });
+    const output = await legacyOutputGoal(d.db, { name: "Sample output goal", projectId: project, startDate: "2026-11-01", deadline: "2026-12-31", target: 120, unit: "pages" });
     const done = await createMilestone(d.db, { goalId: output, name: "Sample completed milestone", deadline: "2026-11-30" });
     await setMilestoneCompleted(d.db, done, true);
     await createMilestone(d.db, { goalId: output, name: "Sample open milestone", description: "No deadline" });

@@ -3,7 +3,7 @@
  * DECISIONS T-037 to T-065, T-077 to T-087).
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { GOALS, MILESTONES, PRODUCT_REGISTRY } from "../backup/registry.ts";
+import { GOALS, MILESTONES, OUTPUT_DEFINITIONS, PRODUCT_REGISTRY } from "../backup/registry.ts";
 import { createTestDevice, type TestDevice } from "../backup/test-fixtures.ts";
 import {
   canChangeStatus,
@@ -28,9 +28,12 @@ import { createProject, setArchived } from "./organization.ts";
 import { putRecord, RecordRuleError } from "./records.ts";
 
 const devices: TestDevice[] = [];
+/** Output goals track one output definition from Stage 5 on (T-137, T-151); every test device has this one. */
+const PAGES_DEFINITION = "5b0c2a6e-6c1d-4e8f-9a3b-7d2e1f0a9c41";
 async function device(label = "D") {
   const d = await createTestDevice(label);
   devices.push(d);
+  await putRecord(d.db, PRODUCT_REGISTRY, OUTPUT_DEFINITIONS, PAGES_DEFINITION, { revisions: [{ name: "Pages written", unit: "pages" }], archivedAt: null });
   return d.db;
 }
 afterEach(() => {
@@ -47,16 +50,16 @@ const codeOf = async (promise: Promise<unknown>) => {
   }
 };
 
-const pages: GoalInput = { name: "Write the book", startDate: "2026-11-01", deadline: "2026-12-31", kind: "output", target: 300, unit: "pages" };
+const pages: GoalInput = { name: "Write the book", startDate: "2026-11-01", deadline: "2026-12-31", kind: "output", target: 300, definitionId: PAGES_DEFINITION };
 const goalData = async (db: Awaited<ReturnType<typeof device>>, id: string) => (await db.records.get([GOALS, id]))!.data;
 const milestoneData = async (db: Awaited<ReturnType<typeof device>>, id: string) => (await db.records.get([MILESTONES, id]))!.data;
 
 describe("1–2. creating goals", () => {
-  it("stores each kind with its target; only output goals have a unit; status starts active", async () => {
+  it("stores each kind with its target; an output goal tracks its definition and has no own unit (T-151, T-161); status starts active", async () => {
     const db = await device();
     const project = await createProject(db, { name: "Thesis" });
     const output = await createGoal(db, { ...pages, name: "  Write the book  ", description: " d ", projectId: project });
-    const time = await createGoal(db, { name: "Study", startDate: "2026-10-01", kind: "time", target: 40 * 60 + 30, unit: "ignored" });
+    const time = await createGoal(db, { name: "Study", startDate: "2026-10-01", kind: "time", target: 40 * 60 + 30, definitionId: PAGES_DEFINITION });
     const count = await createGoal(db, { name: "Finish tasks", startDate: "2027-01-01", kind: "taskCount", target: 20 });
     expect(await goalData(db, output)).toEqual({
       name: "Write the book",
@@ -66,23 +69,27 @@ describe("1–2. creating goals", () => {
       deadline: "2026-12-31",
       kind: "output",
       target: 300,
-      unit: "pages",
+      definitionId: PAGES_DEFINITION,
       status: "active",
       archivedAt: null,
     });
     expect(await goalData(db, time)).toMatchObject({ kind: "time", target: 2430, deadline: null, projectId: null });
-    expect(await goalData(db, time)).not.toHaveProperty("unit");
-    expect(await goalData(db, count)).not.toHaveProperty("unit");
+    expect(await goalData(db, output)).not.toHaveProperty("unit");
+    for (const id of [time, count]) {
+      expect(await goalData(db, id)).not.toHaveProperty("unit");
+      expect(await goalData(db, id)).not.toHaveProperty("definitionId");
+    }
   });
 
-  it("refuses a blank name, a deadline before the start, bad targets, and a missing unit", async () => {
+  it("refuses a blank name, a deadline before the start, bad targets, and a missing definition", async () => {
     const db = await device();
     expect(await codeOf(createGoal(db, { ...pages, name: "  " }))).toBe("ZodError");
     expect(await codeOf(createGoal(db, { ...pages, deadline: "2026-10-31" }))).toBe("DEADLINE_BEFORE_START");
     expect(await codeOf(createGoal(db, { ...pages, deadline: "2026-11-01" }))).toBe("OK"); // same day is fine
     for (const target of [0, -1, 2.5, 1_000_000_001]) expect(await codeOf(createGoal(db, { ...pages, target }))).toBe("INVALID_TARGET");
     expect(await codeOf(createGoal(db, { ...pages, kind: "time", target: 1_000_001 }))).toBe("INVALID_TARGET");
-    expect(await codeOf(createGoal(db, { ...pages, unit: " " }))).toBe("ZodError");
+    expect(await codeOf(createGoal(db, { ...pages, definitionId: undefined }))).toBe("NO_DEFINITION");
+    expect(await codeOf(createGoal(db, { ...pages, definitionId: crypto.randomUUID() }))).toBe("BROKEN_LINK");
     expect(await codeOf(createGoal(db, { ...pages, projectId: crypto.randomUUID() }))).toBe("BROKEN_LINK");
     expect((await loadGoals(db)).goals).toHaveLength(1);
   });
@@ -94,11 +101,12 @@ describe("1–2. creating goals", () => {
     expect(defaultStartDate(null, instant)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("editing keeps the kind (T-079): target, unit, dates, and project can change", async () => {
+  it("editing keeps the kind (T-079): target, dates, and project can change; the unit is not edited on the goal (T-154)", async () => {
     const db = await device();
     const id = await createGoal(db, pages);
-    await updateGoal(db, id, { target: 350, unit: "  sheets ", name: "Book", startDate: "2026-10-15", deadline: null });
-    expect(await goalData(db, id)).toMatchObject({ target: 350, unit: "sheets", name: "Book", startDate: "2026-10-15", deadline: null, kind: "output" });
+    await updateGoal(db, id, { target: 350, name: "Book", startDate: "2026-10-15", deadline: null });
+    expect(await goalData(db, id)).toMatchObject({ target: 350, name: "Book", startDate: "2026-10-15", deadline: null, kind: "output", definitionId: PAGES_DEFINITION });
+    expect(await goalData(db, id)).not.toHaveProperty("unit");
     await expect(putRecord(db, PRODUCT_REGISTRY, GOALS, id, { ...(await goalData(db, id)), kind: "taskCount" })).rejects.toBeTruthy();
     expect(await codeOf(updateGoal(db, id, { target: 0 }))).toBe("INVALID_TARGET");
     expect((await goalData(db, id)).kind).toBe("output");

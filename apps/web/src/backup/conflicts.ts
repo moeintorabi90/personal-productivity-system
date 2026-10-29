@@ -1,8 +1,9 @@
 import type { LocalDb, PendingConflictRow, VersionEntry } from "../local/db.ts";
 import { deviceIdentity, toEnvelope } from "../local/records.ts";
+import { markImportedSessions } from "../local/work.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { canonicalize } from "./jcs.ts";
-import type { Registry } from "./registry.ts";
+import { linkTargets, type Registry } from "./registry.ts";
 import { mergeAndBump, type VersionVector } from "./versions.ts";
 
 /** Choices (docs/BACKUP_FORMAT.md, "Showing and resolving conflicts", D-015). */
@@ -115,7 +116,11 @@ async function assertNoLinkedItems(db: LocalDb, registry: Registry, type: string
   for (const def of registry.types.values()) {
     for (const link of def.links) {
       if (link.target !== type) continue;
-      const children = await db.records.where("type").equals(def.type).filter((r) => r.data[link.field] === id).count();
+      const children = await db.records
+        .where("type")
+        .equals(def.type)
+        .filter((r) => linkTargets(link, r.data).includes(id))
+        .count();
       if (children > 0) throw new ResolutionError("HAS_LINKED_ITEMS", `${type}/${id} still has linked ${def.type} items`);
     }
   }
@@ -128,13 +133,13 @@ async function assertNoLinkedItems(db: LocalDb, registry: Registry, type: string
 export async function assertLinksLive(db: LocalDb, registry: Registry, type: string, data: Record<string, unknown>): Promise<void> {
   const live = new Map<string, Record<string, unknown>>();
   for (const link of registry.get(type)?.links ?? []) {
-    const target = data[link.field];
-    if (target === null || target === undefined) continue;
-    const row = typeof target === "string" ? await db.records.get([link.target, target]) : undefined;
-    if (!row) {
-      throw new ResolutionError("BROKEN_LINK", `${type}.${link.field} → ${link.target}/${String(target)} is not on this device`);
+    for (const target of linkTargets(link, data)) {
+      const row = typeof target === "string" ? await db.records.get([link.target, target]) : undefined;
+      if (!row) {
+        throw new ResolutionError("BROKEN_LINK", `${type}.${link.field} → ${link.target}/${String(target)} is not on this device`);
+      }
+      live.set(`${link.target}/${target}`, row.data);
     }
-    live.set(`${link.target}/${target}`, row.data);
   }
   // The version must also satisfy its relationship rule against the live targets.
   const problem = registry.get(type)?.rule?.(data, (targetType, id) => live.get(`${targetType}/${id}`));
@@ -194,6 +199,7 @@ async function resolveInTx(
       await assertLinksLive(db, registry, type, incoming.envelope.data);
       if (current) await archive(db, type, id, current, "replacedByBackup");
       await writeRecord(db, type, id, incoming.envelope.data, incoming.envelope.createdAt, merged);
+      await markImportedSessions(db, [{ type, id, data: incoming.envelope.data }], conflict.source.exportedAt);
       break;
     }
     case "deleteHere": {
