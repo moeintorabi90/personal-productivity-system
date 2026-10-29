@@ -224,7 +224,7 @@ Palette identifiers and theme values, the default-color rule, snapping in the co
 
 ### Actual work and outputs
 
-Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-108, T-117, T-118, T-120 to T-125 (approval date not stated; recorded 2026-10-26), T-129 to T-145 (approved 2026-10-26), and T-153 to T-159 (approved 2026-10-29), and derived technical choices T-109 to T-116, T-119, T-126 to T-128, T-146 to T-152, T-160, T-161. No Stage 5 open detail remains (S-1 to S-15 are resolved). Items below cite their source; items marked *(spec)* come from this specification without a specific owner decision.
+Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-108, T-117, T-118, T-120 to T-125 (approval date not stated; recorded 2026-10-26), T-129 to T-145 (approved 2026-10-26), and T-153 to T-159, T-162, T-163 (approved 2026-10-29), and derived technical choices T-109 to T-116, T-119, T-126 to T-128, T-146 to T-152, T-160, T-161, T-164. No Stage 5 open detail remains (S-1 to S-15 are resolved). Items below cite their source; items marked *(spec)* come from this specification without a specific owner decision.
 
 **Stage boundary (T-145):** Stage 5 records actual sessions and outputs. The planned-versus-actual calendar comparison and calendar drag interactions for actual sessions stay in Stage 6 (T-071, T-072).
 
@@ -232,7 +232,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 
 - [ ] A session records one period of actual work, separate from a task. A task can span several sessions; ending a session does not complete its task (T-091).
 - [ ] User can start, pause, resume, and end a session, or record a past session, whether planned or unplanned. Only one session is open per device; a paused session stays open, so it must be resumed or ended before another session starts on that device (T-092, T-117). Paused time is not work time (T-092).
-- [ ] A forgotten running session: the next time the app opens, it asks for the session's end time (T-093).
+- [ ] A forgotten running session: the next time the app opens, it asks for the session's end time (T-093). A session that has been paused for more than 24 hours: the next time the app opens, it reminds the user; nothing is closed automatically, and the session keeps the device's open-session slot until it is resumed or ended (T-162).
 - [ ] Linking a task is optional (T-095). A session started from a planned block is linked to it automatically only when the block is for the same task (T-094). A separately recorded session may later be linked to a planned block of the same task; linking never changes the session's recorded times (T-135).
 - [ ] A past session is entered as a start time and a duration; the app stores exact start and end instants. Any past date is allowed; a finished session cannot be in the future (T-096).
 - [ ] A session has at most 24 hours of actual work time; paused time does not count toward the limit (T-136, T-158).
@@ -255,7 +255,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 - [ ] Editing the name or unit of a definition already in use asks whether the change also applies to historical records or whether they keep the previous name and unit (T-107).
 - [ ] A task may store several suggested output definitions, offered during session entry; they never restrict which definitions can be recorded or which compatible goals can be chosen (T-138).
 - [ ] Corrections of output values keep their history, also in backups; a reason is optional (T-102). An individual output can be deleted; the deletion is kept in history and backups, and the output no longer counts toward progress (T-143). Like a deleted session, it can be restored for 30 days and is then deleted permanently; emptying the trash earlier also deletes it permanently (T-153). Planned output is never assumed achieved *(spec)*.
-- [ ] For each session, an expected output amount may be entered per applicable output definition; it is optional and separate from the actual output, which may be below or above it, e.g. expected 30 words, actual 20 (T-125). A session started from a planned block that has expected output amounts receives a copy of them; otherwise expected amounts stay unset unless the user enters them (T-141). When a session ends, the user may record several outputs and, optionally, expected values (T-141). Expected amounts never count toward goals.
+- [ ] For each session, an expected output amount may be entered per applicable output definition; it is optional and separate from the actual output, which may be below or above it, e.g. expected 30 words, actual 20 (T-125). An expected amount of 0 is valid and differs from leaving it unset (T-163). A session started from a planned block that has expected output amounts receives a copy of them; otherwise expected amounts stay unset unless the user enters them (T-141). When a session ends, the user may record several outputs and, optionally, expected values (T-141). Expected amounts never count toward goals.
 
 **Tasks and goals**
 
