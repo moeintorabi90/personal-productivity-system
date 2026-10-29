@@ -226,7 +226,8 @@ async function deviceVersions(db: LocalDb, keys: Set<string>): Promise<Map<strin
  * (a workstream's project) must agree across all versions of one ID, in the file and on this
  * device; a disagreement means a corrupted or foreign file. (2) Each version must satisfy its
  * type's rule (a task's workstream belongs to the task's project), looked up in any known version
- * of the target — safe because the fields a rule reads are immutable.
+ * of the target — safe for immutable fields; a rule that reads a set-once field (a goal's
+ * `definitionId`) gets every known version and accepts the target if one of them satisfies it.
  */
 async function checkFileRelationships(
   db: LocalDb,
@@ -249,8 +250,9 @@ async function checkFileRelationships(
     }
   }
   const lookup: DataLookup = (type, id) => allData(`${type}/${id}`)[0];
+  const lookupAll = (type: string, id: string) => allData(`${type}/${id}`);
   for (const v of versions) {
-    const problem = registry.get(v.type)?.rule?.(v.data, lookup);
+    const problem = registry.get(v.type)?.rule?.(v.data, lookup, lookupAll);
     if (problem) throw new BackupError("INVALID_RELATIONSHIP", `${v.where}: ${problem}`);
   }
 }

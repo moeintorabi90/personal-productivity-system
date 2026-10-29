@@ -25,6 +25,8 @@ export function linkTargets(link: LinkDef, data: Record<string, unknown>): unkno
 
 /** Finds the data of a known version of another record (any version, or undefined if none is known). */
 export type DataLookup = (type: string, id: string) => Record<string, unknown> | undefined;
+/** Every known version of another record (an imported file's history check); empty if none is known. */
+export type DataLookupAll = (type: string, id: string) => Record<string, unknown>[];
 
 export interface RecordTypeDef {
   type: string;
@@ -54,8 +56,10 @@ export interface RecordTypeDef {
    * Relationship rule across records (DATA_MODEL "Ownership and relationships"), checked for
    * typed-in data and for every version in an imported file. Returns a problem, or null. A target
    * whose data is unknown (e.g. only a deletion marker) is skipped here; link checks cover it.
+   * `lookupAll` is passed for the file-wide check, where a target may have several versions: a
+   * rule that reads a field that is not immutable must accept a target if any version satisfies it.
    */
-  rule?: (data: Record<string, unknown>, lookup: DataLookup) => string | null;
+  rule?: (data: Record<string, unknown>, lookup: DataLookup, lookupAll?: DataLookupAll) => string | null;
 }
 
 export interface Registry {
@@ -589,10 +593,19 @@ export const outputRecordSchema = z
   .strict();
 export type OutputRecordData = z.infer<typeof outputRecordSchema>;
 
-export function outputRecordRule(data: Record<string, unknown>, lookup: DataLookup): string | null {
+/**
+ * Every attributed goal is an output goal that tracks the output's own definition (T-112, T-137);
+ * an output goal without `definitionId` tracks none. A goal's `definitionId` is set once but may
+ * differ between versions (two devices linking the same earlier goal), so the file-wide check
+ * accepts the goal if any known version tracks the definition; active versions are checked
+ * against the live goal.
+ */
+export function outputRecordRule(data: Record<string, unknown>, lookup: DataLookup, lookupAll?: DataLookupAll): string | null {
   for (const goalId of data.goalIds as string[]) {
-    const goal = lookup(GOALS, goalId);
-    if (goal && goal.kind !== "output") return "an output counts toward output goals only";
+    const versions = lookupAll ? lookupAll(GOALS, goalId) : [lookup(GOALS, goalId)].filter((g) => g !== undefined);
+    if (versions.length === 0) continue; // an unknown target is a link error, reported by the link checks
+    if (versions.some((g) => g.kind !== "output")) return "an output counts toward output goals only";
+    if (!versions.some((g) => g.definitionId === data.definitionId)) return "an output counts only toward goals that track its definition";
   }
   return null;
 }
