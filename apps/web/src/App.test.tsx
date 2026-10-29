@@ -100,10 +100,11 @@ describe("v1 app shell (sync frozen and hidden, D-016)", () => {
     fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
     expect(await screen.findByRole("heading", { level: 1, name: "تنظیمات" })).toBeTruthy();
     await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
-    expect(screen.getByRole("navigation", { name: "اصلی" })).toBeTruthy();
+    // Each component follows its own preferences query: wait for each one's Persian text under load.
+    expect(await screen.findByRole("navigation", { name: "اصلی" })).toBeTruthy();
     expect((await getDeviceSettings(services.db)).language).toBe("fa");
     expect(await getSharedPreferences(services.db)).not.toHaveProperty("language");
-    fireEvent.change(screen.getByLabelText("زبان"), { target: { value: "en" } });
+    fireEvent.change(await screen.findByLabelText("زبان"), { target: { value: "en" } });
     await waitFor(() => expect(document.documentElement.dir).toBe("ltr"));
   });
 
@@ -781,7 +782,9 @@ describe("Stage 3: calendar, Today, recurrence, capacity", () => {
     expect(cells).toHaveLength(30);
     // Jalali date entry in "go to date": 1 Farvardin 1406 = 21 March 2027.
     const goTo2 = await screen.findByRole("group", { name: "رفتن به تاریخ" }); // after the display preference loads
-    fireEvent.change(within(goTo2).getByLabelText("سال"), { target: { value: "1406" } });
+    // The field's own labels follow its own preferences query, which can resolve after the legend
+    // (passed in already translated) under load: wait for them.
+    fireEvent.change(await within(goTo2).findByLabelText("سال"), { target: { value: "1406" } });
     fireEvent.change(within(goTo2).getByLabelText("ماه"), { target: { value: "1" } });
     fireEvent.change(within(goTo2).getByLabelText("روز"), { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: "برو" }));

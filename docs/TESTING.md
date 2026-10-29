@@ -233,6 +233,34 @@ Not tested yet:
 - Screen-reader use of the new forms.
 - The app-open prompts' buttons in the browser. The prompt logic (left running, 24 hours of work, pause over 24 hours) is tested in `local/work.test.ts`; the UI is not.
 
+### Pre-merge check (2026-10-30; branch `feat/stage-5-sessions-outputs` at `24d1037`, plus the test-only fix below; not merged)
+
+This adds to the report above, which stays as it was run. Changes since that report (`c53d7c4`), each with its own tests:
+
+- T-170: deletions that block each other after a backup import, and the blocker message (`a46a2ce`, `5fcbf92`).
+- An output counts only toward goals that track its definition, in record writes, imports, conflict choices, archive restores, and import updates; the import preview reports a goal update that outputs here would not fit, and the import can proceed without updates (`820790a`, `cd36a6d`, `927eb5b`, `d555280`).
+- T-171: a planned block's task is fixed, also against every known version (`73a6459`, `47ee761`).
+- T-172: the owner settles a block whose saved versions name different tasks; only `calendarBlocks.taskId` is covered (`ea4a80a`, `24d1037`).
+
+New test files since the report: `backup/deletion-order.test.ts` (6), `backup/output-goal-rule.test.ts` (7), `backup/block-task-identity.test.ts` (13); component tests for these flows were added to `App.test.tsx`.
+
+Commands run on the Windows development machine (Edge for end-to-end tests), in this order:
+
+1. At `24d1037`: `npm.cmd run typecheck` passed; `npm.cmd test` had 1 failed and 388 passed (35 files, 1 failed): "26. Persian RTL with Jalali display" in `App.test.tsx`; `npm.cmd run test:e2e` 12 passed.
+2. Cause: `useT()` follows each component's own preferences query, which returns the defaults (English) until it resolves. The Jalali date field's labels were read right after its legend (translated by the parent) appeared; under the load of the full run, the field's own query had not resolved yet. The test passed alone (3 of 3 runs). Fix in the test only: wait for the Persian labels (`findByLabelText`).
+3. `npx.cmd vitest run apps/web/src/App.test.tsx`: 1 failed, 38 passed. This time "switches to Persian (RTL)" failed for the same reason (the navigation and the language field were read without waiting); it passed alone. Same test-only fix.
+4. `npx.cmd vitest run apps/web/src/App.test.tsx` three times in a row: 39 passed each time.
+5. Final run: `npm.cmd run typecheck` passed; `npm.cmd test` 35 files, 389 tests passed, 0 failed; `npm.cmd run test:e2e` 12 passed, 0 failed.
+
+No product code changed in this check. Observation, not changed: right after a component appears in Persian, its labels can show in English for a moment until its preferences query resolves (seen only in tests; the same since Stage 3).
+
+Still open (manual or not tested):
+
+- Item 12 (manual checks on the owner's Windows laptop and Android phone), now also covering the Backup screen flows above: deletion decisions in order, blocking outputs named, an import without updates, and "Versions that disagree".
+- Screen-reader use of the new forms and Backup screen sections.
+- The app-open prompts' buttons in the browser.
+- Set-aside versions (T-172) stay on the device where they were set aside and are not part of backups; this is by decision and is covered only by automated tests.
+
 ## Release gate
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.
