@@ -39,6 +39,9 @@ function errorMessage(t: Translate, error: unknown): string {
   if (error instanceof ResolutionError && error.code === "LINKED_ITEMS_MISMATCH") {
     return t("backup.resolve.error", { reason: t("backup.resolve.linkedMismatch", { count: error.linkedItems.length }) });
   }
+  if (error instanceof ResolutionError && error.code === "IMMUTABLE_FIELD") {
+    return t("backup.resolve.error", { reason: t("backup.resolve.immutableField") });
+  }
   if (error instanceof ResolutionError && error.code === "BROKEN_LINK") {
     return t("backup.resolve.error", { reason: t("backup.resolve.brokenLink") });
   }

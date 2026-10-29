@@ -294,6 +294,8 @@ export const en = {
     "{count} output(s) on this device count toward this goal but measure a different output definition than this version (listed below). Change or remove their goal on the Work screen first. Nothing was changed.",
   "backup.blockingOutput": "{output}, in the session started {session}",
   "backup.blockingOutput.trash": "(in the trash: restore it to change its goal)",
+  "backup.resolve.immutableField":
+    "this version belongs to something else than the item on this device (for example a planned block for another task), which never changes. Keep this device's version.",
   "backup.resolve.brokenLink": "this version belongs to an item that is not on this device. Restore that item first.",
   "backup.resolve.invalidRelationship": "this version's workstream belongs to a different project.",
   "backup.resolve.stale":

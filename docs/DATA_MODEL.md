@@ -118,7 +118,7 @@ Derived, not stored (T-026):
 
 Invariants added in Stage 3:
 
-- A block's task must exist when the block is created, edited, restored, imported as active, or activated by a conflict choice or undo (live link). Editing, moving, archiving, or changing the recurrence of a task never changes its blocks.
+- A block's task must exist when the block is created, edited, restored, imported as active, or activated by a conflict choice or undo (live link). Editing, moving, archiving, or changing the recurrence of a task never changes its blocks. A block's `taskId` never changes after creation (immutable, T-171).
 - A task that live blocks link to cannot be deleted (restrict, as for projects with tasks). Archiving it is allowed and leaves its blocks unchanged.
 - Changing the configured time zone writes no block: `startsAt`, `endsAt`, `occurrenceDate`, and every other block field, content hash, and version vector stay unchanged (D-022).
 - Nothing in the app creates, moves, shortens, cancels, or deletes a block except an explicit user action on that block (D-019, D-021); imports follow the backup rules (only new blocks are added automatically).

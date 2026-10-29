@@ -25,7 +25,15 @@ export interface LinkedItem {
 }
 
 export class ResolutionError extends Error {
-  readonly code: "NOT_ALLOWED" | "HAS_LINKED_ITEMS" | "LINKED_ITEMS_MISMATCH" | "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "NOT_FOUND" | "STALE";
+  readonly code:
+    | "NOT_ALLOWED"
+    | "HAS_LINKED_ITEMS"
+    | "LINKED_ITEMS_MISMATCH"
+    | "BROKEN_LINK"
+    | "INVALID_RELATIONSHIP"
+    | "IMMUTABLE_FIELD"
+    | "NOT_FOUND"
+    | "STALE";
   /** HAS_LINKED_ITEMS: the records that still block the deletion; LINKED_ITEMS_MISMATCH: those that would no longer fit. */
   readonly linkedItems: LinkedItem[];
   constructor(code: ResolutionError["code"], message: string, linkedItems: LinkedItem[] = []) {
@@ -231,6 +239,20 @@ async function writeTombstone(db: LocalDb, type: string, id: string, version: Ve
 }
 
 /**
+ * A version may replace the current record only if it keeps the type's immutable fields (a
+ * block's task, a workstream's project, …). Imports already refuse files whose versions disagree;
+ * this also covers versions stored on this device before a field became immutable (T-171).
+ */
+function assertImmutableKept(registry: Registry, type: string, current: VersionEntry | null, data: Record<string, unknown>): void {
+  if (!current || current.deleted) return;
+  for (const field of registry.get(type)?.immutableFields ?? []) {
+    if (JSON.stringify(data[field]) !== JSON.stringify(current.envelope.data[field])) {
+      throw new ResolutionError("IMMUTABLE_FIELD", `${type}.${field} cannot change`);
+    }
+  }
+}
+
+/**
  * A goal version may become current only if every output on this device that counts toward the
  * goal tracks that version's definition (T-112, T-137). Choosing another version never reassigns
  * an output: the owner first changes or removes those attributions. Outputs in the trash count
@@ -271,7 +293,10 @@ async function checkResolution(
   if (resolution === "useBackup" || resolution === "restore" || resolution === "keepBoth") {
     if (incoming.deleted) throw new ResolutionError("NOT_ALLOWED", "backup version is a deletion");
     await assertLinksLive(db, registry, type, incoming.envelope.data);
-    if (resolution !== "keepBoth") await assertOutputsFitGoal(db, type, id, incoming.envelope.data);
+    if (resolution !== "keepBoth") {
+      assertImmutableKept(registry, type, current, incoming.envelope.data);
+      await assertOutputsFitGoal(db, type, id, incoming.envelope.data);
+    }
   }
   if (resolution === "deleteHere") await assertNoLinkedItems(db, registry, type, id);
   return current;
@@ -404,6 +429,7 @@ export async function restoreReplacedVersion(db: LocalDb, registry: Registry, re
       await writeTombstone(db, row.type, row.id, merged);
     } else {
       await assertLinksLive(db, registry, row.type, row.entry.envelope.data);
+      assertImmutableKept(registry, row.type, current, row.entry.envelope.data);
       await assertOutputsFitGoal(db, row.type, row.id, row.entry.envelope.data);
       if (current) await archive(db, row.type, row.id, current, "undo");
       await writeRecord(db, row.type, row.id, row.entry.envelope.data, row.entry.envelope.createdAt, merged);

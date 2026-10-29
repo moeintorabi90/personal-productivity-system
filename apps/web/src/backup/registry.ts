@@ -386,6 +386,8 @@ export const calendarBlocksType: RecordTypeDef = {
     { field: "taskId", target: TASK_DEFINITIONS },
     { field: "expectedOutputs", target: "outputDefinitions", key: "definitionId" },
   ],
+  // A block's task is part of its identity (owner, T-171): sessions linked to it belong to that task (T-094, T-135).
+  immutableFields: ["taskId"],
   sinceDataSchemaVersion: 3,
   olderSchemas: [{ untilDataSchemaVersion: 5, schema: calendarBlockV3Schema as unknown as RecordTypeDef["schema"] }],
 };
