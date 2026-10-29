@@ -3,7 +3,7 @@ import { deviceIdentity, toEnvelope } from "../local/records.ts";
 import { markImportedSessions } from "../local/work.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { canonicalize } from "./jcs.ts";
-import { GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry } from "./registry.ts";
+import { CALENDAR_BLOCKS, GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry } from "./registry.ts";
 import { mergeAndBump, type VersionVector } from "./versions.ts";
 
 /** Choices (docs/BACKUP_FORMAT.md, "Showing and resolving conflicts", D-015). */
@@ -488,9 +488,16 @@ async function knownVersions(db: LocalDb, type: string, id: string) {
   return out;
 }
 
+/**
+ * T-172 covers only a planned block's task. Versions of other types that disagree on an immutable
+ * field are never offered for settling: they keep the protective refusals (IMMUTABLE_FIELD,
+ * INCONSISTENT_HISTORY), and nothing is set aside or decided for them.
+ */
+const SETTLEABLE: { type: string; fields: readonly string[] } = { type: CALENDAR_BLOCKS, fields: ["taskId"] };
+
 async function historyOf(db: LocalDb, registry: Registry, type: string, id: string): Promise<InconsistentHistory | null> {
-  const fields = registry.get(type)?.immutableFields ?? [];
-  if (fields.length === 0) return null;
+  if (type !== SETTLEABLE.type || !(registry.get(type)?.immutableFields ?? []).includes("taskId")) return null;
+  const fields = SETTLEABLE.fields;
   const versions = await knownVersions(db, type, id);
   const choices = new Map<string, HistoryChoice>();
   for (const v of versions) {
@@ -515,8 +522,8 @@ async function historyOf(db: LocalDb, registry: Registry, type: string, id: stri
 }
 
 /**
- * Records whose versions on this device disagree on an immutable field — possible only with data
- * stored before the field became immutable or from a file this app did not make (T-171). Until the
+ * Planned blocks whose versions on this device disagree on their task — possible only with data
+ * stored before T-171 or from a file this app did not make. Other types are not listed (T-172). Until the
  * owner settles one (T-172), none of its other versions can become current, and a backup made on
  * this device is refused when imported (export itself does not compare versions).
  */
@@ -524,7 +531,7 @@ export async function loadInconsistentHistories(db: LocalDb, registry: Registry)
   return db.transaction("r", [db.records, db.pendingConflicts, db.replacedVersions], async () => {
     const keys = new Map<string, [string, string]>();
     const consider = (type: string, id: string) => {
-      if ((registry.get(type)?.immutableFields ?? []).length > 0) keys.set(`${type}/${id}`, [type, id]);
+      if (type === SETTLEABLE.type) keys.set(`${type}/${id}`, [type, id]);
     };
     for (const c of await db.pendingConflicts.toArray()) consider(c.type, c.id);
     for (const r of await db.replacedVersions.toArray()) consider(r.type, r.id);
@@ -546,6 +553,7 @@ export async function loadInconsistentHistories(db: LocalDb, registry: Registry)
  * record only its own values can be chosen. One transaction: refused choices change nothing.
  */
 export async function settleHistory(db: LocalDb, registry: Registry, type: string, id: string, choiceKey: string): Promise<void> {
+  if (type !== SETTLEABLE.type) throw new ResolutionError("NOT_ALLOWED", `${type}: only a planned block's task can be settled (T-172)`);
   await db.transaction("rw", conflictTables(db), async () => {
     const history = await historyOf(db, registry, type, id);
     if (!history) throw new ResolutionError("NOT_FOUND", `${type}/${id}: its versions already agree`);

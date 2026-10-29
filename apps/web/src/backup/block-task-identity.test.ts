@@ -2,14 +2,23 @@
  * A planned block's task is fixed (DECISIONS T-171): sessions linked to a block belong to its
  * task (T-094, T-135), so no write, import, conflict choice, or undo may give a block another
  * task — also not for sessions in the trash. Every refusal leaves the data unchanged. Versions
- * that already disagree are settled by the owner's explicit choice (T-172). Fabricated data only.
+ * that already disagree are settled by the owner's explicit choice (T-172) — for a block's task
+ * only; other types keep the protective refusals. Fabricated data only.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { createTask } from "../local/organization.ts";
 import { createBlock, updateBlock } from "../local/planning.ts";
 import { putRecord } from "../local/records.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
-import { deleteSession, endSession, startSession } from "../local/work.ts";
+import {
+  correctOutputValue,
+  createOutputDefinition,
+  deleteSession,
+  endSession,
+  loadWork,
+  recordPastSession,
+  startSession,
+} from "../local/work.ts";
 import {
   loadConflictViews,
   loadInconsistentHistories,
@@ -18,7 +27,13 @@ import {
   settleHistory,
 } from "./conflicts.ts";
 import { contentHashOf, makeEnvelope, nowIso } from "./envelope.ts";
-import { CALENDAR_BLOCKS, PRODUCT_REGISTRY, SESSIONS } from "./registry.ts";
+import {
+  CALENDAR_BLOCKS,
+  CORRECTIONS,
+  OUTPUT_RECORDS,
+  PRODUCT_REGISTRY,
+  SESSIONS,
+} from "./registry.ts";
 import { createTestDevice, type TestDevice } from "./test-fixtures.ts";
 import {
   decide,
@@ -596,5 +611,129 @@ describe("a planned block's task is fixed (T-171)", () => {
       expect(await s.b.db.pendingConflicts.count()).toBe(0);
       expect(await importsElsewhere(s.b)).toBe("OK");
     });
+  });
+});
+
+describe("T-172 covers a planned block's task only", () => {
+  it("an output whose versions disagree on its definition is not offered for settling; it, its corrections, the pending decision, and the archive stay untouched", async () => {
+    const a = await device("A");
+    const pages = await createOutputDefinition(a.db, {
+      name: "Pages",
+      unit: "pages",
+    });
+    const words = await createOutputDefinition(a.db, {
+      name: "Words",
+      unit: "words",
+    });
+    await recordPastSession(
+      a.db,
+      {
+        date: "2026-11-01",
+        startTime: "08:00",
+        durationMinutes: 30,
+        outputs: [{ definitionId: pages, value: 5 }],
+      },
+      T0,
+    );
+    const output = (await loadWork(a.db)).outputs[0]!.id;
+    const b = await device("B");
+    await importInto(b, await exportText(a), product);
+    // A real output conflict, whose backup version is then given the other definition, plus such an archived version.
+    await correctOutputValue(a.db, output, 6, "typo");
+    await correctOutputValue(b.db, output, 7, "recount");
+    await importInto(b, await exportText(a), product);
+    const view = (await loadConflictViews(b.db, registry)).find(
+      (v) => v.conflict.type === OUTPUT_RECORDS,
+    )!;
+    const row = (await b.db.pendingConflicts.get(view.conflict.conflictId))!;
+    if (row.incoming.deleted) throw new Error("expected a record version");
+    const otherDefinition = {
+      ...row.incoming.envelope.data,
+      definitionId: words,
+    };
+    await b.db.pendingConflicts.put({
+      ...row,
+      incoming: {
+        deleted: false,
+        envelope: {
+          ...row.incoming.envelope,
+          data: otherDefinition,
+          contentHash: contentHashOf(otherDefinition),
+        },
+      },
+    });
+    const archivedId = crypto.randomUUID();
+    const entry = {
+      deleted: false as const,
+      envelope: makeEnvelope(
+        output,
+        otherDefinition,
+        { [crypto.randomUUID()]: 1 },
+        nowIso(),
+      ),
+    };
+    await b.db.replacedVersions.put({
+      replacedId: archivedId,
+      type: OUTPUT_RECORDS,
+      id: output,
+      entry,
+      replacedAt: nowIso(),
+      reason: "notChosen",
+    });
+
+    const before = await snapshot(b.db);
+    const corrections = (
+      await b.db.records.where("type").equals(CORRECTIONS).toArray()
+    ).map((c) => c.data);
+    expect(corrections.length).toBeGreaterThan(0);
+
+    // No settling offered or accepted, whatever key is passed.
+    expect(await loadInconsistentHistories(b.db, registry)).toEqual([]);
+    expect(
+      await codeOf(
+        settleHistory(
+          b.db,
+          registry,
+          OUTPUT_RECORDS,
+          output,
+          JSON.stringify({ definitionId: pages }),
+        ),
+      ),
+    ).toBe("NOT_ALLOWED");
+    expect(
+      await codeOf(
+        settleHistory(
+          b.db,
+          registry,
+          OUTPUT_RECORDS,
+          output,
+          JSON.stringify({ definitionId: words }),
+        ),
+      ),
+    ).toBe("NOT_ALLOWED");
+    // The protective refusals stay.
+    expect(
+      await codeOf(
+        decide(b.db, view.conflict.conflictId, "useBackup", registry),
+      ),
+    ).toBe("IMMUTABLE_FIELD");
+    expect(
+      await codeOf(restoreReplacedVersion(b.db, registry, archivedId)),
+    ).toBe("IMMUTABLE_FIELD");
+
+    expect(await snapshot(b.db)).toEqual(before);
+    expect(await loadSetAsideVersions(b.db)).toEqual([]);
+    expect(
+      await b.db.pendingConflicts.get(view.conflict.conflictId),
+    ).toBeDefined();
+    expect(await b.db.replacedVersions.get(archivedId)).toBeDefined();
+    expect(
+      (await b.db.records.get([OUTPUT_RECORDS, output]))!.data,
+    ).toMatchObject({ definitionId: pages, value: 7 });
+    expect(
+      (await b.db.records.where("type").equals(CORRECTIONS).toArray()).map(
+        (c) => c.data,
+      ),
+    ).toEqual(corrections);
   });
 });
