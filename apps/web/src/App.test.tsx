@@ -401,6 +401,42 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     expect(items.filter((li) => li.textContent!.includes("also deleted in this backup"))).toHaveLength(2);
   });
 
+  it("a deleted block whose saved versions name two tasks: the Backup screen asks which task, sets the other aside, and the block can be restored (T-172)", async () => {
+    const { createBlock } = await import("./local/planning.ts");
+    const { makeEnvelope, nowIso } = await import("./backup/envelope.ts");
+    renderApp();
+    await goTo("Backup");
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    const write = await createTask(services.db, { title: "Write article" });
+    const read = await createTask(services.db, { title: "Read book" });
+    const block = await createBlock(services.db, { taskId: write, date: "2026-11-03", startTime: "09:00", durationMinutes: 30 });
+    // As data from before T-171 could have left it: archived versions for both tasks, the block deleted here.
+    const row = (await services.db.records.get(["calendarBlocks", block]))!;
+    for (const taskId of [write, read]) {
+      const entry = { deleted: false as const, envelope: makeEnvelope(block, { ...row.data, taskId }, { [crypto.randomUUID()]: 1 }, nowIso()) };
+      await services.db.replacedVersions.put({ replacedId: crypto.randomUUID(), type: "calendarBlocks", id: block, entry, replacedAt: nowIso(), reason: "notChosen" });
+    }
+    await services.db.records.delete(["calendarBlocks", block]);
+    await services.db.tombstones.put({ type: "calendarBlocks", id: block, deletedAt: nowIso(), version: { ...row.version, [crypto.randomUUID()]: 1 } });
+
+    const card = await screen.findByTestId("inconsistent-history");
+    expect(card.textContent).toContain("Which task does this planned block belong to?");
+    await waitFor(() => expect(within(screen.getByTestId("inconsistent-history")).getAllByRole("button")).toHaveLength(2));
+    expect(within(screen.getByTestId("inconsistent-history")).getAllByRole("button").map((b) => b.textContent).sort()).toEqual([
+      "It belongs to Read book (1 saved version(s))",
+      "It belongs to Write article (1 saved version(s))",
+    ]);
+
+    fireEvent.click(within(screen.getByTestId("inconsistent-history")).getByRole("button", { name: "It belongs to Write article (1 saved version(s))" }));
+    await waitFor(() => expect(screen.queryByTestId("inconsistent-histories")).toBeNull());
+    const setAside = await screen.findByTestId("set-aside-versions");
+    expect(within(setAside).getAllByRole("article")).toHaveLength(1);
+    expect(await services.db.replacedVersions.count()).toBe(1);
+
+    fireEvent.click(within(screen.getByTestId("replaced-versions")).getByRole("button", { name: "Restore this version" }));
+    await waitFor(async () => expect((await services.db.records.get(["calendarBlocks", block]))?.data.taskId).toBe(write));
+  });
+
   it("a goal update that outputs here would not fit: the preview names them, the rest imports without updates, and with updates the import is refused whole", async () => {
     const { createOutputDefinition, deleteOutput, linkGoalDefinition, recordPastSession } = await import("./local/work.ts");
     const { putRecord } = await import("./local/records.ts");

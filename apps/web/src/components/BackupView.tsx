@@ -4,13 +4,18 @@ import { type ChangeEvent, useId, useState } from "react";
 import { useLastBackupAt, usePreferences, useServices, useT } from "../app-context.tsx";
 import {
   type ConflictView,
+  type HistoryChoice,
+  type InconsistentHistory,
   type LinkedItem,
   loadConflictViews,
+  loadInconsistentHistories,
+  loadSetAsideVersions,
   type Resolution,
   ResolutionError,
   resolveConflict,
   resolveConflicts,
   restoreReplacedVersion,
+  settleHistory,
 } from "../backup/conflicts.ts";
 import { canShareFiles, downloadBackup, readFileBytes, shareBackup } from "../backup/deliver.ts";
 import { BackupError } from "../backup/errors.ts";
@@ -119,8 +124,10 @@ export function BackupView() {
       </section>
       <ExportPanel />
       <ImportPanel />
+      <InconsistentHistories />
       <PendingConflicts />
       <ReplacedVersions />
+      <SetAsideVersions />
     </>
   );
 }
@@ -762,6 +769,92 @@ function BlockedDeletion({ items, goTo }: { items: LinkedItem[]; goTo: (conflict
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * Versions of one record that disagree on what it belongs to (T-171): the owner chooses (T-172).
+ * The other versions are set aside on this device, never deleted.
+ */
+function InconsistentHistories() {
+  const t = useT();
+  const prefs = usePreferences();
+  const { db } = useServices();
+  const org = useOrganization();
+  const histories = useLiveQuery(() => loadInconsistentHistories(db, registry), [db]);
+  const [error, setError] = useState<ShownError | null>(null);
+  if (!histories || histories.length === 0) return null;
+
+  const label = (history: InconsistentHistory, choice: HistoryChoice): string => {
+    if (history.type === "calendarBlocks") {
+      const taskId = choice.values.taskId as string;
+      const snapshot = choice.sample.snapshot as { taskTitle?: string } | undefined;
+      return org?.tasks.find((task) => task.id === taskId)?.data.title ?? snapshot?.taskTitle ?? t("org.unknownItem");
+    }
+    return Object.values(choice.values).map(String).join(", ");
+  };
+
+  return (
+    <section className="card" aria-labelledby="settle-title" data-testid="inconsistent-histories">
+      <h2 id="settle-title">{t("backup.settle.title")}</h2>
+      <p>{t("backup.settle.intro")}</p>
+      {error ? <ErrorNotice error={error} /> : null}
+      {histories.map((history) => {
+        const live = history.choices.find((c) => c.live);
+        const startsAt = history.choices[0]!.sample.startsAt;
+        return (
+          <article key={`${history.type}/${history.id}`} className="conflict" data-testid="inconsistent-history">
+            <h3>{typeLabel(t, history.type)}</h3>
+            {typeof startsAt === "string" ? <p className="hint">{t("backup.settle.planned", { date: formatDateTime(startsAt, prefs) })}</p> : null}
+            <p>{history.type === "calendarBlocks" ? t("backup.settle.questionBlock") : t("backup.settle.question")}</p>
+            {live ? <p className="notice notice-info">{t("backup.settle.liveOnly", { label: label(history, live) })}</p> : null}
+            <div className="button-row">
+              {history.choices
+                .filter((choice) => !live || choice.live)
+                .map((choice, i) => (
+                  <button
+                    key={choice.key}
+                    type="button"
+                    className={i === 0 ? undefined : "secondary"}
+                    onClick={async () => {
+                      setError(null);
+                      try {
+                        await settleHistory(db, registry, history.type, history.id, choice.key);
+                      } catch (e) {
+                        setError(shownError(t, e));
+                      }
+                    }}
+                  >
+                    {t("backup.settle.choose", { label: label(history, choice), count: choice.versions })}
+                  </button>
+                ))}
+            </div>
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
+/** Versions set aside by such a choice (T-172): shown read-only; kept on this device only. */
+function SetAsideVersions() {
+  const t = useT();
+  const prefs = usePreferences();
+  const { db } = useServices();
+  const rows = useLiveQuery(() => loadSetAsideVersions(db), [db]);
+  if (!rows || rows.length === 0) return null;
+  return (
+    <section className="card" aria-labelledby="set-aside-title" data-testid="set-aside-versions">
+      <h2 id="set-aside-title">{t("backup.setAside.title")}</h2>
+      <p className="muted">{t("backup.setAside.intro")}</p>
+      {rows.map((row) => (
+        <article key={row.setAsideId} className="conflict">
+          <h3>{typeLabel(t, row.type)}</h3>
+          <p className="hint">{t("backup.setAside.at", { date: formatDateTime(row.setAsideAt, prefs) })}</p>
+          <EntryView type={row.type} entry={row.entry} other={null} missingLabel="" />
+        </article>
+      ))}
+    </section>
   );
 }
 

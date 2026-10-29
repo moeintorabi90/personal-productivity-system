@@ -297,7 +297,19 @@ export const en = {
   "backup.resolve.immutableField":
     "this version belongs to something else than the item on this device (for example a planned block for another task), which never changes. Keep this device's version.",
   "backup.resolve.inconsistentHistory":
-    "the saved versions of this item disagree about what it belongs to (for example a planned block's task; from an older or foreign backup), so none is made current automatically. Nothing was changed, and all versions are kept.",
+    "the saved versions of this item disagree about what it belongs to (for example a planned block's task; from an older or foreign backup), so none is made current automatically. Nothing was changed, and all versions are kept. Choose under \"Versions that disagree\" first.",
+  "backup.settle.title": "Versions that disagree",
+  "backup.settle.intro":
+    "The saved versions of these items disagree about what they belong to (from an older or foreign backup). Until you choose, none of them can be restored, and a backup made on this device cannot be imported. The versions you do not choose are not deleted: they are set aside on this device.",
+  "backup.settle.planned": "Planned for {date}",
+  "backup.settle.questionBlock": "Which task does this planned block belong to?",
+  "backup.settle.question": "Which one does this item belong to?",
+  "backup.settle.liveOnly": "This block is on this device and belongs to {label}; that never changes. The versions for any other task will be set aside.",
+  "backup.settle.choose": "It belongs to {label} ({count} saved version(s))",
+  "backup.setAside.title": "Set-aside versions",
+  "backup.setAside.intro":
+    "Versions you set aside when you chose what an item belongs to. They stay on this device only, are not part of backups, and are never made current.",
+  "backup.setAside.at": "Set aside {date}",
   "backup.resolve.brokenLink": "this version belongs to an item that is not on this device. Restore that item first.",
   "backup.resolve.invalidRelationship": "this version's workstream belongs to a different project.",
   "backup.resolve.stale":

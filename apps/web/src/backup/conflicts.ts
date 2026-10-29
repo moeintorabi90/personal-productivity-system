@@ -1,4 +1,4 @@
-import type { LocalDb, PendingConflictRow, VersionEntry } from "../local/db.ts";
+import { getMeta, type LocalDb, type PendingConflictRow, setMeta, type VersionEntry } from "../local/db.ts";
 import { deviceIdentity, toEnvelope } from "../local/records.ts";
 import { markImportedSessions } from "../local/work.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
@@ -268,7 +268,7 @@ async function assertImmutableKept(
   }
   for (const r of await db.replacedVersions.where("[type+id]").equals([type, id]).toArray()) known.push(r.entry);
   if (known.some((entry) => !entry.deleted && differs(entry.envelope.data))) {
-    throw new ResolutionError("INCONSISTENT_HISTORY", `${type}/${id}: known versions disagree on ${fields.join(", ")}`);
+    throw new ResolutionError("INCONSISTENT_HISTORY", `${type}/${id}: known versions disagree on ${fields.join(", ")}; settle it first (T-172)`);
   }
 }
 
@@ -429,6 +429,155 @@ export async function resolveConflicts(
       result.resolved++;
     }
     return result;
+  });
+}
+
+/* ---------- versions that disagree on an immutable field (T-171, T-172) ---------- */
+
+/** A version set aside by the owner's choice: kept on this device only, never made current, never exported. */
+export interface SetAsideVersion {
+  setAsideId: string;
+  type: string;
+  id: string;
+  entry: VersionEntry;
+  setAsideAt: string;
+  /** Where it was: the archive, a pending decision's backup version, or that decision's earlier snapshot. */
+  from: "archive" | "pendingBackup" | "pendingSnapshot";
+}
+
+const SET_ASIDE_KEY = "setAsideVersions";
+
+export async function loadSetAsideVersions(db: LocalDb): Promise<SetAsideVersion[]> {
+  return (await getMeta<SetAsideVersion[]>(db, SET_ASIDE_KEY)) ?? [];
+}
+
+/** One answer to "what does this record belong to?": the immutable values shared by some of its versions. */
+export interface HistoryChoice {
+  /** Canonical key of `values`; pass it to settleHistory. */
+  key: string;
+  values: Record<string, unknown>;
+  /** One version's data, to name the choice (e.g. a block's task title in its snapshot). */
+  sample: Record<string, unknown>;
+  versions: number;
+  /** The live record has these values: the only choice that can be made (its identity never changes). */
+  live: boolean;
+}
+
+export interface InconsistentHistory {
+  type: string;
+  id: string;
+  fields: readonly string[];
+  /** Whether the record is live here (else deleted here, or not on this device). */
+  live: boolean;
+  choices: HistoryChoice[];
+}
+
+const immutableValues = (fields: readonly string[], data: Record<string, unknown>) => Object.fromEntries(fields.map((f) => [f, data[f] ?? null]));
+
+/** Every record version known on this device for one record, with where it is. */
+async function knownVersions(db: LocalDb, type: string, id: string) {
+  const out: { data: Record<string, unknown>; live: boolean }[] = [];
+  const record = await db.records.get([type, id]);
+  if (record) out.push({ data: record.data, live: true });
+  for (const c of await db.pendingConflicts.where("[type+id]").equals([type, id]).toArray()) {
+    for (const entry of [c.incoming, c.local]) if (entry && !entry.deleted) out.push({ data: entry.envelope.data, live: false });
+  }
+  for (const r of await db.replacedVersions.where("[type+id]").equals([type, id]).toArray()) {
+    if (!r.entry.deleted) out.push({ data: r.entry.envelope.data, live: false });
+  }
+  return out;
+}
+
+async function historyOf(db: LocalDb, registry: Registry, type: string, id: string): Promise<InconsistentHistory | null> {
+  const fields = registry.get(type)?.immutableFields ?? [];
+  if (fields.length === 0) return null;
+  const versions = await knownVersions(db, type, id);
+  const choices = new Map<string, HistoryChoice>();
+  for (const v of versions) {
+    const values = immutableValues(fields, v.data);
+    const key = canonicalize(values);
+    const choice = choices.get(key) ?? { key, values, sample: v.data, versions: 0, live: false };
+    choice.versions++;
+    if (v.live) {
+      choice.live = true;
+      choice.sample = v.data;
+    }
+    choices.set(key, choice);
+  }
+  if (choices.size < 2) return null;
+  return {
+    type,
+    id,
+    fields,
+    live: versions.some((v) => v.live),
+    choices: [...choices.values()].sort((a, b) => Number(b.live) - Number(a.live) || b.versions - a.versions || a.key.localeCompare(b.key)),
+  };
+}
+
+/**
+ * Records whose versions on this device disagree on an immutable field — possible only with data
+ * stored before the field became immutable or from a file this app did not make (T-171). Until the
+ * owner settles one (T-172), none of its other versions can become current, and a backup made on
+ * this device is refused when imported (export itself does not compare versions).
+ */
+export async function loadInconsistentHistories(db: LocalDb, registry: Registry): Promise<InconsistentHistory[]> {
+  return db.transaction("r", [db.records, db.pendingConflicts, db.replacedVersions], async () => {
+    const keys = new Map<string, [string, string]>();
+    const consider = (type: string, id: string) => {
+      if ((registry.get(type)?.immutableFields ?? []).length > 0) keys.set(`${type}/${id}`, [type, id]);
+    };
+    for (const c of await db.pendingConflicts.toArray()) consider(c.type, c.id);
+    for (const r of await db.replacedVersions.toArray()) consider(r.type, r.id);
+    const out: InconsistentHistory[] = [];
+    for (const [type, id] of [...keys.values()].sort((a, b) => a.join("/").localeCompare(b.join("/")))) {
+      const history = await historyOf(db, registry, type, id);
+      if (history) out.push(history);
+    }
+    return out;
+  });
+}
+
+/**
+ * The owner's choice (T-172): the record belongs to `choiceKey`. Every version that disagrees is
+ * set aside — removed from the archive and from pending decisions, kept on this device in the
+ * set-aside list, never deleted. A pending decision whose backup version is set aside is decided
+ * as "keep" (this device's version, or the deletion here); its own version vectors make sure the
+ * same backup does not raise it again. A live record's identity never changes, so with a live
+ * record only its own values can be chosen. One transaction: refused choices change nothing.
+ */
+export async function settleHistory(db: LocalDb, registry: Registry, type: string, id: string, choiceKey: string): Promise<void> {
+  await db.transaction("rw", conflictTables(db), async () => {
+    const history = await historyOf(db, registry, type, id);
+    if (!history) throw new ResolutionError("NOT_FOUND", `${type}/${id}: its versions already agree`);
+    const choice = history.choices.find((c) => c.key === choiceKey);
+    if (!choice) throw new ResolutionError("NOT_ALLOWED", `${type}/${id}: no version has these values`);
+    if (history.live && !choice.live) throw new ResolutionError("IMMUTABLE_FIELD", `${type}/${id}: the record here keeps its own values`);
+    const fits = (entry: VersionEntry | null) => !entry || entry.deleted || canonicalize(immutableValues(history.fields, entry.envelope.data)) === choiceKey;
+    const setAside = await loadSetAsideVersions(db);
+    const at = nowIso();
+    const put = (entry: VersionEntry, from: SetAsideVersion["from"]) =>
+      setAside.push({ setAsideId: crypto.randomUUID(), type, id, entry, setAsideAt: at, from });
+
+    for (const conflict of await db.pendingConflicts.where("[type+id]").equals([type, id]).toArray()) {
+      if (!fits(conflict.local)) {
+        put(conflict.local!, "pendingSnapshot");
+        conflict.local = null;
+        await db.pendingConflicts.put(conflict);
+      }
+      if (fits(conflict.incoming)) continue;
+      put(conflict.incoming, "pendingBackup");
+      const current = await currentEntry(db, type, id);
+      const keep = availableResolutions(conflict, current, registry).find((r) => r === "keepDevice" || r === "keepDeleted" || r === "keepHere");
+      if (!keep) throw new ResolutionError("NOT_ALLOWED", `${type}/${id}: this decision cannot be kept`);
+      // Archives the backup's version as "not chosen"; the sweep below moves it to the set-aside list.
+      await resolveInTx(db, registry, conflict, keep, entryToken(current));
+    }
+    for (const row of await db.replacedVersions.where("[type+id]").equals([type, id]).toArray()) {
+      if (fits(row.entry)) continue;
+      if (!setAside.some((s) => s.entry === row.entry || canonicalize(s.entry) === canonicalize(row.entry))) put(row.entry, "archive");
+      await db.replacedVersions.delete(row.replacedId);
+    }
+    await setMeta(db, SET_ASIDE_KEY, setAside);
   });
 }
 
