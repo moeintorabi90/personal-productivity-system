@@ -259,6 +259,8 @@ This completes manual acceptance item 27 as reported by the owner. No claim is m
 
 **Deployment check (2026-10-25):** the GitHub Actions workflow for `fe83acf` completed successfully (run [40087458776](https://github.com/moeintorabi90/personal-productivity-system/actions/runs/40087458776)). From the development PC, the app URL and `manifest.webmanifest` returned HTTP 200; the served JavaScript bundle identified version 0.4.0. This verifies the deployment and static assets from this PC, not reachability from every network or region.
 
+**Hosting status check (2026-10-29):** from the development PC, at 09:08 UTC. The remote `origin` is `https://github.com/moeintorabi90/personal-productivity-system.git`, and its `main` is at `7fabdcd` (`git ls-remote`). The latest successful GitHub Pages workflow on `main` is run [40204321817](https://github.com/moeintorabi90/personal-productivity-system/actions/runs/40204321817) for `7fabdcd` (completed 2026-10-25), read from the public GitHub Actions API. The app URL, `manifest.webmanifest`, `sw.js`, and the JavaScript bundle returned HTTP 200, and the served bundle contains version `0.6.0`. As the latest served version, this replaces the 0.4.0 result of the check above, which stays as dated history; the same limits apply (one PC and network, not every region).
+
 ## Stage 2 test report (2026-10-21)
 
 Branch `feat/stage-2-organization` (from `main` at `6055bf7`). Windows 11, Node.js 24, Vitest 5.0.5, Playwright 1.64, Microsoft Edge (headless).
