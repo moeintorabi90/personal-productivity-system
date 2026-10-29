@@ -1,14 +1,25 @@
 /**
  * An output counts only toward output goals that track its own definition (DECISIONS T-112,
  * T-137): the relationship rule holds for a direct record write, for every version in an
- * imported file, and for a version that a conflict choice makes current. Fabricated data only.
+ * imported file, and for a version that a conflict choice makes current; and a goal version may
+ * become current (conflict choice or undo) only if the outputs counting toward it still fit.
+ * Fabricated data only.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { createGoal } from "../local/goals.ts";
 import { putRecord } from "../local/records.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
-import { correctOutputValue, createOutputDefinition, linkGoalDefinition, loadWork, recordPastSession, setOutputGoals } from "../local/work.ts";
-import { loadConflictViews } from "./conflicts.ts";
+import {
+  correctOutputValue,
+  createOutputDefinition,
+  deleteOutput,
+  linkGoalDefinition,
+  loadWork,
+  recordPastSession,
+  restoreOutput,
+  setOutputGoals,
+} from "../local/work.ts";
+import { loadConflictViews, ResolutionError, restoreReplacedVersion } from "./conflicts.ts";
 import { contentHashOf, makeEnvelope, nowIso } from "./envelope.ts";
 import { GOALS, type OutputRecordData, OUTPUT_RECORDS, PRODUCT_REGISTRY } from "./registry.ts";
 import { createTestDevice, type TestDevice } from "./test-fixtures.ts";
@@ -107,8 +118,9 @@ describe("an output's goals track its definition (T-112, T-137)", () => {
   /**
    * The same earlier goal is linked to a different "pages" definition on each device; A counts an
    * output toward it, B corrects that output's value. B imports A's backup: goal and output conflict.
+   * With `attributeOnB`, B also records its own output counted toward the goal (B's definition).
    */
-  async function linkedDifferently() {
+  async function linkedDifferently(attributeOnB = false) {
     const a = await device("A");
     const pagesA = await createOutputDefinition(a.db, { name: "Pages", unit: "pages" });
     const goal = await legacyGoal(a, "pages");
@@ -121,12 +133,17 @@ describe("an output's goals track its definition (T-112, T-137)", () => {
     const pagesB = await createOutputDefinition(b.db, { name: "Pages (B)", unit: "pages" });
     await linkGoalDefinition(b.db, goal, pagesB);
     await correctOutputValue(b.db, output, 11);
+    let outputOnB = "";
+    if (attributeOnB) {
+      await recordPastSession(b.db, { date: "2026-11-01", startTime: "10:00", durationMinutes: 30, outputs: [{ definitionId: pagesB, value: 3, goalIds: [goal] }] }, T0);
+      outputOnB = (await loadWork(b.db)).outputs.find((o) => o.data.definitionId === pagesB)!.id;
+    }
     // The file's history check accepts the output: one known version of the goal tracks its definition.
     await importInto(b, await exportText(a), product);
     const views = await loadConflictViews(b.db, registry);
     expect(views.map((v) => v.conflict.type).sort()).toEqual([GOALS, OUTPUT_RECORDS]);
     const conflictOf = (type: string, id: string) => views.find((v) => v.conflict.type === type && v.conflict.id === id)!.conflict.conflictId;
-    return { b, goal, output, conflictOf };
+    return { b, goal, output, outputOnB, conflictOf };
   }
 
   it("a conflict choice that would count an output toward a goal tracking another definition is refused; the goal's versions may differ", async () => {
@@ -154,5 +171,49 @@ describe("an output's goals track its definition (T-112, T-137)", () => {
     expect(await codeOf(decide(b.db, conflictOf(OUTPUT_RECORDS, output), "useBackup", registry))).toBe("INVALID_RELATIONSHIP");
     await decide(b.db, conflictOf(OUTPUT_RECORDS, output), "keepDevice", registry);
     expect((await b.db.records.get([OUTPUT_RECORDS, output]))!.data.goalIds).toEqual([]);
+  });
+
+  const goalIdsOf = async (d: TestDevice, id: string) => ((await d.db.records.get([OUTPUT_RECORDS, id]))!.data as OutputRecordData).goalIds;
+
+  it("choosing the backup's goal version is refused while an output here counts toward the goal with this device's definition; after the owner removes that attribution it goes through", async () => {
+    const { b, goal, outputOnB, conflictOf } = await linkedDifferently(true);
+    const before = await snapshot(b.db);
+    const error = await decide(b.db, conflictOf(GOALS, goal), "useBackup", registry).catch((e: unknown) => e);
+    expect((error as ResolutionError).code).toBe("LINKED_ITEMS_MISMATCH");
+    expect((error as ResolutionError).linkedItems).toEqual([{ type: OUTPUT_RECORDS, id: outputOnB, conflictId: null }]);
+    // Nothing written: the goal, the output's attribution, the pending decisions, and the archive are unchanged.
+    expect(await snapshot(b.db)).toEqual(before);
+    expect(await goalIdsOf(b, outputOnB)).toEqual([goal]);
+
+    // An output in the trash still counts: it could be restored later.
+    await deleteOutput(b.db, outputOnB);
+    expect(await codeOf(decide(b.db, conflictOf(GOALS, goal), "useBackup", registry))).toBe("LINKED_ITEMS_MISMATCH");
+    await restoreOutput(b.db, outputOnB);
+
+    await setOutputGoals(b.db, outputOnB, []);
+    expect(await codeOf(decide(b.db, conflictOf(GOALS, goal), "useBackup", registry))).toBe("OK");
+    expect(await goalIdsOf(b, outputOnB)).toEqual([]);
+    expect(((await b.db.records.get([GOALS, goal]))!.data as { definitionId?: string }).definitionId).not.toBe(
+      (await loadWork(b.db)).outputs.find((o) => o.id === outputOnB)!.data.definitionId,
+    );
+  });
+
+  it("restoring the archived goal version is refused the same way, and allowed once the attribution is changed", async () => {
+    const { b, goal, outputOnB, conflictOf } = await linkedDifferently(true);
+    await decide(b.db, conflictOf(GOALS, goal), "keepDevice", registry); // the backup's goal version goes to the archive
+    const archived = (await b.db.replacedVersions.toArray()).find((r) => r.type === GOALS && r.id === goal)!;
+    const before = await snapshot(b.db);
+    const error = await restoreReplacedVersion(b.db, registry, archived.replacedId).catch((e: unknown) => e);
+    expect((error as ResolutionError).code).toBe("LINKED_ITEMS_MISMATCH");
+    expect(await snapshot(b.db)).toEqual(before);
+    expect(await goalIdsOf(b, outputOnB)).toEqual([goal]);
+    expect(await b.db.replacedVersions.get(archived.replacedId)).toBeDefined();
+
+    await setOutputGoals(b.db, outputOnB, []);
+    await restoreReplacedVersion(b.db, registry, archived.replacedId);
+    expect(((await b.db.records.get([GOALS, goal]))!.data as { definitionId?: string }).definitionId).toBe(
+      ((archived.entry as { envelope: { data: { definitionId?: string } } }).envelope.data).definitionId,
+    );
+    expect(await goalIdsOf(b, outputOnB)).toEqual([]);
   });
 });

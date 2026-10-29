@@ -290,6 +290,8 @@ export const en = {
   "backup.blocked.pending": "also deleted in this backup: decide it first.",
   "backup.blocked.goTo": "Go to its decision",
   "backup.blocked.kept": "still on this device and blocks deleting this item. To delete this item, first delete that one separately; otherwise keep this item.",
+  "backup.resolve.linkedMismatch":
+    "{count} output(s) on this device count toward this goal but measure a different output definition than this version. Change or remove their goal on the Work screen first. Nothing was changed.",
   "backup.resolve.brokenLink": "this version belongs to an item that is not on this device. Restore that item first.",
   "backup.resolve.invalidRelationship": "this version's workstream belongs to a different project.",
   "backup.resolve.stale":

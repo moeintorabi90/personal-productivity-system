@@ -3,7 +3,7 @@ import { deviceIdentity, toEnvelope } from "../local/records.ts";
 import { markImportedSessions } from "../local/work.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { canonicalize } from "./jcs.ts";
-import { linkTargets, type Registry } from "./registry.ts";
+import { GOALS, linkTargets, OUTPUT_RECORDS, outputRecordRule, type Registry } from "./registry.ts";
 import { mergeAndBump, type VersionVector } from "./versions.ts";
 
 /** Choices (docs/BACKUP_FORMAT.md, "Showing and resolving conflicts", D-015). */
@@ -25,8 +25,8 @@ export interface LinkedItem {
 }
 
 export class ResolutionError extends Error {
-  readonly code: "NOT_ALLOWED" | "HAS_LINKED_ITEMS" | "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "NOT_FOUND" | "STALE";
-  /** HAS_LINKED_ITEMS: the records that still block the deletion. */
+  readonly code: "NOT_ALLOWED" | "HAS_LINKED_ITEMS" | "LINKED_ITEMS_MISMATCH" | "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "NOT_FOUND" | "STALE";
+  /** HAS_LINKED_ITEMS: the records that still block the deletion; LINKED_ITEMS_MISMATCH: those that would no longer fit. */
   readonly linkedItems: LinkedItem[];
   constructor(code: ResolutionError["code"], message: string, linkedItems: LinkedItem[] = []) {
     super(message);
@@ -231,6 +231,29 @@ async function writeTombstone(db: LocalDb, type: string, id: string, version: Ve
 }
 
 /**
+ * A goal version may become current only if every output on this device that counts toward the
+ * goal tracks that version's definition (T-112, T-137). Choosing another version never reassigns
+ * an output: the owner first changes or removes those attributions. Outputs in the trash count
+ * too, so restoring them later cannot fail on this goal.
+ */
+async function assertOutputsFitGoal(db: LocalDb, type: string, id: string, data: Record<string, unknown>): Promise<void> {
+  if (type !== GOALS) return;
+  const outputs = await db.records.where("type").equals(OUTPUT_RECORDS).toArray();
+  const lookup = (targetType: string, targetId: string) => (targetType === GOALS && targetId === id ? data : undefined);
+  const misfits = outputs
+    .filter((o) => (o.data.goalIds as string[]).includes(id) && outputRecordRule(o.data, lookup) !== null)
+    .map((o): LinkedItem => ({ type: OUTPUT_RECORDS, id: o.id, conflictId: null }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (misfits.length > 0) {
+    throw new ResolutionError(
+      "LINKED_ITEMS_MISMATCH",
+      `${type}/${id}: outputs count toward it with another definition: ${misfits.map((m) => m.id).join(", ")}`,
+      misfits,
+    );
+  }
+}
+
+/**
  * Every check that can refuse a decision, before anything is written: a refused decision never
  * leaves part of itself applied, and in a bulk action the other decisions still apply.
  */
@@ -252,6 +275,7 @@ async function checkResolution(
   if (resolution === "useBackup" || resolution === "restore" || resolution === "keepBoth") {
     if (incoming.deleted) throw new ResolutionError("NOT_ALLOWED", "backup version is a deletion");
     await assertLinksLive(db, registry, type, incoming.envelope.data);
+    if (resolution !== "keepBoth") await assertOutputsFitGoal(db, type, id, incoming.envelope.data);
   }
   if (resolution === "deleteHere") await assertNoLinkedItems(db, registry, type, id);
   return current;
@@ -384,6 +408,7 @@ export async function restoreReplacedVersion(db: LocalDb, registry: Registry, re
       await writeTombstone(db, row.type, row.id, merged);
     } else {
       await assertLinksLive(db, registry, row.type, row.entry.envelope.data);
+      await assertOutputsFitGoal(db, row.type, row.id, row.entry.envelope.data);
       if (current) await archive(db, row.type, row.id, current, "undo");
       await writeRecord(db, row.type, row.id, row.entry.envelope.data, row.entry.envelope.createdAt, merged);
     }
