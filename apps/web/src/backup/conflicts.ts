@@ -3,7 +3,7 @@ import { deviceIdentity, toEnvelope } from "../local/records.ts";
 import { markImportedSessions } from "../local/work.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { canonicalize } from "./jcs.ts";
-import { GOALS, linkTargets, OUTPUT_RECORDS, outputRecordRule, type Registry } from "./registry.ts";
+import { GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry } from "./registry.ts";
 import { mergeAndBump, type VersionVector } from "./versions.ts";
 
 /** Choices (docs/BACKUP_FORMAT.md, "Showing and resolving conflicts", D-015). */
@@ -239,16 +239,12 @@ async function writeTombstone(db: LocalDb, type: string, id: string, version: Ve
 async function assertOutputsFitGoal(db: LocalDb, type: string, id: string, data: Record<string, unknown>): Promise<void> {
   if (type !== GOALS) return;
   const outputs = await db.records.where("type").equals(OUTPUT_RECORDS).toArray();
-  const lookup = (targetType: string, targetId: string) => (targetType === GOALS && targetId === id ? data : undefined);
-  const misfits = outputs
-    .filter((o) => (o.data.goalIds as string[]).includes(id) && outputRecordRule(o.data, lookup) !== null)
-    .map((o): LinkedItem => ({ type: OUTPUT_RECORDS, id: o.id, conflictId: null }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const misfits = outputsMisfittingGoal(id, data, outputs);
   if (misfits.length > 0) {
     throw new ResolutionError(
       "LINKED_ITEMS_MISMATCH",
-      `${type}/${id}: outputs count toward it with another definition: ${misfits.map((m) => m.id).join(", ")}`,
-      misfits,
+      `${type}/${id}: outputs count toward it with another definition: ${misfits.join(", ")}`,
+      misfits.map((outputId): LinkedItem => ({ type: OUTPUT_RECORDS, id: outputId, conflictId: null })),
     );
   }
 }

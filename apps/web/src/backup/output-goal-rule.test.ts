@@ -2,7 +2,8 @@
  * An output counts only toward output goals that track its own definition (DECISIONS T-112,
  * T-137): the relationship rule holds for a direct record write, for every version in an
  * imported file, and for a version that a conflict choice makes current; and a goal version may
- * become current (conflict choice or undo) only if the outputs counting toward it still fit.
+ * become current (conflict choice, undo, or an import's newer version) only if the outputs
+ * counting toward it still fit.
  * Fabricated data only.
  */
 import { afterEach, describe, expect, it } from "vitest";
@@ -21,9 +22,12 @@ import {
 } from "../local/work.ts";
 import { loadConflictViews, ResolutionError, restoreReplacedVersion } from "./conflicts.ts";
 import { contentHashOf, makeEnvelope, nowIso } from "./envelope.ts";
+import type { BackupError } from "./errors.ts";
+import { applyImport, previewImport } from "./merge.ts";
+import { openBackupFile } from "./read.ts";
 import { GOALS, type OutputRecordData, OUTPUT_RECORDS, PRODUCT_REGISTRY } from "./registry.ts";
 import { createTestDevice, type TestDevice } from "./test-fixtures.ts";
-import { decide, exportFrom, importInto, mutate, snapshot } from "./test-helpers.ts";
+import { blobOf, decide, exportFrom, importInto, mutate, snapshot } from "./test-helpers.ts";
 
 const registry = PRODUCT_REGISTRY;
 const product = { registry };
@@ -214,6 +218,48 @@ describe("an output's goals track its definition (T-112, T-137)", () => {
     expect(((await b.db.records.get([GOALS, goal]))!.data as { definitionId?: string }).definitionId).toBe(
       ((archived.entry as { envelope: { data: { definitionId?: string } } }).envelope.data).definitionId,
     );
+    expect(await goalIdsOf(b, outputOnB)).toEqual([]);
+  });
+
+  it("an import that makes a newer goal version current is refused whole while outputs here would not fit it; after the attribution is removed it imports", async () => {
+    // A and B link the same earlier goal to different definitions; A keeps its own version when
+    // resolving the conflict, so A's goal version now contains B's. B then counts an output toward
+    // the goal and imports A's backup: there the goal is "newer in backup".
+    const a = await device("A");
+    const goal = await legacyGoal(a, "pages");
+    const b = await device("B");
+    await importInto(b, await exportText(a), product);
+    const pagesA = await createOutputDefinition(a.db, { name: "Pages", unit: "pages" });
+    await linkGoalDefinition(a.db, goal, pagesA);
+    const pagesB = await createOutputDefinition(b.db, { name: "Pages (B)", unit: "pages" });
+    await linkGoalDefinition(b.db, goal, pagesB);
+    await importInto(a, await exportText(b), product);
+    const goalConflict = (await loadConflictViews(a.db, registry)).find((v) => v.conflict.type === GOALS)!;
+    await decide(a.db, goalConflict.conflict.conflictId, "keepDevice", registry);
+    await recordPastSession(b.db, { date: "2026-11-01", startTime: "10:00", durationMinutes: 30, outputs: [{ definitionId: pagesB, value: 3, goalIds: [goal] }] }, T0);
+    const outputOnB = (await loadWork(b.db)).outputs[0]!.id;
+    const text = await exportText(a);
+    const opened = await openBackupFile(blobOf(text), registry);
+
+    const before = await snapshot(b.db);
+    // The preview (which assumes updates are applied) and the import itself are refused; nothing is written.
+    const previewError = await previewImport(b.db, opened, registry).catch((e: unknown) => e);
+    expect((previewError as BackupError).code).toBe("LINKED_ITEMS_MISMATCH");
+    expect((previewError as BackupError).linkedItems).toEqual([{ type: OUTPUT_RECORDS, id: outputOnB }]);
+    const applyError = await applyImport(b.db, opened, registry, { applyUpdates: true, applyDisplaySettings: false }).catch((e: unknown) => e);
+    expect((applyError as BackupError).code).toBe("LINKED_ITEMS_MISMATCH");
+    expect(await snapshot(b.db)).toEqual(before);
+    expect(await goalIdsOf(b, outputOnB)).toEqual([goal]);
+    // In the trash it still blocks: it could be restored later.
+    await deleteOutput(b.db, outputOnB);
+    expect(await codeOf(applyImport(b.db, opened, registry, { applyUpdates: true, applyDisplaySettings: false }))).toBe("LINKED_ITEMS_MISMATCH");
+    await restoreOutput(b.db, outputOnB);
+
+    // Once the owner removes the attribution, the same file imports and the goal takes A's definition.
+    await setOutputGoals(b.db, outputOnB, []);
+    const { preview } = await importInto(b, text, { ...product, applyUpdates: true });
+    expect(preview.items.find((i) => i.type === GOALS)!.category).toBe("newerInBackup");
+    expect(((await b.db.records.get([GOALS, goal]))!.data as { definitionId?: string }).definitionId).toBe(pagesA);
     expect(await goalIdsOf(b, outputOnB)).toEqual([]);
   });
 });

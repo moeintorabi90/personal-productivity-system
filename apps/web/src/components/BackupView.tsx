@@ -22,7 +22,8 @@ import { formatDateTime, formatLocalDate, type MessageKey, type Translate } from
 import type { DeviceIdentity, VersionEntry } from "../local/db.ts";
 import { getMeta } from "../local/db.ts";
 import { renameDevice } from "../local/repository.ts";
-import { useGoals } from "./data-hooks.ts";
+import { definitionLabel } from "../local/work.ts";
+import { useGoals, useWork } from "./data-hooks.ts";
 import { useOrganization } from "./organization-ui.tsx";
 import { lastBackupText } from "./StatusBar.tsx";
 
@@ -46,6 +47,58 @@ function errorMessage(t: Translate, error: unknown): string {
   }
   if (error instanceof ResolutionError && error.code === "STALE") return t("backup.resolve.stale");
   return t("backup.error.generic");
+}
+
+/** An error to show: its message and, for LINKED_ITEMS_MISMATCH, the outputs on this device that block the choice. */
+interface ShownError {
+  text: string;
+  outputs: string[];
+}
+
+function shownError(t: Translate, error: unknown, suffix = ""): ShownError {
+  const blocking =
+    (error instanceof ResolutionError || error instanceof BackupError) && error.code === "LINKED_ITEMS_MISMATCH"
+      ? error.linkedItems.map((item) => item.id)
+      : [];
+  return { text: `${errorMessage(t, error)}${suffix}`, outputs: blocking };
+}
+
+function ErrorNotice({ error, testId }: { error: ShownError; testId?: string }) {
+  return (
+    <div className="notice notice-error" role="alert" data-testid={testId}>
+      <p>{error.text}</p>
+      {error.outputs.length > 0 ? <BlockingOutputs ids={error.outputs} /> : null}
+    </div>
+  );
+}
+
+/** Names each blocking output so the owner can find it on the Work screen: amount, definition, session start, trash. */
+function BlockingOutputs({ ids }: { ids: string[] }) {
+  const t = useT();
+  const prefs = usePreferences();
+  const work = useWork();
+  if (!work) return null; // still loading: never claim an output is missing
+  return (
+    <ul data-testid="blocking-outputs">
+      {ids.map((id) => {
+        const output = work.outputs.find((o) => o.id === id);
+        if (!output) return <li key={id}>{t("org.unknownItem")}</li>;
+        const definition = work.definitions.find((d) => d.id === output.data.definitionId);
+        const label = definition ? definitionLabel(definition.data, output.data.revision) : { name: t("org.unknownItem"), unit: "" };
+        const session = work.sessions.find((s) => s.id === output.data.sessionId);
+        const inTrash = output.data.deletedAt !== null || (session !== undefined && session.data.deletedAt !== null);
+        return (
+          <li key={id}>
+            {t("backup.blockingOutput", {
+              output: t("work.output.value", { value: output.data.value, unit: label.unit, name: label.name }),
+              session: session ? formatDateTime(session.data.startedAt, prefs) : t("org.unknownItem"),
+            })}
+            {inTrash ? ` ${t("backup.blockingOutput.trash")}` : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 export function BackupView() {
@@ -232,14 +285,14 @@ function ImportPanel() {
   const { db } = useServices();
   const ids = { file: useId(), password: useId(), updates: useId(), display: useId() };
   const [state, setState] = useState<ImportState>({ step: "idle" });
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ShownError | null>(null);
   const [password, setPassword] = useState("");
   const [applyUpdates, setApplyUpdates] = useState(false);
   const [applyDisplay, setApplyDisplay] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const fail = (e: unknown) => {
-    setError(`${errorMessage(t, e)} ${t("backup.error.unchanged")}`);
+    setError(shownError(t, e, ` ${t("backup.error.unchanged")}`));
   };
 
   async function showPreview(checked: CheckedBackup, pw?: string) {
@@ -299,11 +352,7 @@ function ImportPanel() {
         <input id={ids.file} type="file" accept=".json,application/json" onChange={onFile} disabled={busy} />
       </div>
       {state.step === "checking" ? <p className="muted">{t("backup.import.checking")}</p> : null}
-      {error ? (
-        <p className="notice notice-error" role="alert" data-testid="import-error">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorNotice error={error} testId="import-error" /> : null}
 
       {state.step === "password" ? (
         <form
@@ -552,7 +601,7 @@ function PendingConflicts() {
   // comparison always shows what is on this device now.
   const views = useLiveQuery(() => loadConflictViews(db, registry), [db]);
   // An error from one decision is shown with that decision (conflictId), a bulk one above the list.
-  const [error, setError] = useState<{ conflictId: string | null; text: string } | null>(null);
+  const [error, setError] = useState<(ShownError & { conflictId: string | null }) | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
   if (!views) return null;
   const conflicts = views;
@@ -567,7 +616,7 @@ function PendingConflicts() {
     try {
       await resolveConflict(db, registry, view.conflict.conflictId, resolution, view.token);
     } catch (e) {
-      setError({ conflictId: view.conflict.conflictId, text: errorMessage(t, e) });
+      setError({ conflictId: view.conflict.conflictId, ...shownError(t, e) });
     }
   }
 
@@ -597,7 +646,7 @@ function PendingConflicts() {
                       setError(null);
                       const result = await resolveConflicts(db, registry, bulk, "keepDevice");
                       if (result.skipped.length > 0) {
-                        setError({ conflictId: null, text: t("backup.bulk.skipped", { count: result.skipped.length }) });
+                        setError({ conflictId: null, text: t("backup.bulk.skipped", { count: result.skipped.length }), outputs: [] });
                       }
                     }}
                   >
@@ -614,11 +663,7 @@ function PendingConflicts() {
               </button>
             )
           ) : null}
-          {error && error.conflictId === null ? (
-            <p className="notice notice-error" role="alert">
-              {error.text}
-            </p>
-          ) : null}
+          {error && error.conflictId === null ? <ErrorNotice error={error} /> : null}
           {conflicts.map((view) => {
             const { conflict, current } = view;
             return (
@@ -655,11 +700,7 @@ function PendingConflicts() {
                   </div>
                 ) : null}
                 {view.blockedBy.length > 0 ? <BlockedDeletion items={view.blockedBy} goTo={goTo} /> : null}
-                {error && error.conflictId === conflict.conflictId ? (
-                  <p className="notice notice-error" role="alert">
-                    {error.text}
-                  </p>
-                ) : null}
+                {error && error.conflictId === conflict.conflictId ? <ErrorNotice error={error} /> : null}
                 <div className="button-row">
                   {view.options.map((resolution, i) => (
                     <button
@@ -717,17 +758,13 @@ function ReplacedVersions() {
   const prefs = usePreferences();
   const { db } = useServices();
   const replaced = useLiveQuery(() => db.replacedVersions.orderBy("replacedAt").reverse().limit(20).toArray(), [db]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ShownError | null>(null);
   if (!replaced || replaced.length === 0) return null;
   return (
     <section className="card" aria-labelledby="replaced-title" data-testid="replaced-versions">
       <h2 id="replaced-title">{t("backup.replaced.title")}</h2>
       <p className="muted">{t("backup.replaced.intro")}</p>
-      {error ? (
-        <p className="notice notice-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorNotice error={error} /> : null}
       {replaced.map((row) => (
         <article key={row.replacedId} className="conflict">
           <h3>{typeLabel(t, row.type)}</h3>
@@ -741,7 +778,7 @@ function ReplacedVersions() {
               try {
                 await restoreReplacedVersion(db, registry, row.replacedId);
               } catch (e) {
-                setError(errorMessage(t, e));
+                setError(shownError(t, e));
               }
             }}
           >

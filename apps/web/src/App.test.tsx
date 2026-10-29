@@ -400,6 +400,56 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     // The corrections still have their own decisions.
     expect(items.filter((li) => li.textContent!.includes("also deleted in this backup"))).toHaveLength(2);
   });
+
+  it("an import refused because outputs here would not fit a goal's newer version names those outputs", async () => {
+    const { createOutputDefinition, deleteOutput, linkGoalDefinition, recordPastSession } = await import("./local/work.ts");
+    const { putRecord } = await import("./local/records.ts");
+    const { openBackupFile } = await import("./backup/read.ts");
+    const { applyImport } = await import("./backup/merge.ts");
+    const { loadConflictViews, resolveConflict } = await import("./backup/conflicts.ts");
+    const importDirect = async (db: LocalDb, text: string) =>
+      applyImport(db, await openBackupFile(new Blob([text]), PRODUCT_REGISTRY), PRODUCT_REGISTRY, { applyUpdates: false, applyDisplaySettings: false });
+
+    // A (the other device) and B (this app) link the same earlier goal to different definitions;
+    // A keeps its own version in the conflict, so A's goal version is newer than B's.
+    const other = new LocalDb(`other-${++dbCounter}`);
+    await other.meta.put({ key: "device", value: { id: crypto.randomUUID(), name: "Laptop" } });
+    await updateSharedPreferences(other, { timeZone: "Asia/Tehran" });
+    const goal = crypto.randomUUID();
+    await putRecord(other, PRODUCT_REGISTRY, "goals", goal, {
+      name: "Reading", description: "", projectId: null, startDate: "2026-10-01", deadline: null,
+      kind: "output", target: 100, unit: "pages", status: "active", archivedAt: null,
+    });
+    renderApp();
+    await goTo("Backup");
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    await importDirect(services.db, (await createBackup(other, PRODUCT_REGISTRY)).text);
+    await linkGoalDefinition(other, goal, await createOutputDefinition(other, { name: "Pages", unit: "pages" }));
+    const pagesHere = await createOutputDefinition(services.db, { name: "Book pages", unit: "pages" });
+    await linkGoalDefinition(services.db, goal, pagesHere);
+    await importDirect(other, (await createBackup(services.db, PRODUCT_REGISTRY)).text);
+    const [view] = await loadConflictViews(other, PRODUCT_REGISTRY);
+    await resolveConflict(other, PRODUCT_REGISTRY, view!.conflict.conflictId, "keepDevice", view!.token);
+    await recordPastSession(services.db, { date: "2026-10-05", startTime: "10:00", durationMinutes: 30, outputs: [{ definitionId: pagesHere, value: 7, goalIds: [goal] }] });
+    await recordPastSession(services.db, { date: "2026-10-06", startTime: "11:00", durationMinutes: 30, outputs: [{ definitionId: pagesHere, value: 4, goalIds: [goal] }] });
+    const trashed = (await services.db.records.where("type").equals("outputRecords").toArray()).find((o) => o.data.value === 4)!.id;
+    await deleteOutput(services.db, trashed);
+    const backup = await createBackup(other, PRODUCT_REGISTRY);
+    other.close();
+    const before = await services.db.records.count();
+
+    fireEvent.change(screen.getByLabelText("Choose a backup file"), { target: { files: [new File([backup.text], "b.json")] } });
+    const error = await screen.findByTestId("import-error");
+    expect(error.textContent).toContain("outputs on this device count toward that goal with a different definition");
+    expect(error.textContent).toContain("Nothing on this device was changed.");
+    const list = await within(error).findByTestId("blocking-outputs");
+    const listed = within(list).getAllByRole("listitem").map((li) => li.textContent);
+    expect(listed).toHaveLength(2);
+    expect(listed[0]).toMatch(/^(7|4) pages · Book pages, in the session started /);
+    expect(listed.filter((text) => text!.startsWith("7 pages · Book pages") && !text!.includes("in the trash"))).toHaveLength(1);
+    expect(listed.filter((text) => text!.startsWith("4 pages · Book pages") && text!.endsWith("(in the trash: restore it to change its goal)"))).toHaveLength(1);
+    expect(await services.db.records.count()).toBe(before);
+  });
 });
 
 describe("Stage 2: inbox, projects, workstreams, tasks", () => {

@@ -291,7 +291,9 @@ export const en = {
   "backup.blocked.goTo": "Go to its decision",
   "backup.blocked.kept": "still on this device and blocks deleting this item. To delete this item, first delete that one separately; otherwise keep this item.",
   "backup.resolve.linkedMismatch":
-    "{count} output(s) on this device count toward this goal but measure a different output definition than this version. Change or remove their goal on the Work screen first. Nothing was changed.",
+    "{count} output(s) on this device count toward this goal but measure a different output definition than this version (listed below). Change or remove their goal on the Work screen first. Nothing was changed.",
+  "backup.blockingOutput": "{output}, in the session started {session}",
+  "backup.blockingOutput.trash": "(in the trash: restore it to change its goal)",
   "backup.resolve.brokenLink": "this version belongs to an item that is not on this device. Restore that item first.",
   "backup.resolve.invalidRelationship": "this version's workstream belongs to a different project.",
   "backup.resolve.stale":
@@ -328,6 +330,8 @@ export const en = {
   "backup.error.UNKNOWN_RECORD_TYPE": "The backup contains data this version of the app does not know.",
   "backup.error.EXCLUDED_DATA": "The backup contains sync diagnostic data, which backups must not contain.",
   "backup.error.UNRESOLVED_REFERENCE": "The backup refers to items that are missing.",
+  "backup.error.LINKED_ITEMS_MISMATCH":
+    "This backup changes a goal's output definition, but outputs on this device count toward that goal with a different definition (listed below). Change or remove their goal on the Work screen first, then import again.",
   "backup.error.INVALID_RELATIONSHIP": "The backup contains tasks or workstreams whose project links do not match.",
   "backup.error.LIMIT_EXCEEDED": "The backup exceeds this app's limits.",
   "backup.error.EXPORT_TOO_LARGE": "Your data is too large for one backup file in this version.",

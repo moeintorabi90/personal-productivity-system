@@ -15,6 +15,7 @@ export type BackupErrorCode =
   | "EXCLUDED_DATA"
   | "UNRESOLVED_REFERENCE"
   | "INVALID_RELATIONSHIP"
+  | "LINKED_ITEMS_MISMATCH"
   | "LIMIT_EXCEEDED"
   | "EXPORT_TOO_LARGE"
   | "EXPORT_VERIFICATION_FAILED";
@@ -22,11 +23,14 @@ export type BackupErrorCode =
 export class BackupError extends Error {
   readonly code: BackupErrorCode;
   readonly detail: string | undefined;
+  /** LINKED_ITEMS_MISMATCH: the records on this device that block the import, to name them to the user. */
+  readonly linkedItems: { type: string; id: string }[];
 
-  constructor(code: BackupErrorCode, detail?: string) {
+  constructor(code: BackupErrorCode, detail?: string, linkedItems: { type: string; id: string }[] = []) {
     super(detail ? `${code}: ${detail}` : code);
     this.name = "BackupError";
     this.code = code;
     this.detail = detail;
+    this.linkedItems = linkedItems;
   }
 }

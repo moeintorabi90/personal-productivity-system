@@ -610,6 +610,23 @@ export function outputRecordRule(data: Record<string, unknown>, lookup: DataLook
   return null;
 }
 
+/**
+ * The outputs among `outputs` that count toward goal `goalId` but would not fit its version
+ * `goalData` (another definition, or none), sorted by ID. Used before a goal version becomes
+ * current: the owner changes those attributions first; they are never changed automatically.
+ */
+export function outputsMisfittingGoal(
+  goalId: string,
+  goalData: Record<string, unknown>,
+  outputs: readonly { id: string; data: Record<string, unknown> }[],
+): string[] {
+  const lookup: DataLookup = (type, id) => (type === GOALS && id === goalId ? goalData : undefined);
+  return outputs
+    .filter((o) => (o.data.goalIds as string[]).includes(goalId) && outputRecordRule(o.data, lookup) !== null)
+    .map((o) => o.id)
+    .sort();
+}
+
 export const CORRECTION_FIELDS = ["times", "value", "goal", "goals", "added", "deleted", "restored"] as const;
 export type CorrectionField = (typeof CORRECTION_FIELDS)[number];
 

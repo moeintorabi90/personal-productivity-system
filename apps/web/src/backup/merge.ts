@@ -5,7 +5,7 @@ import { markImportedSessions } from "../local/work.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
 import type { BackupHeader, BackupPayload } from "./format.ts";
-import { type DataLookup, linkTargets, type Registry } from "./registry.ts";
+import { type DataLookup, GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry } from "./registry.ts";
 import { compareVersions, isContainedIn } from "./versions.ts";
 
 /** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
@@ -294,6 +294,28 @@ async function checkActiveLinks(db: LocalDb, items: PreviewItem[], registry: Reg
     if (item.incoming.deleted) continue;
     const problem = registry.get(item.type)?.rule?.(item.incoming.envelope.data, lookup);
     if (problem) throw new BackupError("INVALID_RELATIONSHIP", `${item.type}/${item.id}: ${problem}`);
+  }
+  // A goal version made current must still fit every output on this device that counts toward it,
+  // in the trash or not, as it will be after the import (T-112, T-137). Otherwise the whole import
+  // is refused; attributions are never changed automatically.
+  const goals = activated.filter((item) => item.type === GOALS && !item.incoming.deleted);
+  if (goals.length > 0) {
+    const outputs = (await db.records.where("type").equals(OUTPUT_RECORDS).toArray()).map((o) => ({
+      id: o.id,
+      data: activatedData.get(`${OUTPUT_RECORDS}/${o.id}`) ?? o.data,
+    }));
+    const misfits = new Set<string>();
+    for (const goal of goals) {
+      for (const id of outputsMisfittingGoal(goal.id, activatedData.get(`${GOALS}/${goal.id}`)!, outputs)) misfits.add(id);
+    }
+    if (misfits.size > 0) {
+      const ids = [...misfits].sort();
+      throw new BackupError(
+        "LINKED_ITEMS_MISMATCH",
+        `outputs here count toward a goal whose backup version tracks another definition: ${ids.join(", ")}`,
+        ids.map((id) => ({ type: OUTPUT_RECORDS, id })),
+      );
+    }
   }
 }
 
