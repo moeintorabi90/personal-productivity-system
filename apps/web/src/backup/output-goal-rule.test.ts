@@ -242,10 +242,10 @@ describe("an output's goals track its definition (T-112, T-137)", () => {
     const opened = await openBackupFile(blobOf(text), registry);
 
     const before = await snapshot(b.db);
-    // The preview (which assumes updates are applied) and the import itself are refused; nothing is written.
-    const previewError = await previewImport(b.db, opened, registry).catch((e: unknown) => e);
-    expect((previewError as BackupError).code).toBe("LINKED_ITEMS_MISMATCH");
-    expect((previewError as BackupError).linkedItems).toEqual([{ type: OUTPUT_RECORDS, id: outputOnB }]);
+    // The preview reports the blocking output; the import with the updates applied is refused; nothing is written.
+    const preview = await previewImport(b.db, opened, registry);
+    expect(preview.updatesBlockedBy).toEqual([outputOnB]);
+    expect(preview.items.find((i) => i.type === GOALS)!.category).toBe("newerInBackup");
     const applyError = await applyImport(b.db, opened, registry, { applyUpdates: true, applyDisplaySettings: false }).catch((e: unknown) => e);
     expect((applyError as BackupError).code).toBe("LINKED_ITEMS_MISMATCH");
     expect(await snapshot(b.db)).toEqual(before);
@@ -257,8 +257,9 @@ describe("an output's goals track its definition (T-112, T-137)", () => {
 
     // Once the owner removes the attribution, the same file imports and the goal takes A's definition.
     await setOutputGoals(b.db, outputOnB, []);
-    const { preview } = await importInto(b, text, { ...product, applyUpdates: true });
-    expect(preview.items.find((i) => i.type === GOALS)!.category).toBe("newerInBackup");
+    const after = await importInto(b, text, { ...product, applyUpdates: true });
+    expect(after.preview.updatesBlockedBy).toEqual([]);
+    expect(after.preview.items.find((i) => i.type === GOALS)!.category).toBe("newerInBackup");
     expect(((await b.db.records.get([GOALS, goal]))!.data as { definitionId?: string }).definitionId).toBe(pagesA);
     expect(await goalIdsOf(b, outputOnB)).toEqual([]);
   });

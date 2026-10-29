@@ -401,7 +401,7 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     expect(items.filter((li) => li.textContent!.includes("also deleted in this backup"))).toHaveLength(2);
   });
 
-  it("an import refused because outputs here would not fit a goal's newer version names those outputs", async () => {
+  it("a goal update that outputs here would not fit: the preview names them, the rest imports without updates, and with updates the import is refused whole", async () => {
     const { createOutputDefinition, deleteOutput, linkGoalDefinition, recordPastSession } = await import("./local/work.ts");
     const { putRecord } = await import("./local/records.ts");
     const { openBackupFile } = await import("./backup/read.ts");
@@ -434,21 +434,45 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     await recordPastSession(services.db, { date: "2026-10-06", startTime: "11:00", durationMinutes: 30, outputs: [{ definitionId: pagesHere, value: 4, goalIds: [goal] }] });
     const trashed = (await services.db.records.where("type").equals("outputRecords").toArray()).find((o) => o.data.value === 4)!.id;
     await deleteOutput(services.db, trashed);
+    const garden = await createProject(other, { name: "Garden" }); // new data in the same file
     const backup = await createBackup(other, PRODUCT_REGISTRY);
     other.close();
+    const definitionOfGoal = async () => ((await services.db.records.get(["goals", goal]))!.data as { definitionId?: string }).definitionId;
     const before = await services.db.records.count();
 
+    // The preview is shown (not an error), with the update choice and the outputs that block it.
     fireEvent.change(screen.getByLabelText("Choose a backup file"), { target: { files: [new File([backup.text], "b.json")] } });
+    const preview = await screen.findByTestId("import-preview");
+    expect(screen.queryByTestId("import-error")).toBeNull();
+    const warning = within(preview).getByTestId("import-updates-blocked");
+    expect(warning.textContent).toContain("With the updates applied, the import is refused");
+    const listed = within(await within(warning).findByTestId("blocking-outputs"))
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+    expect(listed).toHaveLength(2);
+    expect(listed.filter((text) => text!.startsWith("7 pages · Book pages, in the session started ") && !text!.includes("in the trash"))).toHaveLength(1);
+    expect(listed.filter((text) => text!.startsWith("4 pages · Book pages") && text!.endsWith("(in the trash: restore it to change its goal)"))).toHaveLength(1);
+
+    // With the updates applied: refused as a whole, the outputs named, nothing written; the preview stays.
+    const updates = within(preview).getByRole("checkbox", { name: /Apply 1 newer version/ }) as HTMLInputElement;
+    fireEvent.click(updates);
+    expect(updates.checked).toBe(true);
+    fireEvent.click(within(preview).getByRole("button", { name: "Import" }));
     const error = await screen.findByTestId("import-error");
     expect(error.textContent).toContain("outputs on this device count toward that goal with a different definition");
     expect(error.textContent).toContain("Nothing on this device was changed.");
-    const list = await within(error).findByTestId("blocking-outputs");
-    const listed = within(list).getAllByRole("listitem").map((li) => li.textContent);
-    expect(listed).toHaveLength(2);
-    expect(listed[0]).toMatch(/^(7|4) pages · Book pages, in the session started /);
-    expect(listed.filter((text) => text!.startsWith("7 pages · Book pages") && !text!.includes("in the trash"))).toHaveLength(1);
-    expect(listed.filter((text) => text!.startsWith("4 pages · Book pages") && text!.endsWith("(in the trash: restore it to change its goal)"))).toHaveLength(1);
+    expect(within(await within(error).findByTestId("blocking-outputs")).getAllByRole("listitem")).toHaveLength(2);
     expect(await services.db.records.count()).toBe(before);
+    expect(await services.db.records.get(["projects", garden])).toBeUndefined();
+    expect(await definitionOfGoal()).toBe(pagesHere);
+
+    // Without the updates: the new data is imported and the goal keeps this device's definition.
+    fireEvent.click(updates);
+    fireEvent.click(within(screen.getByTestId("import-preview")).getByRole("button", { name: "Import" }));
+    await screen.findByTestId("import-done");
+    expect(await services.db.records.get(["projects", garden])).toBeDefined();
+    expect(await definitionOfGoal()).toBe(pagesHere);
+    expect(((await services.db.records.where("type").equals("outputRecords").toArray()).map((o) => o.data.goalIds))).toEqual([[goal], [goal]]);
   });
 });
 

@@ -39,6 +39,11 @@ export interface ImportPreview {
   previouslyImportedAt: string | null;
   sourceDeviceSettings: DeviceSettings;
   displaySettingsDiffer: boolean;
+  /**
+   * Outputs on this device that a newer goal version in the backup would not fit (T-112, T-137).
+   * When not empty, the import is refused if the updates are applied; without them it can proceed.
+   */
+  updatesBlockedBy: string[];
 }
 
 export interface ImportChoices {
@@ -398,9 +403,18 @@ export async function previewImport(
   return db.transaction("r", [db.records, db.tombstones, db.pendingConflicts, db.replacedVersions, db.importLog, db.meta], async () => {
     await checkFileReferences(db, opened.payload, registry);
     const items = await classifyAll(db, opened.payload, registry);
-    // Preview assumes the updates will be confirmed, so a file whose newer versions would
-    // break links is refused before the user is asked.
-    await checkActiveLinks(db, items, registry, true);
+    // New items must pass in any case. Preview also assumes the updates will be confirmed, so a
+    // file whose newer versions would break links is refused before the user is asked, except a
+    // goal update that outputs here would not fit: that is reported, and the user may import
+    // without the updates (applyImport refuses it only when the updates are applied).
+    await checkActiveLinks(db, items, registry, false);
+    let updatesBlockedBy: string[] = [];
+    try {
+      await checkActiveLinks(db, items, registry, true);
+    } catch (e) {
+      if (!(e instanceof BackupError && e.code === "LINKED_ITEMS_MISMATCH")) throw e;
+      updatesBlockedBy = e.linkedItems.map((item) => item.id);
+    }
     const carried = await carriedCounts(db, opened.payload);
     const previous = await db.importLog.where("backupId").equals(opened.header.backupId).sortBy("importedAt");
     const device = await getDeviceSettings(db);
@@ -412,6 +426,7 @@ export async function previewImport(
       previouslyImportedAt: previous.at(-1)?.importedAt ?? null,
       sourceDeviceSettings: source,
       displaySettingsDiffer: source.language !== device.language || source.theme !== device.theme,
+      updatesBlockedBy,
     };
   });
 }

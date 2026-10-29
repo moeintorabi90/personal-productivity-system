@@ -401,6 +401,12 @@ function ImportPanel() {
               <label htmlFor={ids.updates}>{t("backup.import.applyUpdates", { count: state.preview.counts.newerInBackup })}</label>
             </div>
           ) : null}
+          {state.preview.updatesBlockedBy.length > 0 ? (
+            <div className="notice notice-warn" data-testid="import-updates-blocked">
+              <p>{t("backup.import.updatesBlocked")}</p>
+              <BlockingOutputs ids={state.preview.updatesBlockedBy} />
+            </div>
+          ) : null}
           {state.preview.displaySettingsDiffer ? (
             <div className="checkbox-field">
               <input id={ids.display} type="checkbox" checked={applyDisplay} onChange={(e) => setApplyDisplay(e.target.checked)} />

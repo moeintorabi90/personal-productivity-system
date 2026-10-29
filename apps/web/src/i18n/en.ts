@@ -330,6 +330,8 @@ export const en = {
   "backup.error.UNKNOWN_RECORD_TYPE": "The backup contains data this version of the app does not know.",
   "backup.error.EXCLUDED_DATA": "The backup contains sync diagnostic data, which backups must not contain.",
   "backup.error.UNRESOLVED_REFERENCE": "The backup refers to items that are missing.",
+  "backup.import.updatesBlocked":
+    "One of the updates gives a goal a different output definition than these outputs on this device count toward it with. With the updates applied, the import is refused. Import without the updates, or change or remove their goal on the Work screen first.",
   "backup.error.LINKED_ITEMS_MISMATCH":
     "This backup changes a goal's output definition, but outputs on this device count toward that goal with a different definition (listed below). Change or remove their goal on the Work screen first, then import again.",
   "backup.error.INVALID_RELATIONSHIP": "The backup contains tasks or workstreams whose project links do not match.",
