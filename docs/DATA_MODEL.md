@@ -152,7 +152,7 @@ Built after Stage 4 and before Stage 5 (T-076). Decisions: T-068 to T-070 (owner
 - **Palette identifiers in data version 5** (T-088; values in DECISIONS "Derived technical choices"): `blue`, `teal`, `green`, `amber`, `orange`, `red`, `pink`, `purple`. `color` must be one of these; the neutral color is never stored. The default for a project without `color` is the palette entry at index FNV-1a 32-bit(project ID) mod 8. Theme values are presentation and may change without a data-version step; identifiers may not.
 - **Undo after a drag** (T-090) adds no field: it writes the block's previous values as a new version of the same `calendarBlocks` record.
 
-### Stage 5 record types (`dataSchemaVersion` 6; implemented on `feat/stage-5-sessions-outputs`, not merged)
+### Stage 5 record types (`dataSchemaVersion` 6; included in version 0.7.0, merged at `e572b9d`; imported-pause metadata is data version 7)
 
 Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-153 to T-159, T-162, T-163, T-165, T-166, T-168, T-169; field names, encodings, and the record split are **proposed technical choices** (T-109 to T-116, T-119, T-126 to T-128, T-146 to T-152, T-160, T-161, T-164, T-167), not owner decisions. DECISIONS S-1 to S-15 are resolved; the plural-recognition method awaits implementation review (T-167).
 

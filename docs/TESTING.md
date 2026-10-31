@@ -288,7 +288,7 @@ Still open: the manual checks and other items listed under "Pre-merge check", no
 
 ### Imported pause: clock differences and undo (2026-10-31; same branch, after `6276d9d`; not merged)
 
-Two review findings on T-173, fixed. Data version stays 7, because that version is not deployed and the new optional field is part of it; the report above stays as it was run, and this closes its open note about undo.
+Two review findings on T-173, fixed. Data version stays 7, because, at the time of that change, that version had not yet been deployed and the new optional field was part of it; the report above stays as it was run, and this closes its open note about undo.
 
 - Clock differences: the carried minute is no longer moved to the backup's time, and it is no longer refused for being later than that time. In `backup/imported-pause.test.ts`, a pause that began at 07:00 is exported by a device whose clock says 06:30 (and 05:00), imported, and ended at 12:00: the pause stays 07:00–12:00 and the work time is 60 minutes.
 - Undo: archived running session versions keep their minute (`pausedFrom`). Tests cover choosing the backup's version, keeping this device's, an applied update, undoing an undo, the archive travelling in a backup and restored on another device, a version archived while really running, invalid values, and version-6 files. With the mark no longer restored by undo, 4 of the 20 tests in that file failed.
@@ -296,6 +296,14 @@ Two review findings on T-173, fixed. Data version stays 7, because that version 
 Commands run on the Windows development machine (Edge for end-to-end tests): `npm.cmd run typecheck` passed; `npm.cmd test` 36 files, 427 tests passed, 0 failed; `npm.cmd run test:e2e` 12 passed, 0 failed.
 
 Remaining limitations: on the device where a session was really running (no import), undoing to that archived version resumes it as running, so time since its last activity counts as work; T-173 covers imported pauses only. The earlier snapshot of a conflict is archived with this device's current mark, as no mark was stored with the snapshot. Version-6 files carry no such minute, so restoring their running versions leaves this device's mark as it was.
+
+### Stage 5 release (2026-10-31; `main` at `e572b9d`; app 0.7.0)
+
+- GitHub Pages workflow `41196439048` completed successfully; both build and deploy jobs passed.
+- The live app, manifest, service worker, and JavaScript bundle returned HTTP 200. The served bundle `index-CKpsO2qS.js` contains `0.7.0` and not `0.6.0`.
+- Release checks on the exact release commit: `npm.cmd run typecheck` passed; `npm.cmd test` passed (36 files, 428 tests); `npm.cmd run test:e2e` passed (12 tests).
+- **Still open:** manual Stage 5 checks on the owner's Windows laptop and Android phone; review of the unit-matching method (T-167); screen-reader use of the new forms and Backup screen sections; browser interaction with app-open prompt buttons. No device-level Stage 5 check is claimed.
+- App 0.7.0 writes backup data schema version 7. Earlier app versions refuse version-7 backups as newer; update all devices before moving such backups between them.
 
 ## Release gate
 
