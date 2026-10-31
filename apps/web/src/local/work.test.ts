@@ -212,6 +212,20 @@ describe("2. forgotten and long-paused sessions (T-093, T-149, T-162, T-164)", (
     expect(workMinutes(await session(db, id))).toBe(120);
   });
 
+  it("a session started or resumed in the minute the app opened is not 'left running', though its stored time is rounded down", async () => {
+    const db = await device();
+    const opened = T0 + 20_000; // 20 seconds into the minute
+    const id = await startSession(db, {}, T0 + 30_000);
+    expect((await session(db, id)).startedAt).toBe(at(T0));
+    expect(sessionPrompts(await loadWork(db), opened, T0 + 40_000)).toEqual([]);
+    await pauseSession(db, id, T0 + 40_000);
+    await resumeSession(db, id, T0 + 50_000);
+    expect(sessionPrompts(await loadWork(db), opened, T0 + 55_000)).toEqual([]);
+    // Running since the minute before the app opened: still asked, with no change at the boundary.
+    expect(sessionPrompts(await loadWork(db), T0 + MIN, T0 + MIN)).toEqual([{ sessionId: id, kind: "leftRunning" }]);
+    expect(sessionPrompts(await loadWork(db), T0 + MIN + 20_000, T0 + MIN + 20_000)).toEqual([{ sessionId: id, kind: "leftRunning" }]);
+  });
+
   it("a running session reaching 24 hours of work asks for an end time within the limit", async () => {
     const db = await device();
     const id = await startSession(db, {}, T0);

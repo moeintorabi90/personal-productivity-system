@@ -1047,7 +1047,8 @@ export type SessionPrompt = { sessionId: string; kind: "leftRunning" | "workLimi
  * What to ask about open sessions: a session left running before the app opened asks for its end
  * time (T-093); a running session with 24 hours of work time asks for an end time within the
  * limit (T-149); a session paused for more than 24 hours gets a reminder (T-162). Nothing is ended
- * or changed automatically.
+ * or changed automatically. Stored times are whole minutes, rounded down, so the app's opening time
+ * is compared by its minute: a session started in that minute was not left running.
  */
 export function sessionPrompts(work: Pick<WorkData, "sessions" | "importedPaused">, appOpenedAt: number, now: number = Date.now()): SessionPrompt[] {
   const out: SessionPrompt[] = [];
@@ -1055,7 +1056,7 @@ export function sessionPrompts(work: Pick<WorkData, "sessions" | "importedPaused
     const state = sessionState(s.data, work.importedPaused[s.id]);
     if (state.kind === "running") {
       if (workMs(s.data, now) >= SESSION_MAX_WORK_MINUTES * MINUTE_MS) out.push({ sessionId: s.id, kind: "workLimit" });
-      else if (state.since < appOpenedAt) out.push({ sessionId: s.id, kind: "leftRunning" });
+      else if (state.since < Date.parse(minuteOf(appOpenedAt))) out.push({ sessionId: s.id, kind: "leftRunning" });
     } else if (state.kind === "paused" && now - state.since > LONG_PAUSE_MINUTES * MINUTE_MS) {
       out.push({ sessionId: s.id, kind: "longPause" });
     }
