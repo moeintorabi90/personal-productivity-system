@@ -357,7 +357,7 @@ async function resolveInTx(
       if (incoming.deleted) throw new ResolutionError("NOT_ALLOWED", "backup version is a deletion");
       if (current) await archive(db, type, id, current, "replacedByBackup");
       await writeRecord(db, type, id, incoming.envelope.data, incoming.envelope.createdAt, merged);
-      await markImportedSessions(db, [{ type, id, data: incoming.envelope.data }], conflict.source.exportedAt);
+      await markImportedSessions(db, [{ type, id, data: incoming.envelope.data }], conflict.incomingPausedFrom ?? conflict.source.exportedAt);
       break;
     }
     case "deleteHere": {

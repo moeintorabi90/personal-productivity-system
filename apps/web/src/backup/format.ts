@@ -1,6 +1,7 @@
 import { LANGUAGES, THEMES } from "@pps/shared";
 import { z } from "zod";
 import type { DeviceSettings, VersionEntry } from "../local/db.ts";
+import { importedPauseProblem } from "../work/session-time.ts";
 import { base64DecodedLength } from "./base64.ts";
 import { contentHashOf, type Envelope, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
@@ -19,7 +20,7 @@ import {
   SALT_BYTES,
   WRAPPED_KEY_BYTES,
 } from "./limits.ts";
-import { EXCLUDED_RECORD_TYPES, type Registry, registryForDataSchemaVersion } from "./registry.ts";
+import { EXCLUDED_RECORD_TYPES, type Registry, registryForDataSchemaVersion, type SessionData, SESSIONS } from "./registry.ts";
 
 /* ---------------- header ---------------- */
 
@@ -115,6 +116,16 @@ export interface BackupPayload {
   pendingConflicts: CarriedConflict[];
   replacedVersions: CarriedReplaced[];
   sourceDeviceSettings: DeviceSettings;
+  /**
+   * Version 7 (T-173): running sessions the source device treated as paused since an earlier
+   * backup, with the minute that pause began. Omitted when there are none; the records are unchanged.
+   */
+  importedSessionPauses?: ImportedSessionPause[];
+}
+
+export interface ImportedSessionPause {
+  sessionId: string;
+  pausedFrom: string;
 }
 
 export interface CarriedConflict {
@@ -128,6 +139,8 @@ export interface CarriedConflict {
   detectedAt: string;
   /** Absent in entries written before it was added (unknown device; never filled in). */
   detectedOn?: { deviceId: string; deviceName: string };
+  /** Version 7 (T-173): for a running session in `incoming`, the minute its effective pause began. */
+  incomingPausedFrom?: string;
 }
 
 export interface CarriedReplaced {
@@ -181,6 +194,7 @@ const conflictShape = z
     detectedAt: isoInstant,
     // Optional within format version 1: files from the first Stage 1B build have no such field.
     detectedOn: z.object({ deviceId: z.uuid(), deviceName: z.string().max(MAX_DEVICE_NAME_CHARS) }).strict().optional(),
+    incomingPausedFrom: z.string().optional(),
   })
   .strict();
 
@@ -202,8 +216,40 @@ const payloadShape = z
     pendingConflicts: z.array(z.unknown()),
     replacedVersions: z.array(z.unknown()),
     sourceDeviceSettings: z.object({ language: z.enum(LANGUAGES), theme: z.enum(THEMES) }).strict(),
+    importedSessionPauses: z.unknown().optional(),
   })
   .strict();
+
+const WHOLE_MINUTE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/;
+const isWholeMinute = (value: string) => WHOLE_MINUTE.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString() === value;
+
+const importedPausesShape = z
+  .array(z.object({ sessionId: z.uuid(), pausedFrom: z.string() }).strict())
+  .min(1);
+
+/** Whole-minute instant, consistent with a session version in the file and the backup's time (T-173). */
+function checkPausedFrom(pausedFrom: string, session: Envelope, backupCreatedAt: string | undefined, where: string): void {
+  if (!isWholeMinute(pausedFrom)) throw new BackupError("INVALID_PAYLOAD", `${where}: must be a UTC instant at whole minutes`);
+  if (backupCreatedAt === undefined) throw new BackupError("INVALID_PAYLOAD", `${where}: the backup's time is unknown`);
+  const problem = importedPauseProblem(session.data as unknown as SessionData, pausedFrom, backupCreatedAt);
+  if (problem) throw new BackupError("INVALID_PAYLOAD", `${where}: ${problem}`);
+}
+
+/** The version-7 list of imported pauses: each refers to one session record in this payload. */
+function validateImportedPauses(raw: unknown, records: Record<string, Envelope[]>, backupCreatedAt: string | undefined): ImportedSessionPause[] {
+  const shaped = importedPausesShape.safeParse(raw);
+  if (!shaped.success) throw new BackupError("INVALID_PAYLOAD", `importedSessionPauses: ${shaped.error.issues[0]?.message}`);
+  const seen = new Set<string>();
+  for (const [i, pause] of shaped.data.entries()) {
+    const where = `importedSessionPauses[${i}]`;
+    if (seen.has(pause.sessionId)) throw new BackupError("INVALID_PAYLOAD", `${where}: duplicate session`);
+    seen.add(pause.sessionId);
+    const session = records[SESSIONS]?.find((e) => e.id === pause.sessionId);
+    if (!session) throw new BackupError("INVALID_PAYLOAD", `${where}: the session is not in this backup`);
+    checkPausedFrom(pause.pausedFrom, session, backupCreatedAt, where);
+  }
+  return shaped.data;
+}
 
 function checkType(type: string, registry: Registry): void {
   if (EXCLUDED_RECORD_TYPES.has(type)) throw new BackupError("EXCLUDED_DATA", type);
@@ -262,12 +308,13 @@ function validateEntry(raw: z.infer<typeof entryShape>, type: string, id: string
  * adds a type and optional fields (absent, never null), 3 → 4 adds types (goals, milestones), and
  * 4 → 5 adds the optional project `color`, and 5 → 6 adds Stage 5 types and optional fields
  * (output-goal `definitionId`, task `goalIds` and `outputDefinitionIds`, block `expectedOutputs`),
+ * and 6 → 7 adds optional pause metadata for sessions imported as running (T-173),
  * so every upgrade is the identity. The
  * payload is checked against the types AND fields of ITS version: a version-1 file containing a
  * version-2 type is refused as an unknown record type, and a version-2 task with `recurrence` is
  * refused as invalid data.
  */
-export function validatePayload(raw: unknown, fullRegistry: Registry, dataSchemaVersion = DATA_SCHEMA_VERSION): BackupPayload {
+export function validatePayload(raw: unknown, fullRegistry: Registry, dataSchemaVersion = DATA_SCHEMA_VERSION, backupCreatedAt?: string): BackupPayload {
   const registry = registryForDataSchemaVersion(fullRegistry, dataSchemaVersion);
   const shaped = payloadShape.safeParse(raw);
   if (!shaped.success) {
@@ -317,10 +364,16 @@ export function validatePayload(raw: unknown, fullRegistry: Registry, dataSchema
     checkType(c.data.type, registry);
     if (conflictIds.has(c.data.conflictId)) throw new BackupError("INVALID_PAYLOAD", `${where}: duplicate conflictId`);
     conflictIds.add(c.data.conflictId);
+    const incoming = validateEntry(c.data.incoming, c.data.type, c.data.id, registry, `${where}.incoming`);
+    if (c.data.incomingPausedFrom !== undefined) {
+      if (dataSchemaVersion < 7) throw new BackupError("INVALID_PAYLOAD", `${where}: incomingPausedFrom needs data version 7`);
+      if (c.data.type !== SESSIONS || incoming.deleted) throw new BackupError("INVALID_PAYLOAD", `${where}: incomingPausedFrom needs a session version`);
+      checkPausedFrom(c.data.incomingPausedFrom, incoming.envelope, c.data.source.exportedAt, `${where}.incomingPausedFrom`);
+    }
     return {
       ...c.data,
       local: c.data.local ? validateEntry(c.data.local, c.data.type, c.data.id, registry, `${where}.local`) : null,
-      incoming: validateEntry(c.data.incoming, c.data.type, c.data.id, registry, `${where}.incoming`),
+      incoming,
     };
   });
 
@@ -339,5 +392,17 @@ export function validatePayload(raw: unknown, fullRegistry: Registry, dataSchema
     return { ...r.data, entry: validateEntry(r.data.entry, r.data.type, r.data.id, registry, `${where}.entry`) };
   });
 
-  return { records, tombstones, pendingConflicts, replacedVersions, sourceDeviceSettings: p.sourceDeviceSettings };
+  let importedSessionPauses: ImportedSessionPause[] | undefined;
+  if (p.importedSessionPauses !== undefined) {
+    if (dataSchemaVersion < 7) throw new BackupError("INVALID_PAYLOAD", "importedSessionPauses needs data version 7");
+    importedSessionPauses = validateImportedPauses(p.importedSessionPauses, records, backupCreatedAt);
+  }
+  return {
+    records,
+    tombstones,
+    pendingConflicts,
+    replacedVersions,
+    sourceDeviceSettings: p.sourceDeviceSettings,
+    ...(importedSessionPauses ? { importedSessionPauses } : {}),
+  };
 }

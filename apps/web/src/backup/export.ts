@@ -1,7 +1,9 @@
 import type { LocalDb } from "../local/db.ts";
 import { deviceIdentity, getDeviceSettings, toEnvelope } from "../local/records.ts";
 import { ensureSharedPreferences } from "../local/settings.ts";
+import { IMPORTED_PAUSED_KEY } from "../local/work.ts";
 import { APP_VERSION } from "../version.ts";
+import { importedPauseForExport, type SessionTimes } from "../work/session-time.ts";
 import { encryptPayload, prepareEncryption } from "./crypto.ts";
 import type { Envelope } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
@@ -17,7 +19,7 @@ import {
   MAX_PLAINTEXT_BYTES,
 } from "./limits.ts";
 import { openBackupFile } from "./read.ts";
-import type { Registry } from "./registry.ts";
+import { type Registry, SESSIONS } from "./registry.ts";
 import { sha256HexAsync } from "./sha256.ts";
 
 export interface ExportOptions {
@@ -48,7 +50,7 @@ export function backupFileName(date: Date): string {
 }
 
 /** Collects every exported product record. Types outside the registry (e.g. `sync_probe`) are never read. */
-async function collectPayload(db: LocalDb, registry: Registry): Promise<BackupPayload> {
+async function collectPayload(db: LocalDb, registry: Registry, now: Date): Promise<BackupPayload> {
   await db.transaction("rw", [db.records, db.meta], () => ensureSharedPreferences(db));
   return db.transaction("r", [db.records, db.tombstones, db.pendingConflicts, db.replacedVersions, db.meta], async () => {
     const records: Record<string, Envelope[]> = {};
@@ -61,7 +63,21 @@ async function collectPayload(db: LocalDb, registry: Registry): Promise<BackupPa
     const pendingConflicts = (await db.pendingConflicts.toArray()).filter((c) => known(c.type));
     const replacedVersions = (await db.replacedVersions.toArray()).filter((r) => known(r.type));
     const sourceDeviceSettings = await getDeviceSettings(db);
-    return { records, tombstones, pendingConflicts, replacedVersions, sourceDeviceSettings };
+    // Sessions treated here as paused since an import: the next device must know when that began (T-173).
+    const marks = ((await db.meta.get(IMPORTED_PAUSED_KEY))?.value ?? {}) as Record<string, string>;
+    const importedSessionPauses = (records[SESSIONS] ?? []).flatMap((session) => {
+      const mark = marks[session.id];
+      const pausedFrom = mark ? importedPauseForExport(session.data as unknown as SessionTimes, mark, now.getTime()) : null;
+      return pausedFrom ? [{ sessionId: session.id, pausedFrom }] : [];
+    });
+    return {
+      records,
+      tombstones,
+      pendingConflicts,
+      replacedVersions,
+      sourceDeviceSettings,
+      ...(importedSessionPauses.length > 0 ? { importedSessionPauses } : {}),
+    };
   });
 }
 
@@ -84,7 +100,7 @@ function checkExportLimits(payload: BackupPayload): number {
  */
 export async function createBackup(db: LocalDb, registry: Registry, options: ExportOptions = {}): Promise<ExportResult> {
   const now = options.now ?? new Date();
-  const payload = await collectPayload(db, registry);
+  const payload = await collectPayload(db, registry, now);
   const recordCount = checkExportLimits(payload);
   const device = await db.transaction("rw", db.meta, () => deviceIdentity(db));
   const password = options.password || undefined;

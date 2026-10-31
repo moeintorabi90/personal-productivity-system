@@ -66,7 +66,7 @@ describe("21. round-trip and merge of blocks, recurrence, and capacity", () => {
     const a = await plannedDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(6);
+    expect(doc.app.dataSchemaVersion).toBe(7);
     expect(doc.payload.records[CALENDAR_BLOCKS]).toHaveLength(3);
     const b = await device("B", null);
     const { preview } = await importInto(b, text, { ...product, applyUpdates: true });
@@ -195,7 +195,7 @@ describe("23. versioning and per-version fields", () => {
     );
   });
 
-  it("a version-2 file with recurrence, capacity, or blocks is refused with no change; version 6 is refused as newer", async () => {
+  it("a version-2 file with recurrence, capacity, or blocks is refused with no change; a newer version is refused", async () => {
     const a = await plannedDevice();
     const text = await exportText(a.d);
     const b = await device("B", null);
@@ -220,7 +220,7 @@ describe("23. versioning and per-version fields", () => {
     expect(await codeOf(importInto(b, asV2((doc) => (withoutBlocks(doc), plainPrefs(doc))), product))).toBe("INVALID_PAYLOAD");
     expect(await codeOf(importInto(b, asV2((doc) => (withoutBlocks(doc), plainTasks(doc))), product))).toBe("INVALID_PAYLOAD");
     expect(await codeOf(importInto(b, asV2((doc) => (withoutBlocks(doc), plainTasks(doc), plainPrefs(doc))), product))).toBe("OK");
-    const newer = mutate(text, (doc) => (doc.app.dataSchemaVersion = 7));
+    const newer = mutate(text, (doc) => (doc.app.dataSchemaVersion = 8));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
     const b2 = await device("B2", null);
     expect(await snapshot(b2.db)).toEqual(before);

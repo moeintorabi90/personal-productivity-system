@@ -59,7 +59,7 @@ describe("8. round-trip and merge of the project color", () => {
     const a = await coloredDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(6);
+    expect(doc.app.dataSchemaVersion).toBe(7);
     const projects = doc.payload.records[PROJECTS] as { id: string; data: Record<string, unknown> }[];
     expect(projects.find((p) => p.id === a.colored)!.data.color).toBe("teal");
     expect(projects.find((p) => p.id === a.plain)!.data).not.toHaveProperty("color");
@@ -128,7 +128,7 @@ describe("8. upgrade and older files", () => {
     }
   });
 
-  it("a version-4 file with a color, a null color, or an unknown palette ID is refused with no change; version 6 is refused as newer", async () => {
+  it("a version-4 file with a color, a null color, or an unknown palette ID is refused with no change; a newer version is refused", async () => {
     const a = await coloredDevice();
     const text = await exportText(a.d);
     const b = await device("B", null);
@@ -145,7 +145,7 @@ describe("8. upgrade and older files", () => {
     expect(await codeOf(importInto(b, withColor("magenta"), product))).toBe("INVALID_PAYLOAD");
     expect(await codeOf(importInto(b, withColor("Teal"), product))).toBe("INVALID_PAYLOAD");
     expect(await snapshot(b.db)).toEqual(before);
-    const newer = mutate(text, (doc) => (doc.app.dataSchemaVersion = 7));
+    const newer = mutate(text, (doc) => (doc.app.dataSchemaVersion = 8));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
     // Without the color, the same content is a valid version-4 file.
     const plainV4 = mutate(text, (doc) => {

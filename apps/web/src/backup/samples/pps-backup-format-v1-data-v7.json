@@ -1,0 +1,81 @@
+{
+  "format": "pps-backup",
+  "formatVersion": 1,
+  "backupId": "7c1e8f42-5a36-4d09-b7e2-3f9d6a1c8e54",
+  "createdAt": "2026-11-02T11:00:00.000Z",
+  "app": {
+    "version": "0.7.0",
+    "dataSchemaVersion": 7
+  },
+  "sourceDevice": {
+    "id": "53fd3338-53bf-474d-87e7-c6b9665053c7",
+    "name": "B"
+  },
+  "encryption": null,
+  "payload": {
+    "records": {
+      "preferences": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "createdAt": "2026-10-31T08:23:55.524Z",
+          "updatedAt": "2026-10-31T08:23:55.525Z",
+          "version": {
+            "53fd3338-53bf-474d-87e7-c6b9665053c7": 1
+          },
+          "contentHash": "861e9e291205f11199f25ffc8113c6062d5d6c62d07013ba91f30e7d7c599c1e",
+          "data": {
+            "timeZone": "Asia/Tehran",
+            "weekStart": 6,
+            "calendarDisplay": "gregorian"
+          }
+        }
+      ],
+      "sessions": [
+        {
+          "id": "27ff745e-94e5-4931-8390-a095e453efb9",
+          "createdAt": "2026-10-31T08:23:55.507Z",
+          "updatedAt": "2026-10-31T08:23:55.507Z",
+          "version": {
+            "090504e3-75e5-45e7-97c7-928943b6b122": 1
+          },
+          "contentHash": "e8a25dec9a9c0675670b551f0d9fd2dd0cc442f6a5a771bc509153c19db5c46c",
+          "data": {
+            "taskId": null,
+            "blockId": null,
+            "startedAt": "2026-11-02T06:00:00.000Z",
+            "endedAt": null,
+            "pauses": [],
+            "timeZone": "Asia/Tehran",
+            "localDate": "2026-11-02",
+            "goalId": null,
+            "expectedOutputs": [],
+            "snapshot": null,
+            "startedOnDevice": "090504e3-75e5-45e7-97c7-928943b6b122",
+            "notes": "",
+            "energy": null,
+            "focus": null,
+            "deletedAt": null
+          }
+        }
+      ]
+    },
+    "tombstones": [],
+    "pendingConflicts": [],
+    "replacedVersions": [],
+    "sourceDeviceSettings": {
+      "language": "en",
+      "theme": "system"
+    },
+    "importedSessionPauses": [
+      {
+        "sessionId": "27ff745e-94e5-4931-8390-a095e453efb9",
+        "pausedFrom": "2026-11-02T07:00:00.000Z"
+      }
+    ]
+  },
+  "integrity": {
+    "algorithm": "SHA-256",
+    "canonicalization": "JCS-RFC8785",
+    "hash": "8e3dfd36037f8091e601c9254a517f5e85612af3ea9d93bd7be4481a0e11af4e"
+  }
+}

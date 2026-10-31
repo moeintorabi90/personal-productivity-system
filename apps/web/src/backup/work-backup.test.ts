@@ -112,8 +112,8 @@ describe("10. backup version 6 (T-109, T-146)", () => {
     const a = await workDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(6);
-    expect(DATA_SCHEMA_VERSION).toBe(6);
+    expect(doc.app.dataSchemaVersion).toBe(7);
+    expect(DATA_SCHEMA_VERSION).toBe(7);
     for (const type of [SESSIONS, OUTPUT_DEFINITIONS, OUTPUT_RECORDS, CORRECTIONS, TASK_COMPLETIONS]) expect(doc.payload.records[type]?.length).toBeGreaterThan(0);
     const taskless = doc.payload.records[SESSIONS].find((e: { id: string }) => e.id === a.taskless).data;
     expect(taskless).toMatchObject({ taskId: null, blockId: null, snapshot: null, goalId: null, energy: null, focus: null, deletedAt: null });
@@ -139,7 +139,7 @@ describe("10. backup version 6 (T-109, T-146)", () => {
     expect((await recordsOf(b.d)).filter((r) => r.type !== "preferences")).toEqual((await recordsOf(a.d)).filter((r) => r.type !== "preferences"));
   });
 
-  it("version-5 data is unchanged: a re-import of a version-5 backup is 'already here'; a version-5 file with version-6 data is refused; version 7 is refused", async () => {
+  it("version-5 data is unchanged: a re-import of a version-5 backup is 'already here'; a version-5 file with version-6 data is refused; a newer version is refused", async () => {
     const b = await device("B");
     const v5 = readFileSync(new URL("./samples/pps-backup-format-v1-data-v5.json", import.meta.url), "utf8");
     await importInto(b, v5, product);
@@ -166,7 +166,7 @@ describe("10. backup version 6 (T-109, T-146)", () => {
       doc.payload.tombstones = [];
     });
     expect(await codeOf(importInto(b, onlyNewFields, product))).toBe("INVALID_PAYLOAD"); // task goalIds in a version-5 file
-    expect(await codeOf(importInto(b, mutate(text, (doc) => (doc.app.dataSchemaVersion = 7)), product))).toBe("NEWER_VERSION");
+    expect(await codeOf(importInto(b, mutate(text, (doc) => (doc.app.dataSchemaVersion = 8)), product))).toBe("NEWER_VERSION");
     expect(await recordsOf(b.d)).toEqual(before);
   });
 
@@ -181,7 +181,7 @@ describe("10. backup version 6 (T-109, T-146)", () => {
 
   it("writes the dataSchemaVersion-6 sample when PPS_WRITE_SAMPLE=1 (maintainers only)", async () => {
     // The app writes its current version; this sample stays the committed version-6 file.
-    if (process.env.PPS_WRITE_SAMPLE !== "1" || DATA_SCHEMA_VERSION !== 6) return;
+    if (process.env.PPS_WRITE_SAMPLE !== "1" || (DATA_SCHEMA_VERSION as number) !== 6) return;
     const a = await workDevice("Sample device");
     const file = await exportFrom(a.d, { now: new Date("2026-11-03T08:00:00Z"), backupId: "6b7f9a3c-2d14-4e8b-9f61-0c5a7d3e2b18" }, registry);
     writeFileSync(v6Sample, `${file.text}\n`);

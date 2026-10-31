@@ -68,7 +68,7 @@ describe("9. bad input is refused and the database is unchanged", () => {
       [mutate(text, (d) => (d.extra = 1)), "INVALID_HEADER"],
       [mutate(text, (d) => (d.sourceDevice.extra = 1)), "INVALID_HEADER"],
       [mutate(text, (d) => (d.formatVersion = 2)), "NEWER_VERSION"],
-      [mutate(text, (d) => (d.app.dataSchemaVersion = 7)), "NEWER_VERSION"],
+      [mutate(text, (d) => (d.app.dataSchemaVersion = 8)), "NEWER_VERSION"],
       [mutate(text, (d) => (d.app.dataSchemaVersion = 0)), "INVALID_HEADER"],
       ['{"format":"pps-backup",}', "INVALID_STRUCTURE"],
       ['{"format":"pps-backup","n":01}', "INVALID_JSON"],

@@ -71,7 +71,7 @@ describe("1–3. round-trip, merge without loss, idempotent re-import", () => {
     const a = await organizedDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(6);
+    expect(doc.app.dataSchemaVersion).toBe(7);
     expect(Object.keys(doc.payload.records).sort()).toEqual(["preferences", PROJECTS, TASK_DEFINITIONS, WORKSTREAMS].sort());
 
     const b = await device("B");
@@ -327,7 +327,7 @@ describe("11. versioning: dataSchemaVersion 1 files still import; types are chec
 
   it("a newer dataSchemaVersion is refused before anything else", async () => {
     const a = await organizedDevice();
-    const newer = mutate(await exportText(a.d), (doc) => (doc.app.dataSchemaVersion = 7));
+    const newer = mutate(await exportText(a.d), (doc) => (doc.app.dataSchemaVersion = 8));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
   });
 

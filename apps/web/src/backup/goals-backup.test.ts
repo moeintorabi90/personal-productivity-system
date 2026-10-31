@@ -84,7 +84,7 @@ describe("8. round-trip and merge of goals and milestones", () => {
     const a = await goalDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(6);
+    expect(doc.app.dataSchemaVersion).toBe(7);
     expect(doc.payload.records[GOALS]).toHaveLength(3);
     expect(doc.payload.records[MILESTONES]).toHaveLength(2);
     const b = await device("B", null);
@@ -186,7 +186,7 @@ describe("9. upgrade from Stage 3 without loss", () => {
     await d.restart();
     expect(await recordsOf(d)).toEqual(before);
     const exported = await exportText(d);
-    expect(JSON.parse(exported).app.dataSchemaVersion).toBe(6);
+    expect(JSON.parse(exported).app.dataSchemaVersion).toBe(7);
     const target = await device("Holds Stage 3 backup", null);
     await importInto(target, sample, { ...product, applyUpdates: true });
     const { preview } = await importInto(target, exported, product);
@@ -219,7 +219,7 @@ describe("10. versioning and validation", () => {
       env.contentHash = contentHashOf(env.data);
     });
 
-  it("a version-3 file with goals or milestones is refused as unknown data; version 6 is refused as newer", async () => {
+  it("a version-3 file with goals or milestones is refused as unknown data; a newer version is refused", async () => {
     const s = await fileWithGoals();
     const asV3 = mutate(s.text, (doc) => {
       doc.app.dataSchemaVersion = 3;
@@ -238,7 +238,7 @@ describe("10. versioning and validation", () => {
     expect(await codeOf(importInto(s.b, milestonesOnly, product))).toBe("UNKNOWN_RECORD_TYPE");
     expect(await snapshot(s.b.db)).toEqual(s.before);
     expect(await codeOf(importInto(s.b, plainV3, product))).toBe("OK");
-    const newer = mutate(s.text, (doc) => (doc.app.dataSchemaVersion = 7));
+    const newer = mutate(s.text, (doc) => (doc.app.dataSchemaVersion = 8));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
   });
 

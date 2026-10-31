@@ -269,6 +269,23 @@ Commands run on the Windows development machine (Edge for end-to-end tests): `np
 
 Finding 2, reproduced and **open; needs the owner's decision, not changed**: a session imported as running is treated as paused from the backup's creation time through a device-local mark, and the next export carries the record without that mark (T-152). In a temporary test, A started a session at 06:00 and exported at 07:00; B imported it (paused from 07:00) and exported at 11:00 with no pauses; C imported it (paused from 11:00) and ended it at 12:00. C stored a pause of 11:00–12:00 and 300 minutes of work, where B's view gives 60. T-144 says a backup moves unfinished work without inventing work time. Keeping that across a further export needs a change to T-152 or to the backup format.
 
+### Imported pause in backups, data version 7 (2026-10-31; same branch, after `08ccf7f`; not merged)
+
+The owner chose to carry the pause in the backup format (T-173). This closes Finding 2 above, which stays as it was found. New test file `backup/imported-pause.test.ts` (13):
+
+- A → B → C: A starts at 06:00 and exports at 07:00; B imports and exports at 11:00 without resuming; C imports and ends at 12:00. The stored pause is 07:00–12:00 and the work time is 60 minutes, not 300. The record's hash and version are the same on all devices until C ends it.
+- A further device, a backup made at 07:00:30 (carried as 07:00), resuming or ending (no metadata afterwards; the stored pause counts), the starting device keeping its own running session, disagreeing clocks, and an encrypted file.
+- A session in a conflict keeps the carried pause when the backup's version is chosen, also through a carried conflict.
+- Version 6: a file without the metadata keeps its behavior (paused from that backup's time, 300 minutes in that test); a version-6 file with the metadata is refused; the committed version-6 sample imports.
+- Invalid metadata: 14 malformed or contradictory cases, and carried-conflict cases, refuse the whole file with nothing written.
+- The new version-7 sample imports. Existing tests now expect version 7, with "newer" at version 8.
+
+With the export no longer writing the metadata, 8 of the 13 tests failed.
+
+Commands run on the Windows development machine (Edge for end-to-end tests): `npm.cmd run typecheck` passed; `npm.cmd test` 36 files, 420 tests passed, 0 failed; `npm.cmd run test:e2e` 12 passed, 0 failed.
+
+Still open: the manual checks and other items listed under "Pre-merge check", now also moving an imported open session across three devices by hand. Restoring an archived version of a running session (undo) was not changed by T-173 and has no test for this pause.
+
 ## Release gate
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.

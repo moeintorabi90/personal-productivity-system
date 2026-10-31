@@ -12,7 +12,7 @@ export const FORMAT_VERSION = 1;
  * each record type declares the version that introduced it, and types whose fields changed keep
  * the schema of older versions.
  */
-export const DATA_SCHEMA_VERSION = 6;
+export const DATA_SCHEMA_VERSION = 7;
 
 export const MIB = 1024 * 1024;
 export const MAX_FILE_BYTES = 32 * MIB;

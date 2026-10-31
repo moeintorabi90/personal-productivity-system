@@ -110,6 +110,8 @@ export interface PendingConflictRow {
    * or files written, by the first Stage 1B build: that device is unknown and is never guessed.
    */
   detectedOn?: { deviceId: string; deviceName: string };
+  /** For a running session in `incoming`: the minute its effective pause began, carried by the backup (T-173). */
+  incomingPausedFrom?: string;
 }
 
 /** A version replaced by a user's choice, kept so the choice can be undone. */

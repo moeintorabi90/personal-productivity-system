@@ -5,7 +5,7 @@ import { markImportedSessions } from "../local/work.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
 import type { BackupHeader, BackupPayload } from "./format.ts";
-import { type DataLookup, GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry } from "./registry.ts";
+import { type DataLookup, GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry, SESSIONS } from "./registry.ts";
 import { compareVersions, isContainedIn } from "./versions.ts";
 
 /** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
@@ -463,6 +463,7 @@ export async function applyImport(
     let appliedUpdates = 0;
     let skippedUpdates = 0;
     const written: { type: string; id: string; data: Record<string, unknown> }[] = [];
+    const carriedPauses = new Map((opened.payload.importedSessionPauses ?? []).map((p) => [p.sessionId, p.pausedFrom]));
 
     for (const item of items) {
       const incoming = item.incoming;
@@ -507,12 +508,14 @@ export async function applyImport(
               source,
               detectedAt: at,
               detectedOn: { deviceId: thisDevice.id, deviceName: thisDevice.name.slice(0, 80) },
+              // The backup's version may become current later: keep when its pause began (T-173).
+              ...(item.type === SESSIONS && carriedPauses.has(item.id) ? { incomingPausedFrom: carriedPauses.get(item.id)! } : {}),
             });
           }
       }
     }
     // Running sessions from the backup are treated as paused here from its creation time (T-152).
-    await markImportedSessions(db, written, header.createdAt);
+    await markImportedSessions(db, written, header.createdAt, carriedPauses);
     for (const conflict of carried.conflicts) await db.pendingConflicts.put(conflict);
     for (const replaced of carried.replaced) await db.replacedVersions.put(replaced);
     if (choices.applyDisplaySettings) {

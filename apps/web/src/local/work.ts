@@ -73,7 +73,7 @@ export type TaskCompletion = Item<TaskCompletionData>;
 export const TRASH_DAYS = 30;
 const TRASH_MS = TRASH_DAYS * 24 * 60 * MINUTE_MS;
 /** Device-local marks of running sessions received by import: id → backup creation time (T-152). */
-const IMPORTED_PAUSED_KEY = "importedPausedSessions";
+export const IMPORTED_PAUSED_KEY = "importedPausedSessions";
 
 export interface WorkData {
   sessions: Session[];
@@ -996,14 +996,20 @@ const isRunning = (data: Record<string, unknown>) => {
 /**
  * Called by the import inside its transaction for every session it wrote (added or updated): a
  * session that is running in the backup is treated here as paused from the backup's creation
- * time; its timer does not run (T-144, T-152). Nothing in the record changes. Device-local only.
+ * time, or from the earlier pause the backup carries for it (T-144, T-152, T-173); its timer does
+ * not run. Nothing in the record changes. The mark itself is device-local.
  */
-export async function markImportedSessions(db: LocalDb, written: { type: string; id: string; data: Record<string, unknown> }[], backupCreatedAt: string): Promise<void> {
+export async function markImportedSessions(
+  db: LocalDb,
+  written: { type: string; id: string; data: Record<string, unknown> }[],
+  backupCreatedAt: string,
+  carriedPauses: ReadonlyMap<string, string> = new Map(),
+): Promise<void> {
   const sessions = written.filter((w) => w.type === SESSIONS);
   if (sessions.length === 0) return;
   const marks = await importedPaused(db);
   for (const s of sessions) {
-    if (isRunning(s.data)) marks[s.id] = backupCreatedAt;
+    if (isRunning(s.data)) marks[s.id] = carriedPauses.get(s.id) ?? backupCreatedAt;
     else delete marks[s.id];
   }
   await setImportedPaused(db, marks);

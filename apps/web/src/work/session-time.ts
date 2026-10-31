@@ -103,6 +103,34 @@ export function withImportedPause(times: SessionTimes, importedPausedAt: string,
   return [...times.pauses, { start, end: at }];
 }
 
+/** Whether the session has ended, or holds an open pause in its record: it is not "running". */
+function isRunningRecord(times: SessionTimes): boolean {
+  return times.endedAt === null && times.pauses.at(-1)?.end !== null;
+}
+
+/**
+ * What a backup carries for a session this device treats as paused since an import (T-173): the
+ * whole minute the pause would start, as withImportedPause computes it, at most the backup's
+ * minute (device clocks can differ). Null when the record is not running or no such minute exists:
+ * the next device then uses the backup's creation time, floored to the last activity as usual.
+ */
+export function importedPauseForExport(times: SessionTimes, importedPausedAt: string, backupCreatedAt: number): string | null {
+  if (!isRunningRecord(times)) return null;
+  const floor = Date.parse(times.pauses.at(-1)?.end ?? times.startedAt);
+  const latest = Date.parse(minuteOf(backupCreatedAt));
+  if (latest < floor) return null;
+  return new Date(Math.min(Math.max(floor, Date.parse(minuteOf(Date.parse(importedPausedAt)))), latest)).toISOString();
+}
+
+/** Why carried pause metadata contradicts its session and backup (T-173), or null. `pausedFrom` is a valid whole minute. */
+export function importedPauseProblem(times: SessionTimes, pausedFrom: string, backupCreatedAt: string): string | null {
+  if (!isRunningRecord(times)) return "the session is not running in this backup";
+  const at = Date.parse(pausedFrom);
+  if (at < Date.parse(times.pauses.at(-1)?.end ?? times.startedAt)) return "the pause starts before the session's last activity";
+  if (at > Date.parse(backupCreatedAt)) return "the pause starts after the backup was created";
+  return null;
+}
+
 /** [start, end) intervals of actual work (paused time removed), for overlap warnings. */
 export function workIntervals(times: SessionTimes, now: number = Date.now()): [number, number][] {
   const end = times.endedAt === null ? now : Date.parse(times.endedAt);
