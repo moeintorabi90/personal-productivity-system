@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { updateSharedPreferences } from "../local/settings.ts";
 import { endSession, loadWork, resumeSession, startSession, updateSessionDetails } from "../local/work.ts";
 import { sessionState, workMinutes } from "../work/session-time.ts";
-import { loadConflictViews } from "./conflicts.ts";
+import { loadConflictViews, restoreReplacedVersion } from "./conflicts.ts";
 import { contentHashOf } from "./envelope.ts";
 import { DATA_SCHEMA_VERSION } from "./limits.ts";
 import { PRODUCT_REGISTRY, type SessionData, SESSIONS } from "./registry.ts";
@@ -115,11 +115,20 @@ describe("an imported running session across further backups (T-173)", () => {
     expect(await markOf(a, session)).toBeUndefined();
   });
 
-  it("device clocks that disagree never make a backup unreadable", async () => {
-    const { b, session } = await startedOnA();
-    const behind = JSON.parse(await exportAt(b, time("06:30")));
-    expect(behind.payload.importedSessionPauses).toEqual([{ sessionId: session, pausedFrom: time("06:30").toISOString() }]);
-    expect(JSON.parse(await exportAt(b, time("05:00"))).payload).not.toHaveProperty("importedSessionPauses");
+  it("a device whose clock is behind keeps the pause at 07:00: C ends at 12:00 with 60 minutes of work", async () => {
+    for (const clock of ["06:30", "05:00"]) {
+      const { b, session } = await startedOnA();
+      const behind = await exportAt(b, time(clock));
+      expect(JSON.parse(behind).createdAt).toBe(time(clock).toISOString());
+      expect(JSON.parse(behind).payload.importedSessionPauses).toEqual([{ sessionId: session, pausedFrom: time("07:00").toISOString() }]);
+      const c = await device("C");
+      await importInto(c, behind, product);
+      expect(await markOf(c, session)).toBe(time("07:00").toISOString());
+      await endSession(c.db, session, {}, time("12:00").getTime());
+      const ended = await dataOf(c, session);
+      expect(ended.pauses).toEqual([{ start: time("07:00").toISOString(), end: time("12:00").toISOString() }]);
+      expect(workMinutes(ended)).toBe(60);
+    }
   });
 
   it("an encrypted backup carries it too", async () => {
@@ -153,6 +162,92 @@ describe("an imported running session across further backups (T-173)", () => {
     await endSession(c.db, session, {}, time("12:00").getTime());
     expect(workMinutes(await dataOf(c, session))).toBe(60);
     expect(await markOf(a, session)).toBeUndefined();
+  });
+});
+
+describe("undo of an archived session version keeps its pause (T-173)", () => {
+  const archivedOf = async (d: TestDevice, reason: string) => (await d.db.replacedVersions.toArray()).find((r) => r.type === SESSIONS && r.reason === reason)!;
+
+  /** B treats the session as paused from 07:00. A (really running) and B both edit it; B imports A's backup made at 09:00. */
+  async function conflictOnB() {
+    const s = await startedOnA();
+    await updateSessionDetails(s.a.db, s.session, { notes: "from A" });
+    await updateSessionDetails(s.b.db, s.session, { notes: "from B" });
+    await importInto(s.b, await exportAt(s.a, time("09:00")), product);
+    const [view] = await loadConflictViews(s.b.db, registry);
+    return { ...s, conflictId: view!.conflict.conflictId };
+  }
+
+  it("choosing the backup archives this device's version with 07:00; restoring it pauses from 07:00 and counts 60 minutes", async () => {
+    const s = await conflictOnB();
+    await decide(s.b.db, s.conflictId, "useBackup", registry);
+    expect(await markOf(s.b, s.session)).toBe(time("09:00").toISOString());
+    const archived = await archivedOf(s.b, "replacedByBackup");
+    expect(archived.pausedFrom).toBe(time("07:00").toISOString());
+
+    await restoreReplacedVersion(s.b.db, registry, archived.replacedId);
+    expect((await dataOf(s.b, s.session)).notes).toBe("from B");
+    expect((await dataOf(s.b, s.session)).pauses).toEqual([]);
+    expect(await markOf(s.b, s.session)).toBe(time("07:00").toISOString());
+    // The undo archived the other version with its own pause; undoing again brings 09:00 back.
+    const undo = await archivedOf(s.b, "undo");
+    expect(undo.pausedFrom).toBe(time("09:00").toISOString());
+
+    await endSession(s.b.db, s.session, {}, time("12:00").getTime());
+    expect(workMinutes(await dataOf(s.b, s.session))).toBe(60);
+  });
+
+  it("keeping this device's version archives the backup's with its pause; restoring it pauses from there", async () => {
+    const s = await conflictOnB();
+    await decide(s.b.db, s.conflictId, "keepDevice", registry);
+    const archived = await archivedOf(s.b, "notChosen");
+    expect(archived.pausedFrom).toBe(time("09:00").toISOString());
+    await restoreReplacedVersion(s.b.db, registry, archived.replacedId);
+    expect(await markOf(s.b, s.session)).toBe(time("09:00").toISOString());
+    await endSession(s.b.db, s.session, {}, time("12:00").getTime());
+    expect(workMinutes(await dataOf(s.b, s.session))).toBe(180);
+  });
+
+  it("an update applied from a backup archives the replaced version with its pause", async () => {
+    const { a, b, session } = await startedOnA();
+    await updateSessionDetails(a.db, session, { notes: "newer" });
+    await importInto(b, await exportAt(a, time("09:00")), { ...product, applyUpdates: true });
+    expect(await markOf(b, session)).toBe(time("09:00").toISOString());
+    const archived = await archivedOf(b, "updatedFromBackup");
+    expect(archived.pausedFrom).toBe(time("07:00").toISOString());
+    await restoreReplacedVersion(b.db, registry, archived.replacedId);
+    expect(await markOf(b, session)).toBe(time("07:00").toISOString());
+  });
+
+  it("the archive's pause travels in a backup, unchanged by a clock that is behind, and restores on another device", async () => {
+    const s = await conflictOnB();
+    await decide(s.b.db, s.conflictId, "useBackup", registry);
+    const before = await archivedOf(s.b, "replacedByBackup");
+    const text = await exportAt(s.b, time("06:30"));
+    const c = await device("C");
+    await importInto(c, text, product);
+    const carried = (await c.db.replacedVersions.get(before.replacedId))!;
+    expect(carried.pausedFrom).toBe(time("07:00").toISOString());
+    expect(carried.entry).toEqual(before.entry); // the archived record itself is unchanged
+    await restoreReplacedVersion(c.db, registry, carried.replacedId);
+    expect(await markOf(c, s.session)).toBe(time("07:00").toISOString());
+    await endSession(c.db, s.session, {}, time("12:00").getTime());
+    expect(workMinutes(await dataOf(c, s.session))).toBe(60);
+  });
+
+  it("a version archived while really running has no pause on its device; on the next device it is paused from that backup's time", async () => {
+    const { a, b, session } = await startedOnA();
+    await updateSessionDetails(a.db, session, { notes: "from A" });
+    await updateSessionDetails(b.db, session, { notes: "from B" });
+    await importInto(a, await exportAt(b, time("09:00")), product);
+    const [view] = await loadConflictViews(a.db, registry);
+    await decide(a.db, view!.conflict.conflictId, "useBackup", registry);
+    const own = await archivedOf(a, "replacedByBackup");
+    expect(own.pausedFrom).toBeUndefined();
+    const c = await device("C");
+    await importInto(c, await exportAt(a, time("10:00")), product);
+    const carried = (await c.db.replacedVersions.get(own.replacedId))!;
+    expect(carried.pausedFrom).toBe(time("10:00").toISOString());
   });
 });
 
@@ -202,7 +297,6 @@ describe("version 6 and validation of version-7 pause metadata (T-173)", () => {
       ["an empty list", (doc) => (doc.payload.importedSessionPauses = [])],
       ["not a list", (doc) => (doc.payload.importedSessionPauses = { [session]: "x" })],
       ["before the session started", (doc) => (list(doc)[0]!.pausedFrom = time("05:00").toISOString())],
-      ["after the backup was created", (doc) => (list(doc)[0]!.pausedFrom = time("11:01").toISOString())],
       ["an ended session", (doc) => editSession(doc, { endedAt: time("10:00").toISOString() })],
       ["a session with an open pause", (doc) => editSession(doc, { pauses: [{ start: time("06:30").toISOString(), end: null }] })],
       [
@@ -230,7 +324,7 @@ describe("version 6 and validation of version-7 pause metadata (T-173)", () => {
     const before = await snapshot(d.db);
     const conflict = (doc: { payload: { pendingConflicts: { incomingPausedFrom?: string }[] } }) => doc.payload.pendingConflicts[0]!;
     for (const file of [
-      mutate(text, (doc) => (conflict(doc).incomingPausedFrom = time("11:01").toISOString())), // after that backup
+      mutate(text, (doc) => (conflict(doc).incomingPausedFrom = time("05:00").toISOString())), // before the session started
       mutate(text, (doc) => (conflict(doc).incomingPausedFrom = "2026-11-02T07:00:30.000Z")),
       mutate(text, (doc) => {
         doc.app.dataSchemaVersion = 6;
@@ -240,6 +334,44 @@ describe("version 6 and validation of version-7 pause metadata (T-173)", () => {
       expect(await codeOf(importInto(d, file, product))).toBe("INVALID_PAYLOAD");
       expect(await snapshot(d.db)).toEqual(before);
     }
+  });
+
+  it("a pause later than the backup's own time is valid: device clocks can differ", async () => {
+    const { b, session } = await startedOnA();
+    const text = mutate(await exportAt(b, time("06:30")), (doc) => (doc.payload.importedSessionPauses[0].pausedFrom = time("08:00").toISOString()));
+    const c = await device("C");
+    expect(await codeOf(importInto(c, text, product))).toBe("OK");
+    expect(await markOf(c, session)).toBe(time("08:00").toISOString());
+  });
+
+  it("invalid metadata on an archived version refuses the whole file; a version-6 file keeps its archive behavior", async () => {
+    const s = await startedOnA();
+    await updateSessionDetails(s.a.db, s.session, { notes: "from A" });
+    await updateSessionDetails(s.b.db, s.session, { notes: "from B" });
+    await importInto(s.b, await exportAt(s.a, time("09:00")), product);
+    const [view] = await loadConflictViews(s.b.db, registry);
+    await decide(s.b.db, view!.conflict.conflictId, "useBackup", registry);
+    const text = await exportAt(s.b, time("10:00"));
+    const row = (doc: { payload: { replacedVersions: { pausedFrom?: string; type: string }[] } }) => doc.payload.replacedVersions.find((r) => r.pausedFrom)!;
+    const c = await device("C");
+    const before = await snapshot(c.db);
+    for (const file of [
+      mutate(text, (doc) => (row(doc).pausedFrom = "2026-11-02T07:00:30.000Z")),
+      mutate(text, (doc) => (row(doc).pausedFrom = time("05:00").toISOString())),
+    ]) {
+      expect(await codeOf(importInto(c, file, product))).toBe("INVALID_PAYLOAD");
+      expect(await snapshot(c.db)).toEqual(before);
+    }
+    const asV6 = mutate(text, (doc) => {
+      doc.app.dataSchemaVersion = 6;
+      delete doc.payload.importedSessionPauses;
+    });
+    expect(await codeOf(importInto(c, asV6, product))).toBe("INVALID_PAYLOAD"); // version 7 fields in a version-6 file
+    const legacy = mutate(asV6, (doc) => {
+      for (const r of doc.payload.replacedVersions) delete r.pausedFrom;
+    });
+    expect(await codeOf(importInto(c, legacy, product))).toBe("OK");
+    expect((await c.db.replacedVersions.toArray()).every((r) => r.pausedFrom === undefined)).toBe(true);
   });
 
   const v7Sample = new URL("./samples/pps-backup-format-v1-data-v7.json", import.meta.url);

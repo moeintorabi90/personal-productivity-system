@@ -122,6 +122,8 @@ export interface ReplacedVersionRow {
   entry: VersionEntry;
   replacedAt: string;
   reason: string;
+  /** For a running session version: the minute its effective pause began (T-173). */
+  pausedFrom?: string;
 }
 
 export interface ImportLogRow {

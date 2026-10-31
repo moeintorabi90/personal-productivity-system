@@ -150,6 +150,8 @@ export interface CarriedReplaced {
   entry: VersionEntry;
   replacedAt: string;
   reason: string;
+  /** Version 7 (T-173): for a running session version, the minute its effective pause began. */
+  pausedFrom?: string;
 }
 
 const versionVectorSchema = z
@@ -206,6 +208,7 @@ const replacedShape = z
     entry: entryShape,
     replacedAt: isoInstant,
     reason: z.string().max(64),
+    pausedFrom: z.string().optional(),
   })
   .strict();
 
@@ -227,16 +230,15 @@ const importedPausesShape = z
   .array(z.object({ sessionId: z.uuid(), pausedFrom: z.string() }).strict())
   .min(1);
 
-/** Whole-minute instant, consistent with a session version in the file and the backup's time (T-173). */
-function checkPausedFrom(pausedFrom: string, session: Envelope, backupCreatedAt: string | undefined, where: string): void {
+/** Whole-minute instant, consistent with a session version in the file (T-173). */
+function checkPausedFrom(pausedFrom: string, session: Envelope, where: string): void {
   if (!isWholeMinute(pausedFrom)) throw new BackupError("INVALID_PAYLOAD", `${where}: must be a UTC instant at whole minutes`);
-  if (backupCreatedAt === undefined) throw new BackupError("INVALID_PAYLOAD", `${where}: the backup's time is unknown`);
-  const problem = importedPauseProblem(session.data as unknown as SessionData, pausedFrom, backupCreatedAt);
+  const problem = importedPauseProblem(session.data as unknown as SessionData, pausedFrom);
   if (problem) throw new BackupError("INVALID_PAYLOAD", `${where}: ${problem}`);
 }
 
 /** The version-7 list of imported pauses: each refers to one session record in this payload. */
-function validateImportedPauses(raw: unknown, records: Record<string, Envelope[]>, backupCreatedAt: string | undefined): ImportedSessionPause[] {
+function validateImportedPauses(raw: unknown, records: Record<string, Envelope[]>): ImportedSessionPause[] {
   const shaped = importedPausesShape.safeParse(raw);
   if (!shaped.success) throw new BackupError("INVALID_PAYLOAD", `importedSessionPauses: ${shaped.error.issues[0]?.message}`);
   const seen = new Set<string>();
@@ -246,7 +248,7 @@ function validateImportedPauses(raw: unknown, records: Record<string, Envelope[]
     seen.add(pause.sessionId);
     const session = records[SESSIONS]?.find((e) => e.id === pause.sessionId);
     if (!session) throw new BackupError("INVALID_PAYLOAD", `${where}: the session is not in this backup`);
-    checkPausedFrom(pause.pausedFrom, session, backupCreatedAt, where);
+    checkPausedFrom(pause.pausedFrom, session, where);
   }
   return shaped.data;
 }
@@ -314,7 +316,7 @@ function validateEntry(raw: z.infer<typeof entryShape>, type: string, id: string
  * version-2 type is refused as an unknown record type, and a version-2 task with `recurrence` is
  * refused as invalid data.
  */
-export function validatePayload(raw: unknown, fullRegistry: Registry, dataSchemaVersion = DATA_SCHEMA_VERSION, backupCreatedAt?: string): BackupPayload {
+export function validatePayload(raw: unknown, fullRegistry: Registry, dataSchemaVersion = DATA_SCHEMA_VERSION): BackupPayload {
   const registry = registryForDataSchemaVersion(fullRegistry, dataSchemaVersion);
   const shaped = payloadShape.safeParse(raw);
   if (!shaped.success) {
@@ -368,7 +370,7 @@ export function validatePayload(raw: unknown, fullRegistry: Registry, dataSchema
     if (c.data.incomingPausedFrom !== undefined) {
       if (dataSchemaVersion < 7) throw new BackupError("INVALID_PAYLOAD", `${where}: incomingPausedFrom needs data version 7`);
       if (c.data.type !== SESSIONS || incoming.deleted) throw new BackupError("INVALID_PAYLOAD", `${where}: incomingPausedFrom needs a session version`);
-      checkPausedFrom(c.data.incomingPausedFrom, incoming.envelope, c.data.source.exportedAt, `${where}.incomingPausedFrom`);
+      checkPausedFrom(c.data.incomingPausedFrom, incoming.envelope, `${where}.incomingPausedFrom`);
     }
     return {
       ...c.data,
@@ -389,13 +391,19 @@ export function validatePayload(raw: unknown, fullRegistry: Registry, dataSchema
     checkType(r.data.type, registry);
     if (replacedIds.has(r.data.replacedId)) throw new BackupError("INVALID_PAYLOAD", `${where}: duplicate replacedId`);
     replacedIds.add(r.data.replacedId);
-    return { ...r.data, entry: validateEntry(r.data.entry, r.data.type, r.data.id, registry, `${where}.entry`) };
+    const entry = validateEntry(r.data.entry, r.data.type, r.data.id, registry, `${where}.entry`);
+    if (r.data.pausedFrom !== undefined) {
+      if (dataSchemaVersion < 7) throw new BackupError("INVALID_PAYLOAD", `${where}: pausedFrom needs data version 7`);
+      if (r.data.type !== SESSIONS || entry.deleted) throw new BackupError("INVALID_PAYLOAD", `${where}: pausedFrom needs a session version`);
+      checkPausedFrom(r.data.pausedFrom, entry.envelope, `${where}.pausedFrom`);
+    }
+    return { ...r.data, entry };
   });
 
   let importedSessionPauses: ImportedSessionPause[] | undefined;
   if (p.importedSessionPauses !== undefined) {
     if (dataSchemaVersion < 7) throw new BackupError("INVALID_PAYLOAD", "importedSessionPauses needs data version 7");
-    importedSessionPauses = validateImportedPauses(p.importedSessionPauses, records, backupCreatedAt);
+    importedSessionPauses = validateImportedPauses(p.importedSessionPauses, records);
   }
   return {
     records,

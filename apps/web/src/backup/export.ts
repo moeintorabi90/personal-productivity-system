@@ -50,7 +50,7 @@ export function backupFileName(date: Date): string {
 }
 
 /** Collects every exported product record. Types outside the registry (e.g. `sync_probe`) are never read. */
-async function collectPayload(db: LocalDb, registry: Registry, now: Date): Promise<BackupPayload> {
+async function collectPayload(db: LocalDb, registry: Registry): Promise<BackupPayload> {
   await db.transaction("rw", [db.records, db.meta], () => ensureSharedPreferences(db));
   return db.transaction("r", [db.records, db.tombstones, db.pendingConflicts, db.replacedVersions, db.meta], async () => {
     const records: Record<string, Envelope[]> = {};
@@ -67,7 +67,7 @@ async function collectPayload(db: LocalDb, registry: Registry, now: Date): Promi
     const marks = ((await db.meta.get(IMPORTED_PAUSED_KEY))?.value ?? {}) as Record<string, string>;
     const importedSessionPauses = (records[SESSIONS] ?? []).flatMap((session) => {
       const mark = marks[session.id];
-      const pausedFrom = mark ? importedPauseForExport(session.data as unknown as SessionTimes, mark, now.getTime()) : null;
+      const pausedFrom = mark ? importedPauseForExport(session.data as unknown as SessionTimes, mark) : null;
       return pausedFrom ? [{ sessionId: session.id, pausedFrom }] : [];
     });
     return {
@@ -100,7 +100,7 @@ function checkExportLimits(payload: BackupPayload): number {
  */
 export async function createBackup(db: LocalDb, registry: Registry, options: ExportOptions = {}): Promise<ExportResult> {
   const now = options.now ?? new Date();
-  const payload = await collectPayload(db, registry, now);
+  const payload = await collectPayload(db, registry);
   const recordCount = checkExportLimits(payload);
   const device = await db.transaction("rw", db.meta, () => deviceIdentity(db));
   const password = options.password || undefined;

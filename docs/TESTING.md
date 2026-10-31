@@ -286,6 +286,17 @@ Commands run on the Windows development machine (Edge for end-to-end tests): `np
 
 Still open: the manual checks and other items listed under "Pre-merge check", now also moving an imported open session across three devices by hand. Restoring an archived version of a running session (undo) was not changed by T-173 and has no test for this pause.
 
+### Imported pause: clock differences and undo (2026-10-31; same branch, after `6276d9d`; not merged)
+
+Two review findings on T-173, fixed. Data version stays 7, because that version is not deployed and the new optional field is part of it; the report above stays as it was run, and this closes its open note about undo.
+
+- Clock differences: the carried minute is no longer moved to the backup's time, and it is no longer refused for being later than that time. In `backup/imported-pause.test.ts`, a pause that began at 07:00 is exported by a device whose clock says 06:30 (and 05:00), imported, and ended at 12:00: the pause stays 07:00–12:00 and the work time is 60 minutes.
+- Undo: archived running session versions keep their minute (`pausedFrom`). Tests cover choosing the backup's version, keeping this device's, an applied update, undoing an undo, the archive travelling in a backup and restored on another device, a version archived while really running, invalid values, and version-6 files. With the mark no longer restored by undo, 4 of the 20 tests in that file failed.
+
+Commands run on the Windows development machine (Edge for end-to-end tests): `npm.cmd run typecheck` passed; `npm.cmd test` 36 files, 427 tests passed, 0 failed; `npm.cmd run test:e2e` 12 passed, 0 failed.
+
+Remaining limitations: on the device where a session was really running (no import), undoing to that archived version resumes it as running, so time since its last activity counts as work; T-173 covers imported pauses only. The earlier snapshot of a conflict is archived with this device's current mark, as no mark was stored with the snapshot. Version-6 files carry no such minute, so restoring their running versions leaves this device's mark as it was.
+
 ## Release gate
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.

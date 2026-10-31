@@ -121,7 +121,7 @@ export async function openCheckedBackup(checked: CheckedBackup, registry: Regist
     if (plaintext.length > MAX_PLAINTEXT_BYTES) throw new BackupError("LIMIT_EXCEEDED", "decrypted payload too large");
     rawPayload = decodeAndParse(plaintext);
   }
-  return { header: checked.header, payload: validatePayload(rawPayload, registry, checked.header.app.dataSchemaVersion, checked.header.createdAt) };
+  return { header: checked.header, payload: validatePayload(rawPayload, registry, checked.header.app.dataSchemaVersion) };
 }
 
 /** Convenience: all checks and decryption in order. */

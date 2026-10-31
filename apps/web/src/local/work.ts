@@ -54,6 +54,7 @@ import {
   sessionState,
   type SessionTimes,
   sessionTimesProblem,
+  importedPauseForExport,
   withImportedPause,
   workMs,
 } from "../work/session-time.ts";
@@ -1012,6 +1013,29 @@ export async function markImportedSessions(
     if (isRunning(s.data)) marks[s.id] = carriedPauses.get(s.id) ?? backupCreatedAt;
     else delete marks[s.id];
   }
+  await setImportedPaused(db, marks);
+}
+
+/** This device's mark for a session, if it treats the session as paused since an import. */
+export async function importedMarkOf(db: LocalDb, id: string): Promise<string | undefined> {
+  return (await importedPaused(db))[id];
+}
+
+/** The pause to keep with an archived version (T-173): set only for a running session version. */
+export function pauseOfVersion(type: string, entry: VersionEntry, mark: string | undefined): string | null {
+  if (type !== SESSIONS || entry.deleted || !mark) return null;
+  return importedPauseForExport(entry.envelope.data as unknown as SessionData, mark);
+}
+
+/**
+ * Undo made an archived session version current (T-173): a running one is paused from its kept
+ * minute; without one, this device's mark stays as it was. Any other version needs no mark.
+ */
+export async function markRestoredSession(db: LocalDb, id: string, data: Record<string, unknown>, pausedFrom: string | undefined): Promise<void> {
+  const marks = await importedPaused(db);
+  if (!isRunning(data)) delete marks[id];
+  else if (pausedFrom) marks[id] = pausedFrom;
+  else return;
   await setImportedPaused(db, marks);
 }
 

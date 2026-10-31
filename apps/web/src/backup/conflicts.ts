@@ -1,9 +1,9 @@
 import { getMeta, type LocalDb, type PendingConflictRow, setMeta, type VersionEntry } from "../local/db.ts";
 import { deviceIdentity, toEnvelope } from "../local/records.ts";
-import { markImportedSessions } from "../local/work.ts";
+import { importedMarkOf, markImportedSessions, markRestoredSession, pauseOfVersion } from "../local/work.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { canonicalize } from "./jcs.ts";
-import { CALENDAR_BLOCKS, GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry } from "./registry.ts";
+import { CALENDAR_BLOCKS, GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry, SESSIONS } from "./registry.ts";
 import { mergeAndBump, type VersionVector } from "./versions.ts";
 
 /** Choices (docs/BACKUP_FORMAT.md, "Showing and resolving conflicts", D-015). */
@@ -156,8 +156,9 @@ export async function loadConflictViews(db: LocalDb, registry: Registry): Promis
   });
 }
 
-async function archive(db: LocalDb, type: string, id: string, entry: VersionEntry, reason: string): Promise<void> {
-  await db.replacedVersions.put({ replacedId: crypto.randomUUID(), type, id, entry, replacedAt: nowIso(), reason });
+async function archive(db: LocalDb, type: string, id: string, entry: VersionEntry, reason: string, mark?: string): Promise<void> {
+  const pausedFrom = pauseOfVersion(type, entry, mark);
+  await db.replacedVersions.put({ replacedId: crypto.randomUUID(), type, id, entry, replacedAt: nowIso(), reason, ...(pausedFrom ? { pausedFrom } : {}) });
 }
 
 /**
@@ -340,6 +341,7 @@ async function resolveInTx(
   const { type, id, incoming } = conflict;
   const current = await checkResolution(db, registry, conflict, resolution, expected);
   const device = await deviceIdentity(db);
+  const mark = await importedMarkOf(db, id); // before any choice changes it: kept with what is archived (T-173)
   let merged = mergeAndBump(current ? versionOf(current) : {}, versionOf(incoming), device.id);
   if (conflict.local) merged = mergeAndBump(merged, versionOf(conflict.local), device.id);
 
@@ -349,20 +351,20 @@ async function resolveInTx(
     case "keepHere": {
       if (current && !current.deleted) await writeRecord(db, type, id, current.envelope.data, current.envelope.createdAt, merged);
       else await writeTombstone(db, type, id, merged); // keeps "nothing here", recording the decision
-      await archive(db, type, id, incoming, "notChosen");
+      await archive(db, type, id, incoming, "notChosen", conflict.incomingPausedFrom ?? conflict.source.exportedAt);
       break;
     }
     case "useBackup":
     case "restore": {
       if (incoming.deleted) throw new ResolutionError("NOT_ALLOWED", "backup version is a deletion");
-      if (current) await archive(db, type, id, current, "replacedByBackup");
+      if (current) await archive(db, type, id, current, "replacedByBackup", mark);
       await writeRecord(db, type, id, incoming.envelope.data, incoming.envelope.createdAt, merged);
       await markImportedSessions(db, [{ type, id, data: incoming.envelope.data }], conflict.incomingPausedFrom ?? conflict.source.exportedAt);
       break;
     }
     case "deleteHere": {
       if (!current || current.deleted) throw new ResolutionError("NOT_ALLOWED", "nothing to delete");
-      await archive(db, type, id, current, "deletedFromBackup");
+      await archive(db, type, id, current, "deletedFromBackup", mark);
       await writeTombstone(db, type, id, merged);
       break;
     }
@@ -374,7 +376,7 @@ async function resolveInTx(
       break;
     }
   }
-  if (snapshotDiffers(conflict, current)) await archive(db, type, id, conflict.local!, "earlierVersion");
+  if (snapshotDiffers(conflict, current)) await archive(db, type, id, conflict.local!, "earlierVersion", mark);
   await db.pendingConflicts.delete(conflict.conflictId);
 }
 
@@ -600,16 +602,18 @@ export async function restoreReplacedVersion(db: LocalDb, registry: Registry, re
     const device = await deviceIdentity(db);
     const current = await currentEntry(db, row.type, row.id);
     const merged = mergeAndBump(current ? versionOf(current) : {}, versionOf(row.entry), device.id);
+    const mark = await importedMarkOf(db, row.id);
     if (row.entry.deleted) {
       if (current && !current.deleted) await assertNoLinkedItems(db, registry, row.type, row.id);
-      if (current) await archive(db, row.type, row.id, current, "undo");
+      if (current) await archive(db, row.type, row.id, current, "undo", mark);
       await writeTombstone(db, row.type, row.id, merged);
     } else {
       await assertLinksLive(db, registry, row.type, row.entry.envelope.data);
       await assertImmutableKept(db, registry, row.type, row.id, current, row.entry.envelope.data);
       await assertOutputsFitGoal(db, row.type, row.id, row.entry.envelope.data);
-      if (current) await archive(db, row.type, row.id, current, "undo");
+      if (current) await archive(db, row.type, row.id, current, "undo", mark);
       await writeRecord(db, row.type, row.id, row.entry.envelope.data, row.entry.envelope.createdAt, merged);
+      if (row.type === SESSIONS) await markRestoredSession(db, row.id, row.entry.envelope.data, row.pausedFrom);
     }
     await db.replacedVersions.delete(replacedId);
   });

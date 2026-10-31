@@ -1,7 +1,7 @@
 import type { DeviceSettings, ImportLogRow, LocalDb, PendingConflictRow, ReplacedVersionRow, VersionEntry } from "../local/db.ts";
 import { deviceIdentity, getDeviceSettings, toEnvelope } from "../local/records.ts";
 import { ensureSharedPreferences } from "../local/settings.ts";
-import { markImportedSessions } from "../local/work.ts";
+import { importedMarkOf, markImportedSessions, pauseOfVersion } from "../local/work.ts";
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
 import type { BackupHeader, BackupPayload } from "./format.ts";
@@ -483,6 +483,7 @@ export async function applyImport(
             break;
           }
           if (item.local) {
+            const pausedFrom = pauseOfVersion(item.type, item.local, await importedMarkOf(db, item.id));
             await db.replacedVersions.put({
               replacedId: crypto.randomUUID(),
               type: item.type,
@@ -490,6 +491,7 @@ export async function applyImport(
               entry: item.local,
               replacedAt: at,
               reason: "updatedFromBackup",
+              ...(pausedFrom ? { pausedFrom } : {}),
             });
           }
           await db.records.put({ type: item.type, ...incoming.envelope });
@@ -517,7 +519,12 @@ export async function applyImport(
     // Running sessions from the backup are treated as paused here from its creation time (T-152).
     await markImportedSessions(db, written, header.createdAt, carriedPauses);
     for (const conflict of carried.conflicts) await db.pendingConflicts.put(conflict);
-    for (const replaced of carried.replaced) await db.replacedVersions.put(replaced);
+    for (const replaced of carried.replaced) {
+      // A running version without a kept pause was really running on the source: as for an active
+      // session, it counts as paused from this backup's time here (version 7, T-173).
+      const pausedFrom = replaced.pausedFrom ?? (header.app.dataSchemaVersion >= 7 ? pauseOfVersion(replaced.type, replaced.entry, header.createdAt) : null);
+      await db.replacedVersions.put({ ...replaced, ...(pausedFrom ? { pausedFrom } : {}) });
+    }
     if (choices.applyDisplaySettings) {
       await db.meta.put({ key: "deviceSettings", value: { ...opened.payload.sourceDeviceSettings } });
     }

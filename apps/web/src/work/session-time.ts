@@ -109,25 +109,24 @@ function isRunningRecord(times: SessionTimes): boolean {
 }
 
 /**
- * What a backup carries for a session this device treats as paused since an import (T-173): the
- * whole minute the pause would start, as withImportedPause computes it, at most the backup's
- * minute (device clocks can differ). Null when the record is not running or no such minute exists:
- * the next device then uses the backup's creation time, floored to the last activity as usual.
+ * What a backup or the archive keeps for a session version treated as paused since an import
+ * (T-173): the whole minute the pause would start, as withImportedPause computes it. It is
+ * independent of the backup's own time, because device clocks can differ. Null when the version is
+ * not running.
  */
-export function importedPauseForExport(times: SessionTimes, importedPausedAt: string, backupCreatedAt: number): string | null {
+export function importedPauseForExport(times: SessionTimes, importedPausedAt: string): string | null {
   if (!isRunningRecord(times)) return null;
   const floor = Date.parse(times.pauses.at(-1)?.end ?? times.startedAt);
-  const latest = Date.parse(minuteOf(backupCreatedAt));
-  if (latest < floor) return null;
-  return new Date(Math.min(Math.max(floor, Date.parse(minuteOf(Date.parse(importedPausedAt)))), latest)).toISOString();
+  return new Date(Math.max(floor, Date.parse(minuteOf(Date.parse(importedPausedAt))))).toISOString();
 }
 
-/** Why carried pause metadata contradicts its session and backup (T-173), or null. `pausedFrom` is a valid whole minute. */
-export function importedPauseProblem(times: SessionTimes, pausedFrom: string, backupCreatedAt: string): string | null {
-  if (!isRunningRecord(times)) return "the session is not running in this backup";
-  const at = Date.parse(pausedFrom);
-  if (at < Date.parse(times.pauses.at(-1)?.end ?? times.startedAt)) return "the pause starts before the session's last activity";
-  if (at > Date.parse(backupCreatedAt)) return "the pause starts after the backup was created";
+/**
+ * Why carried pause metadata contradicts its session version (T-173), or null. `pausedFrom` is a
+ * valid whole minute. It is not compared with any backup's time: device clocks can differ.
+ */
+export function importedPauseProblem(times: SessionTimes, pausedFrom: string): string | null {
+  if (!isRunningRecord(times)) return "the session is not running in this version";
+  if (Date.parse(pausedFrom) < Date.parse(times.pauses.at(-1)?.end ?? times.startedAt)) return "the pause starts before the session's last activity";
   return null;
 }
 
