@@ -58,7 +58,7 @@ import {
   workMs,
 } from "../work/session-time.ts";
 import { matchUnits } from "../work/units.ts";
-import type { LocalDb, RecordRow } from "./db.ts";
+import type { LocalDb, RecordRow, VersionEntry } from "./db.ts";
 import type { Item } from "./organization.ts";
 import { getSharedPreferences } from "./settings.ts";
 import { deleteRecord, deviceIdentity, putRecord } from "./records.ts";
@@ -797,24 +797,37 @@ export async function createOutputDefinition(db: LocalDb, input: { name: string;
   return id;
 }
 
-/** Whether any record references the definition (T-167): outputs, goals, expected amounts, task suggestions. */
+/** Whether one version of a record references the definition (T-167). */
+function referencesDefinition(type: string, data: Record<string, unknown>, id: string): boolean {
+  switch (type) {
+    case OUTPUT_RECORDS:
+    case GOALS:
+      return data.definitionId === id;
+    case SESSIONS:
+    case CALENDAR_BLOCKS:
+      return ((data.expectedOutputs as ExpectedOutput[] | undefined) ?? []).some((e) => e.definitionId === id);
+    case TASK_DEFINITIONS:
+      return ((data.outputDefinitionIds as string[] | undefined) ?? []).includes(id);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether any version the app can show, select, or restore references the definition (T-107,
+ * T-167): outputs, goals, expected amounts, task suggestions, in live records, in pending conflicts
+ * (both versions), and in the archive of replaced versions. Tombstones hold no data, and purged
+ * records are gone, so they do not count; set-aside versions (T-172) can never become current.
+ */
 export async function definitionInUse(db: LocalDb, id: string): Promise<boolean> {
-  const all = await db.records.toArray();
-  return all.some((r) => {
-    const d = r.data as Record<string, unknown>;
-    switch (r.type) {
-      case OUTPUT_RECORDS:
-        return d.definitionId === id;
-      case GOALS:
-        return d.definitionId === id;
-      case SESSIONS:
-      case CALENDAR_BLOCKS:
-        return ((d.expectedOutputs as ExpectedOutput[] | undefined) ?? []).some((e) => e.definitionId === id);
-      case TASK_DEFINITIONS:
-        return ((d.outputDefinitionIds as string[] | undefined) ?? []).includes(id);
-      default:
-        return false;
-    }
+  return db.transaction("r", [db.records, db.pendingConflicts, db.replacedVersions], async () => {
+    const [records, conflicts, replaced] = await Promise.all([db.records.toArray(), db.pendingConflicts.toArray(), db.replacedVersions.toArray()]);
+    const inEntry = (type: string, entry: VersionEntry | null) => !!entry && !entry.deleted && referencesDefinition(type, entry.envelope.data, id);
+    return (
+      records.some((r) => referencesDefinition(r.type, r.data, id)) ||
+      conflicts.some((c) => inEntry(c.type, c.local) || inEntry(c.type, c.incoming)) ||
+      replaced.some((r) => inEntry(r.type, r.entry))
+    );
   });
 }
 
@@ -831,7 +844,7 @@ export async function editOutputDefinition(
   input: { name: string; unit: string; history?: "applyToHistory" | "keepPrevious"; sameUnit?: boolean },
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", [...tables(db), db.pendingConflicts, db.replacedVersions], async () => {
     const def = await get<OutputDefinitionData>(db, OUTPUT_DEFINITIONS, id);
     const label = checkLabel(input.name, input.unit);
     const current = def.revisions.at(-1)!;

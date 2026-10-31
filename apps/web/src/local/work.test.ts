@@ -4,7 +4,8 @@
  * Fixed dates and zones; `now` is passed explicitly.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { CALENDAR_BLOCKS, CORRECTIONS, GOALS, OUTPUT_RECORDS, PRODUCT_REGISTRY, SESSIONS, TASK_COMPLETIONS } from "../backup/registry.ts";
+import { makeEnvelope, nowIso } from "../backup/envelope.ts";
+import { CALENDAR_BLOCKS, CORRECTIONS, GOALS, OUTPUT_DEFINITIONS, OUTPUT_RECORDS, PRODUCT_REGISTRY, SESSIONS, TASK_COMPLETIONS, TASK_DEFINITIONS } from "../backup/registry.ts";
 import { createTestDevice, type TestDevice } from "../backup/test-fixtures.ts";
 import { completedOn, completionDate, completionId } from "../work/completions.ts";
 import { goalProgress } from "../work/progress.ts";
@@ -23,6 +24,8 @@ import {
   correctSessionTimes,
   createOutputDefinition,
   deleteOutput,
+  definitionInUse,
+  definitionLabel,
   deleteSession,
   editOutputDefinition,
   endSession,
@@ -67,6 +70,86 @@ const DAY = 24 * HOUR;
 /** 2026-11-02 09:30 in Tehran. */
 const T0 = Date.parse("2026-11-02T06:00:00Z");
 const at = (ms: number) => new Date(ms).toISOString();
+
+describe("a definition referenced only by retained history is in use (T-107, T-111, T-167)", () => {
+  const recordVersion = (id: string, data: Record<string, unknown>) => ({ deleted: false as const, envelope: makeEnvelope(id, data, { [crypto.randomUUID()]: 1 }, nowIso()) });
+  const deletion = (type: string, id: string) => ({ deleted: true as const, tombstone: { type, id, deletedAt: nowIso(), version: { [crypto.randomUUID()]: 1 } } });
+  const source = { backupId: crypto.randomUUID(), deviceId: crypto.randomUUID(), deviceName: "Other", exportedAt: nowIso() };
+  const archive = (db: Db, type: string, id: string, entry: ReturnType<typeof recordVersion> | ReturnType<typeof deletion>) =>
+    db.replacedVersions.put({ replacedId: crypto.randomUUID(), type, id, entry, replacedAt: nowIso(), reason: "notChosen" });
+  const pending = (db: Db, type: string, id: string, local: ReturnType<typeof recordVersion> | ReturnType<typeof deletion> | null, incoming: ReturnType<typeof recordVersion> | ReturnType<typeof deletion>) =>
+    db.pendingConflicts.put({ conflictId: crypto.randomUUID(), kind: "edit", type, id, local, incoming, source, detectedAt: nowIso() });
+  const definitionOf = async (db: Db, id: string) => (await db.records.get([OUTPUT_DEFINITIONS, id]))!.data as Parameters<typeof definitionLabel>[0];
+
+  const references: [string, string, (def: string) => Record<string, unknown>][] = [
+    ["output", OUTPUT_RECORDS, (def) => ({ definitionId: def })],
+    ["goal", GOALS, (def) => ({ definitionId: def })],
+    ["session's expected amount", SESSIONS, (def) => ({ expectedOutputs: [{ definitionId: def, amount: 1 }] })],
+    ["block's expected amount", CALENDAR_BLOCKS, (def) => ({ expectedOutputs: [{ definitionId: def, amount: 1 }] })],
+    ["task's suggestion", TASK_DEFINITIONS, (def) => ({ outputDefinitionIds: [def] })],
+  ];
+  const places: [string, (db: Db, type: string, id: string, entry: ReturnType<typeof recordVersion>) => Promise<unknown>][] = [
+    ["the archive", (db, type, id, entry) => archive(db, type, id, entry)],
+    ["a pending conflict's backup version", (db, type, id, entry) => pending(db, type, id, null, entry)],
+    ["a pending conflict's earlier version", (db, type, id, entry) => pending(db, type, id, entry, deletion(type, id))],
+  ];
+  for (const [name, type, data] of references) {
+    for (const [place, retain] of places) {
+      it(`a ${name} in ${place}`, async () => {
+        const db = await device();
+        const def = await createOutputDefinition(db, { name: "Pages", unit: "pages" });
+        expect(await definitionInUse(db, def)).toBe(false);
+        const id = crypto.randomUUID();
+        await retain(db, type, id, recordVersion(id, data(def)));
+        expect(await definitionInUse(db, def)).toBe(true);
+      });
+    }
+  }
+
+  it("editing it applies the history choice: the retained version keeps its label unless the owner chooses otherwise", async () => {
+    const db = await device();
+    const def = await createOutputDefinition(db, { name: "Pages", unit: "pages" });
+    const output = crypto.randomUUID();
+    await archive(db, OUTPUT_RECORDS, output, recordVersion(output, { definitionId: def, revision: 0 }));
+
+    // A different unit is refused, as for a definition used by a live record.
+    expect(await codeOf(editOutputDefinition(db, def, { name: "Pages", unit: "words", history: "keepPrevious" }))).toBe("DIFFERENT_UNIT");
+    expect((await definitionOf(db, def)).revisions).toEqual([{ name: "Pages", unit: "pages" }]);
+
+    await editOutputDefinition(db, def, { name: "Read pages", unit: "pages", history: "keepPrevious" });
+    const kept = await definitionOf(db, def);
+    expect(definitionLabel(kept, 0)).toEqual({ name: "Pages", unit: "pages" });
+    expect(definitionLabel(kept)).toEqual({ name: "Read pages", unit: "pages" });
+
+    await editOutputDefinition(db, def, { name: "Book pages", unit: "pages", history: "applyToHistory" });
+    const applied = await definitionOf(db, def);
+    expect(applied.revisions).toHaveLength(2);
+    expect(definitionLabel(applied, 0)).toEqual({ name: "Pages", unit: "pages" });
+    expect(definitionLabel(applied)).toEqual({ name: "Book pages", unit: "pages" });
+  });
+
+  it("purged data, tombstones, deletion versions, and set-aside versions are not references: the definition edits in place", async () => {
+    const db = await device();
+    const def = await createOutputDefinition(db, { name: "Pages", unit: "pages" });
+    const session = await recordPastSession(db, { date: "2026-11-01", startTime: "08:00", durationMinutes: 30, outputs: [{ definitionId: def, value: 5 }] }, T0);
+    expect(await definitionInUse(db, def)).toBe(true);
+    await deleteSession(db, session, T0);
+    expect(await definitionInUse(db, def)).toBe(true); // still restorable from the trash
+    await purgeTrash(db, { emptyNow: true, now: T0 });
+    expect(await db.tombstones.where("type").equals(OUTPUT_RECORDS).count()).toBe(1);
+
+    const other = crypto.randomUUID();
+    await archive(db, OUTPUT_RECORDS, other, deletion(OUTPUT_RECORDS, other));
+    await pending(db, OUTPUT_RECORDS, other, null, deletion(OUTPUT_RECORDS, other));
+    await db.meta.put({
+      key: "setAsideVersions",
+      value: [{ setAsideId: crypto.randomUUID(), type: OUTPUT_RECORDS, id: other, entry: recordVersion(other, { definitionId: def }), setAsideAt: nowIso(), from: "archive" }],
+    });
+    expect(await definitionInUse(db, def)).toBe(false);
+    await editOutputDefinition(db, def, { name: "Words", unit: "words" });
+    expect((await definitionOf(db, def)).revisions).toEqual([{ name: "Words", unit: "words" }]);
+  });
+});
 
 const codeOf = async (promise: Promise<unknown>) => {
   try {

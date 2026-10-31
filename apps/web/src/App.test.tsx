@@ -1192,6 +1192,30 @@ describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-
 });
 
 describe("Stage 5: actual work sessions and outputs (TESTING.md Stage 5 items 1, 5, 6, 8a, 11)", () => {
+  it("a definition referenced only by an archived version asks the history question; keeping it leaves the earlier label (T-107, T-167)", async () => {
+    const { createOutputDefinition, definitionLabel } = await import("./local/work.ts");
+    const { makeEnvelope, nowIso } = await import("./backup/envelope.ts");
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    const def = await createOutputDefinition(services.db, { name: "Pages", unit: "pages" });
+    const output = crypto.randomUUID();
+    const entry = { deleted: false as const, envelope: makeEnvelope(output, { definitionId: def, revision: 0 }, { [crypto.randomUUID()]: 1 }, nowIso()) };
+    await services.db.replacedVersions.put({ replacedId: crypto.randomUUID(), type: "outputRecords", id: output, entry, replacedAt: nowIso(), reason: "notChosen" });
+
+    fireEvent.click(within(screen.getByRole("navigation")).getByRole("button", { name: "Work" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit output definition: Pages" }));
+    const form = await screen.findByRole("form", { name: "Edit output definition: Pages" });
+    const keep = (await within(form).findByRole("radio", { name: "Keep the previous name and unit on earlier records" })) as HTMLInputElement;
+    expect(keep.checked).toBe(true);
+    fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Read pages" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+    await screen.findByRole("button", { name: "Edit output definition: Read pages" });
+    const saved = (await services.db.records.get(["outputDefinitions", def]))!.data as Parameters<typeof definitionLabel>[0];
+    expect(definitionLabel(saved, 0)).toEqual({ name: "Pages", unit: "pages" });
+    expect(definitionLabel(saved)).toEqual({ name: "Read pages", unit: "pages" });
+  });
+
   const navTo = async (name: string) => fireEvent.click(await within(screen.getByRole("navigation")).findByRole("button", { name }));
 
   it("starts, pauses, resumes, and ends a session with an output and a rating; the recorded session uses the strong color treatment with a label", async () => {
