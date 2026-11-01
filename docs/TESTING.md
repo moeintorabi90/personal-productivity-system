@@ -315,7 +315,7 @@ Codex review finding on T-167: `persianForms` listed `«ها»` joined directly 
 
 Commands run on the Windows development machine: `npm.cmd run typecheck` passed; `npx.cmd vitest run apps/web/src/work/units.test.ts apps/web/src/local/work.test.ts apps/web/src/local/goals.test.ts apps/web/src/backup/output-goal-rule.test.ts apps/web/src/App.test.tsx` 5 files, 117 tests passed, 0 failed. The full suite and end-to-end tests were not run for this change.
 
-Still open: the rest of the review of the unit-matching method (T-167), a screen-reader pass of the new forms and Backup screen sections, and browser interaction with the app-open prompt buttons, unless the owner's report is later stated to cover them.
+Codex's independent review of the unit-matching method is recorded in DECISIONS T-167. Still open: a screen-reader pass of the new forms and Backup screen sections, and browser interaction with the app-open prompt buttons, unless the owner's report is later stated to cover them.
 
 ## Release gate
 
