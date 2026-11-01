@@ -66,6 +66,27 @@ describe("unit matching (T-166 to T-169)", () => {
     }
   });
 
+  it("«ها» joined directly is a listed form only after a letter that does not join the next one; otherwise the owner is asked (T-167, T-169)", () => {
+    // Stems ending in ا د ذ ر ز ژ و: the joined spelling is the plural, as are the other two.
+    for (const stem of ["روز", "سطر", "مورد", "کیلومتر", "متر", "ویدیو", "بند"]) {
+      for (const plural of [`${stem}ها`, `${stem}${ZWNJ}ها`, `${stem} ها`]) {
+        expect(matchUnits(stem, plural), plural).toBe("match");
+        expect(matchUnits(plural, stem), plural).toBe("match");
+      }
+    }
+    // Stems ending in a joining letter: the joined spelling is not recognized with confidence.
+    for (const stem of ["صفحه", "کلمه", "هفته", "ماه", "ساعت", "سال", "درس", "کتاب", "قدم", "لیوان", "داستان", "نامه"]) {
+      expect(matchUnits(stem, `${stem}ها`), `${stem}ها`).toBe("unknown");
+      expect(matchUnits(`${stem}ها`, stem), `${stem}ها`).toBe("unknown");
+      expect(matchUnits(stem, `${stem}${ZWNJ}ها`), stem).toBe("match");
+      expect(matchUnits(stem, `${stem} ها`), stem).toBe("match");
+    }
+    expect(matchUnits("سالها", "روز")).toBe("unknown"); // never a confident mismatch from an unlisted form either
+    expect(matchUnits("فصل درس", "فصل درسها")).toBe("unknown"); // the same inside a compound label
+    const joined = listedUnitForms().filter((f) => /^[؀-ۿ]+ها$/.test(f));
+    expect(joined.map((f) => f.slice(0, -2)).sort()).toEqual(["بند", "روز", "سطر", "کیلومتر", "متر", "مورد", "ویدیو"].sort());
+  });
+
   it("the reviewed list has no form under two units and no unit mixing English and Persian", () => {
     const forms = listedUnitForms();
     expect(new Set(forms).size).toBe(forms.length);

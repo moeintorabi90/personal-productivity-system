@@ -305,6 +305,18 @@ Remaining limitations: on the device where a session was really running (no impo
 - **Still open:** manual Stage 5 checks on the owner's Windows laptop and Android phone; review of the unit-matching method (T-167); screen-reader use of the new forms and Backup screen sections; browser interaction with app-open prompt buttons. No device-level Stage 5 check is claimed.
 - App 0.7.0 writes backup data schema version 7. Earlier app versions refuse version-7 backups as newer; update all devices before moving such backups between them.
 
+### Owner report on manual tests (2026-11-01)
+
+The owner reported on 2026-11-01 that they ran the manual tests and that they passed. Devices, versions, and test details were not stated. This records the report only: it does not state which items of Stage 5 item 12 or of the lists above were covered, and it does not mean Stage 5 is fully accepted. The automated reports above stay as they were run.
+
+### Joined Persian plurals in unit matching (2026-11-01; branch `fix/stage-5-owner-report-unit-forms`; not merged)
+
+Codex review finding on T-167: `persianForms` listed `«ها»` joined directly for every Persian stem, while its comment allowed that only after a letter that does not join the next one. The joined form is now listed only for those stems (of the listed units: روز, سطر, مورد, کیلومتر, متر, ویدیو, بند). After any other letter, such as `صفحهها` or `سالها`, the pair is unknown and the owner gets the T-169 question. Forms with a zero-width non-joiner or a space still match for every listed stem. The new test in `work/units.test.ts` failed before the change.
+
+Commands run on the Windows development machine: `npm.cmd run typecheck` passed; `npx.cmd vitest run apps/web/src/work/units.test.ts apps/web/src/local/work.test.ts apps/web/src/local/goals.test.ts apps/web/src/backup/output-goal-rule.test.ts apps/web/src/App.test.tsx` 5 files, 117 tests passed, 0 failed. The full suite and end-to-end tests were not run for this change.
+
+Still open: the rest of the review of the unit-matching method (T-167), a screen-reader pass of the new forms and Backup screen sections, and browser interaction with the app-open prompt buttons, unless the owner's report is later stated to cover them.
+
 ## Release gate
 
 A stage is not complete while a critical acceptance item has an unexplained failure. Do not claim an endpoint works based only on a pure helper test. Keep a small test report in the stage notes with passed, failed, skipped, and not-yet-tested items.

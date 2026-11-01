@@ -236,7 +236,7 @@ Contract: the design outline above. Everything here is a technical choice, not a
   - Goals and tasks: `linkGoalDefinition`, task goal links and suggestions, `completeTask` and `reopenTask`, and the open-session prompts.
   - Pure helpers live in `apps/web/src/work/`: `session-time.ts` (work time, states, overlaps), `completions.ts`, `progress.ts` (goal progress, computed and tested but not displayed, T-116, T-145), and `units.ts`.
 - **Unit matcher (T-167, implementation review requested from the owner and Codex):**
-  - **Method:** a reviewed list of unit forms, with no dependency. It holds 68 English units with explicit irregular plurals, and 34 Persian units with their broken or Arabic plurals. For listed Persian stems only, «ها» is listed in three forms: with a zero-width non-joiner, with a space, and joined.
+  - **Method:** a reviewed list of unit forms, with no dependency. It holds 68 English units with explicit irregular plurals, and 33 Persian units with their broken or Arabic plurals. For listed Persian stems only, «ها» is listed with a zero-width non-joiner and with a space. The joined form is listed only for stems ending in a letter that does not join the next one (ا آ د ذ ر ز ژ و), such as `روزها`; after any other letter, such as `صفحهها` or `سالها`, it stays unknown.
   - **Harmless differences:** only surrounding spaces and English letter case. Persian spelling variants (ی/ي, ک/ك, zero-width non-joiner) are not normalized.
   - **Mismatch:** both labels are listed forms of different units (synonyms are separate entries), or one is written in Latin and the other in Arabic script.
   - **Compound labels:** match only when they have the same number of words and exactly one differing word pair.

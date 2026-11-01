@@ -93,8 +93,10 @@ const ENGLISH_UNITS: readonly (readonly string[])[] = [
 
 /**
  * Persian units: singular, irregular (broken or Arabic) plurals, and the regular plural with
- * «ها» written with a zero-width non-joiner, with a space, and joined (for stems whose last letter
- * does not join, joining is the usual spelling). Only listed stems get these forms.
+ * «ها» written with a zero-width non-joiner or a space, and joined only for stems whose last letter
+ * does not join the next one, where joining is the usual spelling. After any other letter a joined
+ * form is not recognized with confidence, so it stays unknown and the owner is asked (T-169). Only
+ * listed stems get these forms.
  */
 const PERSIAN_UNITS: readonly { singular: string; irregular?: readonly string[] }[] = [
   { singular: "صفحه", irregular: ["صفحات"] },
@@ -133,10 +135,12 @@ const PERSIAN_UNITS: readonly { singular: string; irregular?: readonly string[] 
 ];
 
 const ZWNJ = "‌";
+/** Persian letters that do not join the next letter. */
+const NON_JOINING_FINAL = /[اآدذرزژو]$/;
 
 function persianForms(entry: { singular: string; irregular?: readonly string[] }): string[] {
   const s = entry.singular;
-  return [s, `${s}${ZWNJ}ها`, `${s} ها`, `${s}ها`, ...(entry.irregular ?? [])];
+  return [s, `${s}${ZWNJ}ها`, `${s} ها`, ...(NON_JOINING_FINAL.test(s) ? [`${s}ها`] : []), ...(entry.irregular ?? [])];
 }
 
 /** form → unit key (one key per listed unit). A form listed under two units would be ambiguous: none is. */
