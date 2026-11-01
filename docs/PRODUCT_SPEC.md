@@ -224,7 +224,7 @@ Palette identifiers and theme values, the default-color rule, snapping in the co
 
 ### Actual work and outputs
 
-Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-108, T-117, T-118, T-120 to T-125 (approval date not stated; recorded 2026-10-26), T-129 to T-145 (approved 2026-10-26), and T-153 to T-159, T-162, T-163, T-165, T-166, T-168, T-169 (approved 2026-10-29), and derived technical choices T-109 to T-116, T-119, T-126 to T-128, T-146 to T-152, T-160, T-161, T-164, T-167. S-1 to S-15 are resolved; no owner question remains; how plurals are recognized is a technical choice for implementation review (T-167). Items below cite their source; items marked *(spec)* come from this specification without a specific owner decision.
+Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-108, T-117, T-118, T-120 to T-125 (approval date not stated; recorded 2026-10-26), T-129 to T-145 (approved 2026-10-26), and T-153 to T-159, T-162, T-163, T-165, T-166, T-168, T-169 (approved 2026-10-29), and derived technical choices T-109 to T-116, T-119, T-126 to T-128, T-146 to T-152, T-160, T-161, T-164, T-167. S-1 to S-15 are resolved; no owner question remains; for how plurals are recognized, the list-based method with no dependency, a derived technical choice, was reviewed by Codex; it is not a new owner decision (details: DECISIONS T-167). Items below cite their source; items marked *(spec)* come from this specification without a specific owner decision.
 
 **Stage boundary (T-145):** Stage 5 records actual sessions and outputs. The planned-versus-actual calendar comparison and calendar drag interactions for actual sessions stay in Stage 6 (T-071, T-072).
 
