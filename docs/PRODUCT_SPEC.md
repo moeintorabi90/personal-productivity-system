@@ -74,12 +74,12 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Pausing or resuming a goal does not change its start date or deadline (T-045).
 - [ ] Actual work or output explicitly attributed to a paused goal still counts toward its progress (T-046).
 - [ ] Goal progress is derived from actual execution/output records: session time (T-100), output records (T-105), and explicitly completed tasks (T-108); see "Actual work and outputs".
-- [ ] After Stage 5, pacing considers timezone, deadline, chosen goal workdays, progress to date, and explicit weekly objectives. Neither weekly objectives nor chosen goal workdays are part of the initial goal setup (T-052, T-053).
+- [ ] After Stage 5, pacing considers timezone, deadline, chosen goal workdays, and progress to date (T-180, T-181). Neither weekly objectives nor chosen goal workdays are part of the initial goal setup (T-052, T-053); whether explicit weekly objectives are still wanted is open (DECISIONS "Stage 6 decisions").
 - [ ] The UI explains the assumptions behind pacing.
 - [ ] The duration of one work session may contribute to at most one goal (T-047).
 - [ ] One completed task may count toward at most one task-count goal (T-048).
 - [ ] An output record may contribute to multiple goals only when the owner explicitly attributes it to each one (T-049).
-- [ ] One streak per goal, counting consecutive scheduled goal-work opportunities with attributed recorded work (T-073; "Streaks" below). (Stage 6)
+- [ ] One consistency streak per goal, counting consecutive scheduled goal-work opportunities with attributed recorded work (T-073, T-185), and a daily pace streak (T-184); see "Stage 6" below. (Stage 6)
 
 **Delivery sequence (owner-approved 2026-10-25; DECISIONS T-037, T-076):** define and build goals and milestones in Stage 4 first; the Stage 3 calendar follow-up (time grid, project colors) comes next, then Stage 5. Calculated progress and pacing that depend on actual execution/output records are delivered after Stage 5 introduces those records. Do not display fabricated progress before then. The Stage 4 behavior is specified by T-037 to T-065 and the owner's answers of 2026-10-25 (T-077 to T-080), with derived technical choices T-081 to T-087; see "Stage 4 goal and milestone rules" below.
 
@@ -116,7 +116,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Gregorian display by default, Jalali selectable; Saturday week start by default, configurable; calculations use the explicitly configured time zone; changing the language never changes the calendar or calculations (D-020). (Stage 3)
 - [ ] Planned work and actual work are visually distinct. (Planned blocks in Stage 3; actual work arrives in Stage 5.) Calendar items use their project's color, lighter for planned and stronger for actual work, never as the only cue (T-069; Stage 3 follow-up for planned blocks).
 - [ ] Day and week time-grid views: tap/click or drag on empty time to create a planned block; drag to move and resize blocks; mouse and touch (T-066, T-067). (Stage 3 follow-up)
-- [ ] Planned work and recorded actual sessions in two lanes on one time axis in day and week views; the month view stays an overview (T-071). Actual sessions move by drag only as an explicit, audited correction (T-072). (Stage 6)
+- [ ] Planned work and recorded actual sessions in side-by-side Planned and Actual subcolumns on one time axis in day and week views; together in each day cell in the month view (T-071, T-174, T-176). Actual sessions move by drag only as an explicit, audited correction (T-072). (Stage 6)
 - [ ] Capacity warnings use user-configured daily capacity and never reschedule, change, or delete planned blocks (D-021). (Stage 3; evidence-based capacity suggestions belong to estimation learning, Stage 7.)
 - [ ] Today view shows today's plan, actual work, habits/core activities, goal progress, and remaining capacity. (Stage 3: plan, unscheduled items, and capacity; the other parts arrive with their stages.)
 - [ ] A minimum-viable-day option identifies essential activities without forcing every flexible item into the schedule. (Stage 8)
@@ -215,7 +215,7 @@ Decisions: DECISIONS T-066 to T-070, T-075, and T-088 to T-090, with the derived
 **Approved details (owner, 2026-10-25; DECISIONS T-088 to T-090):**
 
 - The palette has **8 selectable, named colors** (Blue, Teal, Green, Amber, Orange, Red, Pink, Purple); items without a project are **neutral**; all colors stay readable in the light and dark themes. A project without a selected color keeps its derived default (T-088).
-- Tapping or clicking an empty slot pre-fills a **30-minute** block; drag selection, moving, and resizing **snap to 15 minutes**; on a phone the week view shows **two days at a time** with horizontal navigation through the week (T-089).
+- Tapping or clicking an empty slot pre-fills a **30-minute** block; drag selection, moving, and resizing **snap to 15 minutes**; on a phone the week view shows **two days at a time** with horizontal navigation through the week (T-089; from Stage 6, one day at a time, T-175).
 - After a block is moved or resized by drag, an **Undo** action is shown for 5 seconds; there is no confirmation dialog (T-090; the 5-second duration is a derived default).
 
 Palette identifiers and theme values, the default-color rule, snapping in the configured zone, the phone breakpoint, and how Undo writes are derived technical choices in DECISIONS ("Derived technical choices"). Open details 1–4 are resolved (T-076, T-088 to T-090).
@@ -271,24 +271,64 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 - [ ] Correcting the goal attribution of a session or output keeps the old and new values in its history, with an optional reason; progress uses the current attribution (T-131).
 - [ ] Explicitly attributed work counts even before a goal's start or after its deadline, and may be attributed to a paused, completed, or archived goal (T-046, T-101).
 - [ ] The full actual value is shown even beyond the target; goal completion stays manual (T-043, T-106). Goal progress is calculated from these records and shown in Stage 6 (ROADMAP).
-- [ ] (Stage 6) In the day/week time grid, planned work and actual sessions are shown in two lanes on the same time axis; dragging an actual session is only an explicit correction that keeps the original record and its audit history (T-071, T-072).
+- [ ] (Stage 6) In the day/week time grid, planned work and actual sessions are shown in Planned and Actual subcolumns on the same time axis (T-174); dragging an actual session is only an explicit correction that keeps the original record and its audit history (T-071, T-072).
 
-### Planned versus actual calendar (Stage 6; owner-approved 2026-10-25, not implemented)
+### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; not implemented)
 
-- Stage 5 introduces actual sessions and outputs; Stage 6 adds the dual-lane comparison and related planned-versus-actual views (T-071). The owner confirmed on 2026-10-26 that this comparison and the drag interactions for actual sessions are not part of Stage 5 (T-145).
-- In the day and week time-grid views, a **planned lane** and an **actual lane** share one time axis. Planned items use the lighter project-color treatment, actual sessions the stronger one, each with a visible label or marker (T-069).
-- The month view stays a calendar overview.
-- Dragging an actual session is never a silent edit: it starts an explicit correction, and the original record and the correction/audit history are kept (T-072; principle 2). A reason is optional (T-102, which resolves DECISIONS open detail 5).
+Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-205 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
 
-### Streaks (owner-approved 2026-10-25; not implemented)
+**Calendar**
 
-Decisions: T-073 (goal streaks, Stage 6), T-074 (app-use streak, Stage 8), T-075 (tone).
+- [ ] Month, week, and day views. In week and day views, each day is one main column with two side-by-side subcolumns, Planned and Actual, on one time axis (T-071, T-174). Planned items use the lighter project-color treatment, actual sessions the stronger one, each with a visible label or marker (T-069).
+- [ ] On a phone, the week view shows one day at a time, with navigation through the week (T-175; replaces the two-day phone view of T-089).
+- [ ] In month view, planned and actual items appear together in each day cell with distinct visual treatments, not two subcolumns (T-176).
+- [ ] A paused session appears as work segments separated by visible gaps; the segments remain one session (T-177).
+- [ ] Planned-versus-actual reports compare blocks and sessions for the same task and local day, aggregating several of each. They are report-only: no session-to-block link is created or changed, and sessions stay at their recorded times (T-178).
+- [ ] Planned-block edits keep history: an edit before the block's scheduled start updates the plan used for comparison; a later edit does not rewrite the historical comparison (T-179).
+- [ ] Dragging an actual session is never a silent edit: it starts an explicit correction, and the original record and the correction/audit history are kept (T-072; principle 2). A reason is optional (T-102).
 
-- **Goal streak (Stage 6):** one streak per goal, never per milestone. It counts consecutive **scheduled goal-work opportunities**, not calendar days: unscheduled days neither add to nor break it. Any recorded attempt or work attributed to the goal on a scheduled opportunity counts, whatever its duration. A missed scheduled opportunity resets the current streak; the longest streak is kept. It needs Stage 5 actual-work records and the post-Stage-5 goal schedule/workday decisions (T-053); a planned block alone never counts.
-- **App-use streak (Stage 8):** consecutive days on which the app was used, separate from goal streaks. In v1 it belongs to one device (no automatic sync) and is never presented as a cross-device streak. A day without recorded app use breaks the current streak; the longest streak is kept.
-- **Tone:** streaks are simple, optional, supportive, and informational: no points, penalties, coercive pressure, or meaningless scores.
-- **Derived:** streaks are computed from existing records in the configured time zone (goal streaks) or from device-local usage days (app-use streak); a day's opportunity is missed only after that local day ends.
-- **Not decided yet** (DECISIONS, open details 6–7): what a scheduled goal-work opportunity is; how paused, completed, or archived goals and days before a goal's start are treated; what counts as "app use"; which day boundary applies without a configured time zone; whether streaks are shown by default.
+**Goals and pace**
+
+- [ ] Goal workdays are manually selected and optional, never inferred from task recurrence. Without selected workdays or a deadline: progress, but no workday-based pace (T-180).
+- [ ] Daily, weekly, and monthly targets are derived from the remaining target and remaining selected workdays. Recorded amounts stay whole numbers; calculated pace may be fractional; completion stays manual (T-181).
+- [ ] Changes to the target, deadline, workdays, and daily cap keep history: historical charts use the plan of each period, the current summary uses the latest plan, and actual records do not change (T-182).
+- [ ] An optional per-goal daily cap can be added, edited, or removed. When the required pace exceeds it: show the capped amount, warn that the goal may not be reachable by its deadline, and show the maximum projected attainment. Nothing changes automatically. Without a cap: the calculated required pace (T-183).
+- [ ] An incomplete goal stays active after its deadline, shows actual progress and that the deadline passed, and can be revised; it is never marked complete or failed automatically (T-187).
+
+**Goal streaks**
+
+- [ ] **Daily pace streak:** consecutive selected work opportunities on which the displayed daily target is met. Unselected days neither add nor break. Meeting a capped target continues it even when the overall goal is projected to fall short. No weekly or monthly pace streaks; those show percentage and status only (T-184).
+- [ ] **Goal-consistency streak:** one per goal; selected scheduled work opportunities only; attributed recorded work counts, whatever its duration; a missed opportunity breaks the current streak, unscheduled days do not; paused, archived, pre-start, and post-deadline periods are not opportunities; work attributed to a paused goal affects progress but not its streak; completion stops it; the longest is kept. A planned block alone never counts (T-073, T-185).
+- [ ] A goal's streak is shown on its goal page by default, and goal streaks are available as cards (T-186, T-202).
+- [ ] Tone: streaks are simple, supportive, and informational: no points, penalties, coercive pressure, or meaningless scores (T-075).
+
+**Estimation and reports**
+
+- [ ] Task estimate versus actual work time, and planned-block time versus actual work time, are separate comparisons (T-188).
+- [ ] Each task occurrence keeps the estimate captured when first planned or, if unplanned, when its first session starts; a later edit applies to future occurrences (T-189).
+- [ ] Recurring tasks are evaluated per occurrence; a session can optionally be assigned to a specific occurrence without a planned block (T-190).
+- [ ] Elapsed time shows while work is ongoing; accuracy is calculated only after explicit completion, shown in minutes and percentage (T-191).
+- [ ] Sessions without a task or project stay in a separate "No task" / "No project" category, so totals are not silently reduced (T-192).
+- [ ] Statistics show sample counts and distinguish "no data for this period" from a real zero (T-193).
+
+**Output units and output rate**
+
+- [ ] Selectable suggestions for common units, with a custom unit always allowed; suggestions restrict nothing; definitions can be reused, and tasks may suggest them (T-194). The initial list is a derived choice.
+- [ ] Output rate per output definition: total recorded output ÷ active work time in the sessions where that output was recorded, per hour. Paused time is excluded; a recorded zero is included; an absent record is not zero; several definitions give separate rates, and units are never combined (T-195).
+- [ ] The rate's trend over the selected range and its sample count are shown; the rate is derived, never stored (T-196).
+
+**Dashboards**
+
+- [ ] A separate dashboard covers all built-in metrics; no user-defined formulas (T-197).
+- [ ] Multiple optional dashboards; the main one starts with an editable suggested layout (T-198).
+- [ ] Cards can be added, removed, reordered, and resized, with recommended sizes (T-199). Each has its own date window, with presets and a custom range (T-200).
+- [ ] Names, selected cards, order, and sizes travel in backups and stay editable on the destination; presentation adapts to the screen (T-201).
+
+**App-use streak**
+
+- [ ] Shown on the main dashboard by default, separate from goal streaks (T-074, T-202). Opening and viewing any app section counts; data changes are not required (T-203).
+- [ ] Shared through manual backup transfer, not live sync: use dates from both devices are merged, an import never erases dates, and a device may show stale information until it imports a newer backup (T-204).
+- [ ] Days follow the configured time zone, and the longest streak is preserved (T-205).
 
 ### Offline use, backup, and recovery (v1)
 
@@ -314,7 +354,7 @@ Decisions: T-073 (goal streaks, Stage 6), T-074 (app-use streak, Stage 8), T-075
 - [ ] Weekly review compares planned and actual time/output, goal pace, completion, unplanned work, estimates, and allocation.
 - [ ] Finalized review saves a stable computed snapshot with source/window metadata.
 - [ ] Estimation learning offers suggestions; it never silently changes estimates or past records.
-- [ ] Dashboard shows only actionable metrics, documents their definitions and time windows, and is candid about missing/small samples.
+- [ ] Dashboards offer the built-in metrics (T-197), document their definitions and time windows, and are candid about missing and small samples (T-193).
 
 ## Non-goals for the initial product
 

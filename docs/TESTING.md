@@ -135,7 +135,7 @@ Contract: PRODUCT_SPEC "Goals and measures" and "Stage 4 goal and milestone rule
 
 ## Calendar interaction, project color, and streak acceptance tests (specified 2026-10-25; Stage 3 follow-up items implemented and deployed as 0.6.0, results in "Stage 3 follow-up test report"; Stage 6 and Stage 8 items not implemented)
 
-Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Stage 6)", "Streaks"; decisions T-066 to T-076 and T-088 to T-090. Open details 1–5 are resolved (T-076, T-088 to T-090, T-102); tests depending on open details 6–7 follow the owner's answer. The project color arrives in data version 5, after Stage 4's version 4 (T-076). Fixed dates and zones as in Stage 3.
+Contract: PRODUCT_SPEC "Stage 3 follow-up", "Stage 6: planned versus actual, pace, reports, and dashboards"; decisions T-066 to T-076 and T-088 to T-090. Open details 1–7 are resolved (T-076, T-088 to T-090, T-102, T-180, T-185, T-186, T-202, T-203, T-205). The project color arrives in data version 5, after Stage 4's version 4 (T-076). Fixed dates and zones as in Stage 3.
 
 **Stage 3 follow-up: time grid and drag (T-066, T-067)**
 
@@ -153,15 +153,34 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Planned versus actual calendar (Sta
 7. Planned items always carry a visible non-color status cue (label or marker); for each of the 8 palette colors and the neutral color, in the light and dark themes, measured against the app's actual theme tokens and component colors (DECISIONS "Contrast requirements"): normal text on the block tint is at least 4.5:1; accent borders, bars, icons, and markers are at least 3:1 against the tint, `--surface`, and `--surface-muted` they touch; any accent-colored text is at least 4.5:1 against its actual background.
 8. Backup: color round-trips and merges as a project field (a color edited on two devices is a project conflict with keep/use only); existing projects without `color` keep their content hashes after the update and a re-import of an older backup is "already here"; the committed version-1 to version-4 samples import unchanged; a fabricated version-5 sample imports; a version-4 or older file containing `color`, a `null` color, or an unknown palette identifier is refused with no change (also in carried conflicts and the archive); the Stage 4 app (data version 4) refuses version 5 as newer.
 
-**Stage 6: planned versus actual lanes and goal streaks (T-071 to T-073)**
+**Stage 6: planned versus actual and goal streaks (T-071 to T-073; see also "Stage 6 acceptance tests")**
 
-9. Day and week time grids show planned and actual items in separate lanes on one time axis; the month view stays an overview; actual items use the stronger color treatment with a visible cue.
+9. Day and week time grids show planned and actual items in side-by-side subcolumns on one time axis; the month view shows them together in each day cell (T-174, T-176); actual items use the stronger color treatment with a visible cue.
 10. Dragging an actual session creates an explicit correction only after the user confirms; the original record and the correction/audit history are preserved and survive a backup round-trip; nothing is changed by a cancelled drag.
-11. Goal streak on seeded cases: consecutive scheduled opportunities with attributed work count regardless of duration; unscheduled days neither add nor break; a missed opportunity resets the current streak only after its local day ends; the longest streak is kept; a planned block without recorded work never counts; one streak per goal, not per milestone; the result is identical after a backup round-trip. (Opportunity definition and paused/completed/archived handling: open detail 6.)
+11. Goal streak on seeded cases: consecutive scheduled opportunities with attributed work count regardless of duration; unscheduled days neither add nor break; a missed opportunity resets the current streak only after its local day ends; the longest streak is kept; a planned block without recorded work never counts; one streak per goal, not per milestone; the result is identical after a backup round-trip. (Opportunities and periods: T-180, T-185.)
 
-**Stage 8: app-use streak (T-074, T-075)**
+**App-use streak (T-074, T-075; moved to Stage 6, T-202 to T-205)**
 
-12. Consecutive days of recorded app use (fixed dates) give the expected current and longest streaks; a day without use breaks the current streak and keeps the longest; the value is labelled as this device's, is not exported as mergeable data, and is unchanged by an import; no points, penalties, or pressure appear. (What counts as use and the day boundary: open detail 7.)
+12. Consecutive days of recorded app use (fixed dates) give the expected current and longest streaks; a day without use breaks the current streak and keeps the longest; no points, penalties, or pressure appear. Cross-device merging and what counts as use: "Stage 6 acceptance tests", item 12.
+
+## Stage 6 acceptance tests (specified 2026-11-01; not implemented)
+
+Contract: DECISIONS T-174 to T-205. Expected values that depend on derived choices (daily-target formula, day splitting, version 8) follow DECISIONS "Derived technical choices". Fixed dates and zones.
+
+1. **Calendar layout (T-174 to T-177):** week and day views show one main column per day with Planned and Actual subcolumns; a phone-sized week shows one day with navigation reaching all seven; a month cell shows both kinds with distinct treatments and a non-color cue; a session with two pauses shows three segments and gaps, and acts as one session.
+2. **Comparison (T-178, T-179):** two blocks and three sessions of one task on one day aggregate; a session with no link still counts, and no `blockId` changes; sessions stay at recorded times. A block edited before its start changes the compared plan; edited after its start, it does not. Drag corrections stay audited (T-072).
+3. **Pace (T-180, T-181):** no workdays or no deadline: progress and no pace; task recurrence never adds workdays; a seeded example gives expected fractional daily, weekly, and monthly targets, with whole-number actuals; completion stays manual.
+4. **Plan history (T-182):** after changing target, deadline, workdays, and cap, historical charts use each period's plan, the summary uses the latest, and actual records are byte-identical.
+5. **Daily cap (T-183):** required pace above the cap shows the capped amount, the warning, and the expected projected attainment, and changes nothing; removing the cap shows the required pace.
+6. **Streaks (T-184 to T-186):** meeting a capped target continues the pace streak while the goal is projected short; unselected days neither add nor break; no weekly or monthly streak exists. Consistency streak: any attributed work counts; a missed opportunity breaks it after its local day ends; paused, archived, pre-start, and post-deadline periods are not opportunities; work on a paused goal adds progress but no streak; completion stops it; the longest stays; a planned block alone never counts; both are identical after a backup round-trip; the goal page shows the streak by default.
+7. **After the deadline (T-187):** an incomplete goal stays active, shows progress and that the deadline passed, can be revised, and is never marked complete or failed.
+8. **Estimates (T-188 to T-191):** the two comparisons are separate; the estimate is captured at first planning, or at the first session if unplanned; a later edit affects only future occurrences; recurring occurrences are separate; a session can be assigned without a block; accuracy appears only after explicit completion, in minutes and percent, and elapsed time before that.
+9. **Honest reports (T-192, T-193):** sessions without a task or project appear in their category and totals match; sample counts appear; "no data" differs from a real zero.
+10. **Units and rate (T-194 to T-196):** suggestions fill the form, and a custom unit is always accepted. Seeded rates: paused time excluded; a recorded zero lowers the rate; an absent record does not; two definitions in one session give two rates; the trend and sample count are shown; no rate is stored.
+11. **Dashboards (T-197 to T-202):** only catalog metrics; several dashboards; the main one starts with the suggested layout and can be edited; cards can be added, removed, reordered, and resized; each has its own preset or custom window; names, cards, order, and sizes survive a backup and stay editable; the layout adapts at phone width; goal streaks are available as cards, and the app-use streak is on the main dashboard by default.
+12. **App-use streak (T-203 to T-205):** viewing a section with no data change records the date; day boundaries follow the configured zone; importing merges both devices' dates and never erases one; the longest is preserved; re-import changes nothing; a device with an older backup shows its older value.
+13. **Backup version (derived):** version 8 round-trips with identical IDs, hashes, and versions; the stored version-7 sample imports; a version-7 file with version-8 data is refused; a newer version is refused.
+14. **English and Persian, RTL, dark theme, keyboard paths for the new views, offline use**, and manual checks on the owner's devices.
 
 ## Stage 5 acceptance tests (specified 2026-10-26; implemented 2026-10-29 on `feat/stage-5-sessions-outputs`, see "Stage 5 test report")
 

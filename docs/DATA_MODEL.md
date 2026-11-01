@@ -177,10 +177,28 @@ Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-
 - **Field conventions and upgrade (T-109, T-146):** new types use present-and-nullable fields, as Stages 2–4 did; fields added to existing types (`goals.definitionId`, `taskDefinitions.goalIds`, `taskDefinitions.outputDefinitionIds`, `calendarBlocks.expectedOutputs`) are optional and omitted when unused (T-025 pattern). No stored record is rewritten.
 - **Recurring tasks (T-118, T-119):** completing an occurrence writes a `taskCompletions` record for that task and date; the recurring task stays active and unchanged, and its later occurrences stay scheduled (T-134). An occurrence is a task and a local date (T-026), with or without a planned block. A completed occurrence is no longer an active item but stays visible on its date with a completed marker (T-134).
 
-### Streak data (approved 2026-10-25; not implemented)
+### Stage 6 data (proposed; `dataSchemaVersion` 8; not implemented)
 
-- **Goal streak (Stage 6, T-073):** derived, not stored. Computed per goal from its scheduled goal-work opportunities and the actual-work records attributed to the goal (T-047 to T-049), in the configured time zone. Current streak = consecutive past opportunities, each with at least one attributed attempt or work record, ending at the latest passed opportunity; longest = the maximum over the goal's history. Unscheduled days are skipped; an opportunity is missed only after its local day ends; a planned block alone never counts. The definition of an opportunity awaits the post-Stage-5 goal workday decision (T-053; DECISIONS, open detail 6).
-- **App-use streak (Stage 8, T-074):** device-local. The local dates on which the app was used are kept in device metadata (`meta`, like language and theme, D-017); current and longest streaks are computed from them. Never exported as mergeable data and never changed by an import; not a cross-device value in v1. What counts as use is open (DECISIONS, open detail 7).
+Owner decisions T-174 to T-205. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
+
+| Type / field | Data fields (proposed) | Rules |
+|---|---|---|
+| `goals.workdays` (optional) | weekdays selected by the owner (T-180) | never inferred from task recurrence |
+| `goals.dailyCap` (optional) | whole number in the goal's measure (T-183) | adding, editing, or removing it changes no actual record |
+| `goals.planHistory` (optional) | earlier plans: `effectiveFrom`, `target`, `deadline`, `workdays`, `dailyCap` (T-182) | used for historical charts; the current fields are the latest plan |
+| `calendarBlocks.comparisonPlan` (optional) | the plan used for comparison when it differs from the current times: `startsAt`, `endsAt`, `status` (T-179) | written by an edit made after the scheduled start; absent = the current times |
+| `sessions.occurrenceDate` (optional) | local date of the recurring occurrence it is assigned to (T-190) | never changes recorded times or block links |
+| `taskEstimateCaptures` (new type) | `taskId`, `occurrenceDate` (or `null` for a one-off task), `estimateMinutes`, `capturedAt`, `source` (`plan` or `session`) (T-189) | ID derived from task and date; `taskId` and `occurrenceDate` never change; never back-filled |
+| `dashboards` (new type) | `name`, `cards`: list of `{ metric, size, window, goalId }` in order (T-197 to T-201) | `metric` comes from a closed catalog; no formulas; main dashboard has a reserved ID |
+| `appUseDays` (new type, append-only) | `date` (`YYYY-MM-DD`) (T-203 to T-205) | one per local date, ID derived from the date; merged as a union; never removed by an import |
+
+- **Derived, never stored:** pace targets, projected attainment, both goal streaks, the app-use streak, comparisons, estimate accuracy, and output rate (T-073, T-181, T-196).
+- **Older data:** goals, blocks, and occurrences from before version 8 have no recorded history; they use their current values or show "no data", and nothing is reconstructed.
+
+### Streak data (approved 2026-10-25, updated 2026-11-01; not implemented)
+
+- **Goal streak (Stage 6, T-073):** derived, not stored. Computed per goal from its scheduled goal-work opportunities and the actual-work records attributed to the goal (T-047 to T-049), in the configured time zone. Current streak = consecutive past opportunities, each with at least one attributed attempt or work record, ending at the latest passed opportunity; longest = the maximum over the goal's history. Unscheduled days are skipped; an opportunity is missed only after its local day ends; a planned block alone never counts. Opportunities and period rules: T-180, T-185. The daily pace streak (T-184) is also derived.
+- **App-use streak (Stage 6, T-074, T-203 to T-205):** the local dates on which any app section was opened or viewed are kept as `appUseDays` records and travel in backups; an import merges them and never erases a date already here. Current and longest streaks are computed from them, in the configured time zone.
 
 ## Core invariants
 
@@ -220,7 +238,7 @@ Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-
 - Goal progress is recomputed from underlying records and is rebuildable; cached totals are disposable.
 - A session's time counts toward at most one time goal: one of the task's linked time goals or none, or, without such links, a manually chosen time goal or none (T-047, T-100, T-122, T-129); a task explicitly marked complete, or a completed occurrence of a recurring task, counts toward at most one task-count goal, chosen likewise, and a manual choice adds no task–goal link (T-048, T-108, T-118, T-123, T-130). Outputs may advance several goals that track their definition (T-105, T-124, T-137). Attribution is recorded with the session, completion, or output and is never recalculated from later link changes (T-132). Tasks link to goals only explicitly, never through their project (T-120, T-121). Session completion never completes a task (T-091).
 - Output metric values may support multiple goals only through explicit compatible attribution records.
-- After Stage 5, pacing uses target, progress, deadline, timezone, owner-chosen goal workdays, and explicit weekly objective. Choosing goal workdays is deferred until after Stage 5 (DECISIONS T-053). Do not union multiple task schedules to invent a goal schedule.
+- From Stage 6, pacing uses target, progress, deadline, timezone, and owner-chosen goal workdays, with an optional daily cap (T-180 to T-183). Whether explicit weekly objectives are still wanted is open (T-052). Do not union multiple task schedules to invent a goal schedule.
 
 ### Identity, versions, and merging (v1 backup; also the basis for later sync)
 
