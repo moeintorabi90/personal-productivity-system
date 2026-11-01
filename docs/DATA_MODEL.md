@@ -179,13 +179,13 @@ Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-
 
 ### Stage 6 data (proposed; `dataSchemaVersion` 8; not implemented)
 
-Owner decisions T-174 to T-211. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
+Owner decisions T-174 to T-212. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
 
 | Type / field | Data fields (proposed) | Rules |
 |---|---|---|
 | `goals.workdays` (optional) | weekdays selected by the owner (T-180) | never inferred from task recurrence |
 | `goals.dailyCap` (optional) | whole number in the goal's measure (T-183) | adding, editing, or removing it changes no actual record |
-| `goals.weeklyAllocations` (optional) | manually edited weeks only: list of `{ weekStart, amount }`, with a whole-number amount in the goal's measure (T-206) | open automatic weeks are not stored; changes no actual record; a manual amount changes only when the owner edits it or switches the week to automatic (T-207); kept when it no longer fits the goal's range, in a representation still unresolved (T-211) |
+| `goals.weeklyAllocations` (optional) | manually edited weeks only: list of `{ weekStart, amount }`, with a whole-number amount in the goal's measure (T-206) | open automatic weeks are not stored; changes no actual record; a manual amount changes only when the owner edits it or switches the week to automatic (T-207); kept when it no longer fits the goal's range or plan, in a representation still unresolved (T-211, T-212) |
 | `goals.planHistory` (optional) | earlier plans: `effectiveFrom`, `target`, `deadline`, `workdays`, `dailyCap`, `weeklyAllocations` (T-182, T-206) | used for historical charts; the current fields are the latest plan |
 | `calendarBlocks.comparisonPlan` (optional) | the plan used for comparison when it differs from the current times: `startsAt`, `endsAt`, `status` (T-179) | written by an edit made after the scheduled start; absent = the current times |
 | `sessions.occurrenceDate` (optional) | local date of the recurring occurrence it is assigned to (T-190) | never changes recorded times or block links |
