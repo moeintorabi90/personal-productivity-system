@@ -256,7 +256,7 @@ Contract: the design outline above. Everything here is a technical choice, not a
 
 ## Stage 6 design outline (proposed 2026-11-01; not implemented)
 
-Contract: DECISIONS "Stage 6 decisions" (T-174 to T-212), PRODUCT_SPEC "Stage 6". Everything below is a technical design choice for later review, not an owner decision.
+Contract: DECISIONS "Stage 6 decisions" (T-174 to T-213), PRODUCT_SPEC "Stage 6". Everything below is a technical design choice for later review, not an owner decision.
 
 - **Pure domain modules:** pace and projection, weekly allocation, both goal streaks, planned-versus-actual comparison, estimate accuracy, output rate, and the app-use streak are pure functions over records in the configured zone, recomputed on display like capacity and goal progress (T-116). Weekly allocation returns either the amounts or a discrepancy, and pace gives no daily, weekly, or monthly target for a discrepancy (T-207 to T-209); the daily pace streak skips those days (T-210). Dashboard cards call these functions; a card stores no result.
 - **Metric catalog:** a fixed list of built-in metrics, each with its source, window, formula, and sample count (T-193, T-197). Cards refer to catalog IDs, so no formula can be stored.
