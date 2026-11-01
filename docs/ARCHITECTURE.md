@@ -256,9 +256,9 @@ Contract: the design outline above. Everything here is a technical choice, not a
 
 ## Stage 6 design outline (proposed 2026-11-01; not implemented)
 
-Contract: DECISIONS "Stage 6 decisions" (T-174 to T-205), PRODUCT_SPEC "Stage 6". Everything below is a technical design choice for later review, not an owner decision.
+Contract: DECISIONS "Stage 6 decisions" (T-174 to T-206), PRODUCT_SPEC "Stage 6". Everything below is a technical design choice for later review, not an owner decision.
 
-- **Pure domain modules:** pace and projection, both goal streaks, planned-versus-actual comparison, estimate accuracy, output rate, and the app-use streak are pure functions over records in the configured zone, recomputed on display like capacity and goal progress (T-116). Dashboard cards call these functions; a card stores no result.
+- **Pure domain modules:** pace and projection, weekly allocation, both goal streaks, planned-versus-actual comparison, estimate accuracy, output rate, and the app-use streak are pure functions over records in the configured zone, recomputed on display like capacity and goal progress (T-116). Dashboard cards call these functions; a card stores no result.
 - **Metric catalog:** a fixed list of built-in metrics, each with its source, window, formula, and sample count (T-193, T-197). Cards refer to catalog IDs, so no formula can be stored.
 - **Calendar:** the existing time grid gains subcolumns (T-174). Work segments come from the session's pauses, as in `workIntervals` (T-177). Planned-block drags go through the existing update command, which also writes the comparison plan when the edit is after the scheduled start (T-179). Below the 560 px breakpoint the week shows one day (T-175).
 - **Comparison and links:** the comparison groups by task and local day and never reads or writes `blockId` (T-178).

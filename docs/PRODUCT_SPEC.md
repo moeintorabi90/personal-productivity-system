@@ -62,7 +62,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] A milestone may have an optional deadline (T-056); if set, it must be on or after its goal's start date and no later than the goal's deadline when one exists (T-057).
 - [ ] Numeric output goals use a custom unit label entered by the owner (T-050). From Stage 5 each output goal tracks exactly one output definition; existing output goals are migrated by asking the owner to choose or create a definition whose unit matches the goal's existing unit; a mismatching definition is rejected, and neither the target nor any value is converted (T-137, T-139, T-166). Singular and plural forms of the same unit match, including irregular plurals, for English and Persian labels; translations, synonyms, and different units do not (e.g. `page` and `صفحه`, or `page` and `word`) (T-168). When the app cannot confidently tell whether the two labels are singular and plural forms of the same unit, it asks the owner, making clear that a yes means only that (not a translation, synonym, or different or convertible unit); a yes links the goal without changing its target or converting any value, a no rejects that definition so the owner picks or creates a matching one, and no reusable alias or rule is saved (T-169). The unit shown for an output goal then comes from its definition and is not edited on the goal (T-154).
 - [ ] Numeric output goal targets are whole numbers in the initial release; decimal targets are deferred to a later, fuller version (T-051).
-- [ ] A goal may optionally link to a project (T-041) and has a date range whose start date defaults to today but can be changed to the past or future (T-042), one overall target (T-052), optional deadline (T-039), and status. Weekly objectives and choosing goal workdays are deferred until after Stage 5 (T-052, T-053).
+- [ ] A goal may optionally link to a project (T-041) and has a date range whose start date defaults to today but can be changed to the past or future (T-042), one overall target (T-052), optional deadline (T-039), and status. Weekly objectives and choosing goal workdays are deferred until after Stage 5 (T-052, T-053); from Stage 6, weekly amounts are editable allocations of the overall target (T-206).
 - [ ] The owner manually marks a goal complete; reaching its target does not automatically change its status (T-043).
 - [ ] The owner may reopen a completed goal to make it active again (T-060).
 - [ ] The owner may archive a goal they no longer intend to pursue; its history is preserved (T-063).
@@ -74,7 +74,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - [ ] Pausing or resuming a goal does not change its start date or deadline (T-045).
 - [ ] Actual work or output explicitly attributed to a paused goal still counts toward its progress (T-046).
 - [ ] Goal progress is derived from actual execution/output records: session time (T-100), output records (T-105), and explicitly completed tasks (T-108); see "Actual work and outputs".
-- [ ] After Stage 5, pacing considers timezone, deadline, chosen goal workdays, and progress to date (T-180, T-181). Neither weekly objectives nor chosen goal workdays are part of the initial goal setup (T-052, T-053); whether explicit weekly objectives are still wanted is open (DECISIONS "Stage 6 decisions").
+- [ ] After Stage 5, pacing considers timezone, deadline, chosen goal workdays, and progress to date (T-180, T-181). Neither weekly objectives nor chosen goal workdays are part of the initial goal setup (T-052, T-053); from Stage 6, weekly amounts are allocations of the overall target that the owner can edit (T-206).
 - [ ] The UI explains the assumptions behind pacing.
 - [ ] The duration of one work session may contribute to at most one goal (T-047).
 - [ ] One completed task may count toward at most one task-count goal (T-048).
@@ -275,7 +275,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 
 ### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; not implemented)
 
-Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-205 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
+Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-206 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
 
 **Calendar**
 
@@ -290,8 +290,9 @@ Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-205 (DECIS
 **Goals and pace**
 
 - [ ] Goal workdays are manually selected and optional, never inferred from task recurrence. Without selected workdays or a deadline: progress, but no workday-based pace (T-180).
-- [ ] Daily, weekly, and monthly targets are derived from the remaining target and remaining selected workdays. Recorded amounts stay whole numbers; calculated pace may be fractional; completion stays manual (T-181).
-- [ ] Changes to the target, deadline, workdays, and daily cap keep history: historical charts use the plan of each period, the current summary uses the latest plan, and actual records do not change (T-182).
+- [ ] Daily, weekly, and monthly targets are derived from the remaining target and remaining selected workdays, with weekly amounts handled as allocations (next item). Recorded amounts stay whole numbers; calculated pace may be fractional; completion stays manual (T-181).
+- [ ] **Weekly allocations:** weekly amounts are allocations of the overall target, not independent goals. They start as calculated amounts (600 units over four equal weeks: 150 per week). The owner can edit one or more weeks; an edited week keeps its amount, and the app redistributes the remaining amount among the weeks still automatic, so the total stays aligned with the overall goal. The daily target within a week comes from that week's allocation and its remaining selected workdays. Overall progress still uses the actual amount recorded against the overall target (T-206). The distribution formula is a derived technical choice, and what happens when manual weeks no longer match the goal is open (DECISIONS "Stage 6 decisions").
+- [ ] Changes to the target, deadline, workdays, weekly allocations, and daily cap keep history: historical charts use the plan of each period, the current summary uses the latest plan, and actual records do not change (T-182).
 - [ ] An optional per-goal daily cap can be added, edited, or removed. When the required pace exceeds it: show the capped amount, warn that the goal may not be reachable by its deadline, and show the maximum projected attainment. Nothing changes automatically. Without a cap: the calculated required pace (T-183).
 - [ ] An incomplete goal stays active after its deadline, shows actual progress and that the deadline passed, and can be revised; it is never marked complete or failed automatically (T-187).
 

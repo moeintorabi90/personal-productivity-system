@@ -165,12 +165,12 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Stage 6: planned versus actual, pac
 
 ## Stage 6 acceptance tests (specified 2026-11-01; not implemented)
 
-Contract: DECISIONS T-174 to T-205. Expected values that depend on derived choices (daily-target formula, day splitting, version 8) follow DECISIONS "Derived technical choices". Fixed dates and zones.
+Contract: DECISIONS T-174 to T-206. Expected values that depend on derived choices (weekly allocation and daily-target formulas, day splitting, version 8) follow DECISIONS "Derived technical choices". Fixed dates and zones.
 
 1. **Calendar layout (T-174 to T-177):** week and day views show one main column per day with Planned and Actual subcolumns; a phone-sized week shows one day with navigation reaching all seven; a month cell shows both kinds with distinct treatments and a non-color cue; a session with two pauses shows three segments and gaps, and acts as one session.
 2. **Comparison (T-178, T-179):** two blocks and three sessions of one task on one day aggregate; a session with no link still counts, and no `blockId` changes; sessions stay at recorded times. A block edited before its start changes the compared plan; edited after its start, it does not. Drag corrections stay audited (T-072).
 3. **Pace (T-180, T-181):** no workdays or no deadline: progress and no pace; task recurrence never adds workdays; a seeded example gives expected fractional daily, weekly, and monthly targets, with whole-number actuals; completion stays manual.
-4. **Plan history (T-182):** after changing target, deadline, workdays, and cap, historical charts use each period's plan, the summary uses the latest, and actual records are byte-identical.
+4. **Plan history (T-182):** after changing target, deadline, workdays, weekly allocations, and cap, historical charts use each period's plan, the summary uses the latest, and actual records are byte-identical.
 5. **Daily cap (T-183):** required pace above the cap shows the capped amount, the warning, and the expected projected attainment, and changes nothing; removing the cap shows the required pace.
 6. **Streaks (T-184 to T-186):** meeting a capped target continues the pace streak while the goal is projected short; unselected days neither add nor break; no weekly or monthly streak exists. Consistency streak: any attributed work counts; a missed opportunity breaks it after its local day ends; paused, archived, pre-start, and post-deadline periods are not opportunities; work on a paused goal adds progress but no streak; completion stops it; the longest stays; a planned block alone never counts; both are identical after a backup round-trip; the goal page shows the streak by default.
 7. **After the deadline (T-187):** an incomplete goal stays active, shows progress and that the deadline passed, can be revised, and is never marked complete or failed.
@@ -181,6 +181,7 @@ Contract: DECISIONS T-174 to T-205. Expected values that depend on derived choic
 12. **App-use streak (T-203 to T-205):** viewing a section with no data change records the date; day boundaries follow the configured zone; importing merges both devices' dates and never erases one; the longest is preserved; re-import changes nothing; a device with an older backup shows its older value.
 13. **Backup version (derived):** version 8 round-trips with identical IDs, hashes, and versions; the stored version-7 sample imports; a version-7 file with version-8 data is refused; a newer version is refused.
 14. **English and Persian, RTL, dark theme, keyboard paths for the new views, offline use**, and manual checks on the owner's devices.
+15. **Weekly allocations (T-206; numbers follow the derived formulas):** with 600 over four equal weeks and five workdays each, every week starts at 150. Setting week 2 to 200 keeps it at 200 and gives the other weeks 133.33. If 100 is then recorded in week 1, weeks 3 and 4 become 150 each, week 2 stays 200, and overall progress is 100. In week 2, 30 recorded on its first workday makes the next daily target 42.5. Earlier periods keep their plan after an edit; allocations round-trip in a backup. The open case of manual weeks that no longer match the goal has no expected result until the owner decides; the tests only confirm that no manual amount changes and no allocation is negative.
 
 ## Stage 5 acceptance tests (specified 2026-10-26; implemented 2026-10-29 on `feat/stage-5-sessions-outputs`, see "Stage 5 test report")
 

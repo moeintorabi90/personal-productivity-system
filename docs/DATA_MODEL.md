@@ -179,20 +179,21 @@ Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-
 
 ### Stage 6 data (proposed; `dataSchemaVersion` 8; not implemented)
 
-Owner decisions T-174 to T-205. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
+Owner decisions T-174 to T-206. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
 
 | Type / field | Data fields (proposed) | Rules |
 |---|---|---|
 | `goals.workdays` (optional) | weekdays selected by the owner (T-180) | never inferred from task recurrence |
 | `goals.dailyCap` (optional) | whole number in the goal's measure (T-183) | adding, editing, or removing it changes no actual record |
-| `goals.planHistory` (optional) | earlier plans: `effectiveFrom`, `target`, `deadline`, `workdays`, `dailyCap` (T-182) | used for historical charts; the current fields are the latest plan |
+| `goals.weeklyAllocations` (optional) | manually edited weeks only: list of `{ weekStart, amount }`, with a whole-number amount in the goal's measure (T-206) | automatic weeks are not stored; changes no actual record |
+| `goals.planHistory` (optional) | earlier plans: `effectiveFrom`, `target`, `deadline`, `workdays`, `dailyCap`, `weeklyAllocations` (T-182, T-206) | used for historical charts; the current fields are the latest plan |
 | `calendarBlocks.comparisonPlan` (optional) | the plan used for comparison when it differs from the current times: `startsAt`, `endsAt`, `status` (T-179) | written by an edit made after the scheduled start; absent = the current times |
 | `sessions.occurrenceDate` (optional) | local date of the recurring occurrence it is assigned to (T-190) | never changes recorded times or block links |
 | `taskEstimateCaptures` (new type) | `taskId`, `occurrenceDate` (or `null` for a one-off task), `estimateMinutes`, `capturedAt`, `source` (`plan` or `session`) (T-189) | ID derived from task and date; `taskId` and `occurrenceDate` never change; never back-filled |
 | `dashboards` (new type) | `name`, `cards`: list of `{ metric, size, window, goalId }` in order (T-197 to T-201) | `metric` comes from a closed catalog; no formulas; main dashboard has a reserved ID |
 | `appUseDays` (new type, append-only) | `date` (`YYYY-MM-DD`) (T-203 to T-205) | one per local date, ID derived from the date; merged as a union; never removed by an import |
 
-- **Derived, never stored:** pace targets, projected attainment, both goal streaks, the app-use streak, comparisons, estimate accuracy, and output rate (T-073, T-181, T-196).
+- **Derived, never stored:** pace targets, automatic weekly allocations, projected attainment, both goal streaks, the app-use streak, comparisons, estimate accuracy, and output rate (T-073, T-181, T-196, T-206).
 - **Older data:** goals, blocks, and occurrences from before version 8 have no recorded history; they use their current values or show "no data", and nothing is reconstructed.
 
 ### Streak data (approved 2026-10-25, updated 2026-11-01; not implemented)
@@ -238,7 +239,7 @@ Owner decisions T-174 to T-205. **The version number, field names, and shapes be
 - Goal progress is recomputed from underlying records and is rebuildable; cached totals are disposable.
 - A session's time counts toward at most one time goal: one of the task's linked time goals or none, or, without such links, a manually chosen time goal or none (T-047, T-100, T-122, T-129); a task explicitly marked complete, or a completed occurrence of a recurring task, counts toward at most one task-count goal, chosen likewise, and a manual choice adds no task–goal link (T-048, T-108, T-118, T-123, T-130). Outputs may advance several goals that track their definition (T-105, T-124, T-137). Attribution is recorded with the session, completion, or output and is never recalculated from later link changes (T-132). Tasks link to goals only explicitly, never through their project (T-120, T-121). Session completion never completes a task (T-091).
 - Output metric values may support multiple goals only through explicit compatible attribution records.
-- From Stage 6, pacing uses target, progress, deadline, timezone, and owner-chosen goal workdays, with an optional daily cap (T-180 to T-183). Whether explicit weekly objectives are still wanted is open (T-052). Do not union multiple task schedules to invent a goal schedule.
+- From Stage 6, pacing uses target, progress, deadline, timezone, and owner-chosen goal workdays, with an optional daily cap (T-180 to T-183). Weekly amounts are editable allocations tied to the overall target, and progress still comes from actual records (T-206). Do not union multiple task schedules to invent a goal schedule.
 
 ### Identity, versions, and merging (v1 backup; also the basis for later sync)
 
