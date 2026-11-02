@@ -179,13 +179,13 @@ Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-
 
 ### Stage 6 data (proposed; `dataSchemaVersion` 8; not implemented)
 
-Owner decisions T-174 to T-215. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
+Owner decisions T-174 to T-219. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
 
 | Type / field | Data fields (proposed) | Rules |
 |---|---|---|
 | `goals.workdays` (optional) | weekdays selected by the owner (T-180) | never inferred from task recurrence |
 | `goals.dailyCap` (optional) | whole number in the goal's measure (T-183) | adding, editing, or removing it changes no actual record |
-| `goals.weeklyAllocations` (optional) | manually edited weeks only: list of `{ weekStart, amount }`, with a whole-number amount in the goal's measure (T-206) | open automatic weeks are not stored; changes no actual record; a manual amount changes only when the owner edits it or switches the week to automatic (T-207); kept when it no longer fits the goal's range or plan, or stays inactive when the deadline or all workdays are removed and becomes active again if it fits when they return, in a representation still unresolved (T-211 to T-213, T-215) |
+| `goals.weeklyAllocations` (optional) | manually edited weeks only: list of `{ weekStart, amount }`, with a whole-number amount in the goal's measure (T-206) | open automatic weeks are not stored; changes no actual record; a manual amount changes only when the owner edits it, moves it with explicit confirmation (T-218), or switches the week to automatic (T-207); kept when it no longer fits the goal's range or plan, or stays inactive when the deadline or all workdays are removed and becomes active again if it fits when they return, in a representation still unresolved (T-211 to T-213, T-215) |
 | `goals.planHistory` (optional) | earlier plans: `effectiveFrom`, `target`, `deadline`, `workdays`, `dailyCap`, `weeklyAllocations` (T-182, T-206) | used for historical charts; the current fields are the latest plan |
 | `calendarBlocks.comparisonPlan` (optional) | the plan used for comparison when it differs from the current times: `startsAt`, `endsAt`, `status` (T-179) | written by an edit made after the scheduled start; absent = the current times |
 | `sessions.occurrenceDate` (optional) | local date of the recurring occurrence it is assigned to (T-190) | never changes recorded times or block links |
@@ -198,7 +198,7 @@ Owner decisions T-174 to T-215. **The version number, field names, and shapes be
 
 ### Streak data (approved 2026-10-25, updated 2026-11-01; not implemented)
 
-- **Goal streak (Stage 6, T-073):** derived, not stored. Computed per goal from its scheduled goal-work opportunities and the actual-work records attributed to the goal (T-047 to T-049), in the configured time zone. Current streak = consecutive past opportunities, each with at least one attributed attempt or work record, ending at the latest passed opportunity; longest = the maximum over the goal's history. Unscheduled days are skipped; an opportunity is missed only after its local day ends; a planned block alone never counts. Opportunities and period rules: T-180, T-185. The daily pace streak (T-184) is also derived.
+- **Goal streak (Stage 6, T-073):** derived, not stored. Computed per goal from its scheduled goal-work opportunities and the actual-work records attributed to the goal (T-047 to T-049), in the configured time zone. Current streak = consecutive past opportunities, each with at least one attributed attempt or work record, ending at the latest passed opportunity; longest = the maximum over the goal's history, as currently recorded, so a correction can lower it (T-216). Unscheduled days are skipped; an opportunity is missed only after its local day ends; a planned block alone never counts. Opportunities and period rules: T-180, T-185. The daily pace streak (T-184) is also derived.
 - **App-use streak (Stage 6, T-074, T-203 to T-205):** the local dates on which any app section was opened or viewed are kept as `appUseDays` records and travel in backups; an import merges them and never erases a date already here. Current and longest streaks are computed from them, in the configured time zone.
 
 ## Core invariants
