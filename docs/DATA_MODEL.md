@@ -179,7 +179,7 @@ Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-
 
 ### Stage 6 data (proposed; `dataSchemaVersion` 8; not implemented)
 
-Owner decisions T-174 to T-224. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
+Owner decisions T-174 to T-225. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
 
 | Type / field | Data fields (proposed) | Rules |
 |---|---|---|
@@ -192,10 +192,10 @@ Owner decisions T-174 to T-224. **The version number, field names, and shapes be
 | `dashboards` (new type) | `name`, `cards`: list of `{ metric, size, window, goalId }` in order (T-197 to T-201) | `metric` comes from a closed catalog; no formulas; main dashboard has a reserved ID |
 | `appUseDays` (new type, append-only) | `date` (`YYYY-MM-DD`) (T-203 to T-205) | one per local date, ID derived from the date; merged as a union; never removed by an import |
 | `goalWeekAllocations` (new type) | `goalId`, `weekStart` (`YYYY-MM-DD`, first day of the calendar week), `revisions`: list of `{ from, amount }`, where `amount` is a whole number of zero or more in the goal's measure, or `null` = **no manual amount, so automatic** (T-206, T-207, T-218, T-220, T-224) | ID derived from goal and `weekStart`; `goalId` and `weekStart` never change; not deleted for "automatic"; kept when out of range or inactive, with its state calculated, never stored (T-211 to T-213, T-215, T-219) |
-| `goalWeekPlans` (new type) | `goalId`, `weekStart`, `segments`: list of `{ from, state, allocation, source }`; `allocation` an exact fraction `{ num, den }` or `null` (T-208, T-210, T-214, T-217) | ID derived from goal and `weekStart`; a segment is appended in the same transaction as the change; a closed week's record is never written again; differing versions are ordinary conflicts (T-223) |
+| `goalWeekPlans` (new type) | `goalId`, `weekStart`, `segments`: list of `{ from, state, allocation, source }`; `allocation` an exact fraction `{ num, den }` or `null` (T-208, T-210, T-214, T-217) | ID derived from goal and `weekStart`; the first segment starts on the day it is written, never earlier (T-225); a segment is appended in the same transaction as the change; a closed week's record is never written again; differing versions are ordinary conflicts (T-223) |
 
 - **Derived, never stored:** pace targets, automatic allocations of future weeks, the allocation discrepancy, the state of manual allocations, projected attainment, both goal streaks, the app-use streak, comparisons, estimate accuracy, and output rate (T-073, T-181, T-196, T-206, T-207). The allocation in effect in the current and closed weeks is stored in `goalWeekPlans`, so corrections recalculate targets and streaks but never that plan (T-208, T-214, T-217).
-- **Older data:** goals, blocks, and occurrences from before version 8 have no recorded history; they use their current values or show "no data", and nothing is reconstructed. Weeks before version 8 have no weekly plan and show "no data" for allocation, daily target, and pace.
+- **Older data:** goals, blocks, and occurrences from before version 8 have no recorded history; they use their current values or show "no data", and nothing is reconstructed. Weeks before version 8, days before a goal's first recorded plan, and weeks in which the app was not run have no weekly plan and show "no data" for allocation, daily target, and pace (T-225).
 
 ### Streak data (approved 2026-10-25, updated 2026-11-01; not implemented)
 
