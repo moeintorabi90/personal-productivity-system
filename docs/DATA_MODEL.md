@@ -179,22 +179,23 @@ Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-
 
 ### Stage 6 data (proposed; `dataSchemaVersion` 8; not implemented)
 
-Owner decisions T-174 to T-222. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
+Owner decisions T-174 to T-224. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
 
 | Type / field | Data fields (proposed) | Rules |
 |---|---|---|
 | `goals.workdays` (optional) | weekdays selected by the owner (T-180) | never inferred from task recurrence |
 | `goals.dailyCap` (optional) | whole number in the goal's measure (T-183) | adding, editing, or removing it changes no actual record |
-| `goals.weeklyAllocations` (optional) | manually edited weeks only: list of `{ weekStart, amount }`, with a whole-number amount in the goal's measure (T-206) | open automatic weeks are not stored; changes no actual record; a manual amount changes only when the owner edits it, moves it with explicit confirmation (T-218, T-220), or switches the week to automatic (T-207); kept when it no longer fits the goal's range or plan, or stays inactive when the deadline or all workdays are removed and becomes active again if it fits when they return, in a representation still unresolved (T-211 to T-213, T-215) |
-| `goals.planHistory` (optional) | earlier plans: `effectiveFrom`, `target`, `deadline`, `workdays`, `dailyCap`, `weeklyAllocations` (T-182, T-206) | used for historical charts; the current fields are the latest plan |
+| `goals.planHistory` (optional) | earlier plans: `effectiveFrom`, `target`, `deadline`, `workdays`, `dailyCap` (T-182) | used for historical charts; the current fields are the latest plan; weekly allocations have their own types below |
 | `calendarBlocks.comparisonPlan` (optional) | the plan used for comparison when it differs from the current times: `startsAt`, `endsAt`, `status` (T-179) | written by an edit made after the scheduled start; absent = the current times |
 | `sessions.occurrenceDate` (optional) | local date of the recurring occurrence it is assigned to (T-190) | never changes recorded times or block links |
 | `taskEstimateCaptures` (new type) | `taskId`, `occurrenceDate` (or `null` for a one-off task), `estimateMinutes`, `capturedAt`, `source` (`plan` or `session`) (T-189) | ID derived from task and date; `taskId` and `occurrenceDate` never change; never back-filled |
 | `dashboards` (new type) | `name`, `cards`: list of `{ metric, size, window, goalId }` in order (T-197 to T-201) | `metric` comes from a closed catalog; no formulas; main dashboard has a reserved ID |
 | `appUseDays` (new type, append-only) | `date` (`YYYY-MM-DD`) (T-203 to T-205) | one per local date, ID derived from the date; merged as a union; never removed by an import |
+| `goalWeekAllocations` (new type) | `goalId`, `weekStart` (`YYYY-MM-DD`, first day of the calendar week), `revisions`: list of `{ from, amount }`, where `amount` is a whole number of zero or more in the goal's measure, or `null` = **no manual amount, so automatic** (T-206, T-207, T-218, T-220, T-224) | ID derived from goal and `weekStart`; `goalId` and `weekStart` never change; not deleted for "automatic"; kept when out of range or inactive, with its state calculated, never stored (T-211 to T-213, T-215, T-219) |
+| `goalWeekPlans` (new type) | `goalId`, `weekStart`, `segments`: list of `{ from, state, allocation, source }`; `allocation` an exact fraction `{ num, den }` or `null` (T-208, T-210, T-214, T-217) | ID derived from goal and `weekStart`; a segment is appended in the same transaction as the change; a closed week's record is never written again; differing versions are ordinary conflicts (T-223) |
 
-- **Derived, never stored:** pace targets, automatic allocations of open weeks, the allocation discrepancy, projected attainment, both goal streaks, the app-use streak, comparisons, estimate accuracy, and output rate (T-073, T-181, T-196, T-206, T-207). How a closed week's plan is kept unchanged after later corrections is unresolved (T-208; DECISIONS).
-- **Older data:** goals, blocks, and occurrences from before version 8 have no recorded history; they use their current values or show "no data", and nothing is reconstructed.
+- **Derived, never stored:** pace targets, automatic allocations of future weeks, the allocation discrepancy, the state of manual allocations, projected attainment, both goal streaks, the app-use streak, comparisons, estimate accuracy, and output rate (T-073, T-181, T-196, T-206, T-207). The allocation in effect in the current and closed weeks is stored in `goalWeekPlans`, so corrections recalculate targets and streaks but never that plan (T-208, T-214, T-217).
+- **Older data:** goals, blocks, and occurrences from before version 8 have no recorded history; they use their current values or show "no data", and nothing is reconstructed. Weeks before version 8 have no weekly plan and show "no data" for allocation, daily target, and pace.
 
 ### Streak data (approved 2026-10-25, updated 2026-11-01; not implemented)
 
