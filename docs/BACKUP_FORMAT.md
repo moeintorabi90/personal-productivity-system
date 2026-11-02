@@ -323,7 +323,7 @@ Decision: T-173 (owner), extending T-144 and T-152. `formatVersion` stays 1. No 
 
 ### Data schema version 8 (proposed; Stage 6; not implemented)
 
-Decisions: T-179, T-180, T-182, T-183, T-189, T-190, T-197 to T-201, and T-203 to T-221 (owner). **The version number and everything about the representation below are derived technical choices, not owner decisions**; they follow "Versioning and upgrades", since new record types and fields need a new data version. `formatVersion` stays 1. Fields: DATA_MODEL "Stage 6 data (proposed)".
+Decisions: T-179, T-180, T-182, T-183, T-189, T-190, T-197 to T-201, and T-203 to T-222 (owner). **The version number and everything about the representation below are derived technical choices, not owner decisions**; they follow "Versioning and upgrades", since new record types and fields need a new data version. `formatVersion` stays 1. Fields: DATA_MODEL "Stage 6 data (proposed)".
 
 - **What version 8 adds:** types `taskEstimateCaptures`, `dashboards`, and `appUseDays`; optional fields `goals.workdays`, `goals.dailyCap`, `goals.weeklyAllocations`, `goals.planHistory`, `calendarBlocks.comparisonPlan`, and `sessions.occurrenceDate`.
 - **Compatibility:** files of versions 1–7 keep importing, with no recorded history for those items; a version-7 file with version-8 data is refused; an app that reads up to version 7 refuses version 8 as newer. The stored version-7 sample stays, with a test that imports it.
