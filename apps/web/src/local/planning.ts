@@ -27,6 +27,7 @@ import type { LocalDb, RecordRow } from "./db.ts";
 import { createTask, updateTask } from "./organization.ts";
 import { PlanningError, requireZone } from "./planning-error.ts";
 import { putRecord } from "./records.ts";
+import { captureEstimate } from "./estimates.ts";
 
 export { PlanningError, type PlanningErrorCode } from "./planning-error.ts";
 
@@ -99,8 +100,21 @@ export async function createBlock(
       snapshot: await snapshotOf(db, input.taskId),
     };
     await putRecord(db, registry, CALENDAR_BLOCKS, id, withExpected(data, input.expectedOutputs));
+    // The occurrence's estimate is captured when it is first planned (T-189).
+    await captureEstimate(db, registry, input.taskId, data.occurrenceDate, "plan");
     return id;
   });
+}
+
+/**
+ * The block as the comparison keeps it (T-179): the first edit made at or after the block's
+ * scheduled start (the start it had just before that edit) keeps the times and status from before
+ * the edit as `comparisonPlan`; earlier edits change the compared plan; a kept one never changes.
+ */
+export function withComparisonPlan(current: CalendarBlockData, next: Record<string, unknown>, now: number = Date.now()): Record<string, unknown> {
+  if (current.comparisonPlan || now < Date.parse(current.startsAt)) return next;
+  const changed = next.startsAt !== current.startsAt || next.endsAt !== current.endsAt || next.status !== current.status;
+  return changed ? { ...next, comparisonPlan: { startsAt: current.startsAt, endsAt: current.endsAt, status: current.status } } : next;
 }
 
 /** Quick add (T-032): a new inbox task and its planned block, in ONE transaction. */
@@ -144,7 +158,7 @@ export async function updateBlock(
       timeZone: zone,
       snapshot: await snapshotOf(db, current.taskId),
     };
-    await putRecord(db, registry, CALENDAR_BLOCKS, id, withExpected(next, input.expectedOutputs));
+    await putRecord(db, registry, CALENDAR_BLOCKS, id, withComparisonPlan(current, withExpected(next, input.expectedOutputs)));
   });
 }
 
@@ -178,14 +192,14 @@ export async function dragBlockTimes(
     if (!Number.isInteger(minutes) || minutes < 1 || minutes > BLOCK_MAX_MINUTES) {
       throw new PlanningError("INVALID_DURATION", `duration must be 1–${BLOCK_MAX_MINUTES} whole minutes`);
     }
-    const row = await putRecord(db, registry, CALENDAR_BLOCKS, id, {
+    const row = await putRecord(db, registry, CALENDAR_BLOCKS, id, withComparisonPlan(current, {
       ...current,
       startsAt: instants.startsAt,
       endsAt: instants.endsAt,
       timeZone: zone,
       localDate: localDateOf(instants.startsAt, zone),
       snapshot: await snapshotOf(db, current.taskId),
-    });
+    }));
     return {
       previous: timesOf(current),
       after: timesOf(row.data as CalendarBlockData),
@@ -214,7 +228,7 @@ export async function undoBlockTimes(
     if (canonicalize(row.version) !== canonicalize(expectedVersion)) throw new PlanningError("CHANGED", "the block changed after the drag");
     const current = row.data as CalendarBlockData;
     if (current.status === "cancelled") throw new PlanningError("CANCELLED", "the block was cancelled after the drag");
-    await putRecord(db, registry, CALENDAR_BLOCKS, id, { ...current, ...previous, snapshot: await snapshotOf(db, current.taskId) });
+    await putRecord(db, registry, CALENDAR_BLOCKS, id, withComparisonPlan(current, { ...current, ...previous, snapshot: await snapshotOf(db, current.taskId) }));
   });
 }
 
@@ -231,13 +245,13 @@ export async function setBlockCancelled(db: LocalDb, id: string, cancelled: bool
     const current = await currentBlock(db, id);
     const status = cancelled ? "cancelled" : "planned";
     if (current.status === status) return;
-    await putRecord(db, registry, CALENDAR_BLOCKS, id, {
+    await putRecord(db, registry, CALENDAR_BLOCKS, id, withComparisonPlan(current, {
       ...current,
       status,
       timeZone: zone,
       localDate: localDateOf(current.startsAt, zone),
       snapshot: await snapshotOf(db, current.taskId),
-    });
+    }));
   });
 }
 

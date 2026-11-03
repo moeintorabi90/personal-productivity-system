@@ -112,8 +112,8 @@ describe("10. backup version 6 (T-109, T-146)", () => {
     const a = await workDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(7);
-    expect(DATA_SCHEMA_VERSION).toBe(7);
+    expect(doc.app.dataSchemaVersion).toBe(8);
+    expect(DATA_SCHEMA_VERSION).toBe(8);
     for (const type of [SESSIONS, OUTPUT_DEFINITIONS, OUTPUT_RECORDS, CORRECTIONS, TASK_COMPLETIONS]) expect(doc.payload.records[type]?.length).toBeGreaterThan(0);
     const taskless = doc.payload.records[SESSIONS].find((e: { id: string }) => e.id === a.taskless).data;
     expect(taskless).toMatchObject({ taskId: null, blockId: null, snapshot: null, goalId: null, energy: null, focus: null, deletedAt: null });
@@ -166,7 +166,7 @@ describe("10. backup version 6 (T-109, T-146)", () => {
       doc.payload.tombstones = [];
     });
     expect(await codeOf(importInto(b, onlyNewFields, product))).toBe("INVALID_PAYLOAD"); // task goalIds in a version-5 file
-    expect(await codeOf(importInto(b, mutate(text, (doc) => (doc.app.dataSchemaVersion = 8)), product))).toBe("NEWER_VERSION");
+    expect(await codeOf(importInto(b, mutate(text, (doc) => (doc.app.dataSchemaVersion = 9)), product))).toBe("NEWER_VERSION");
     expect(await recordsOf(b.d)).toEqual(before);
   });
 

@@ -62,6 +62,8 @@ import { matchUnits } from "../work/units.ts";
 import type { LocalDb, RecordRow, VersionEntry } from "./db.ts";
 import type { Item } from "./organization.ts";
 import { getSharedPreferences } from "./settings.ts";
+import { refreshWeekPlans } from "./goal-plans.ts";
+import { captureEstimate } from "./estimates.ts";
 import { deleteRecord, deviceIdentity, putRecord } from "./records.ts";
 
 export type Session = Item<SessionData>;
@@ -140,6 +142,19 @@ export class WorkError extends Error {
 }
 
 const tables = (db: LocalDb) => [db.records, db.tombstones, db.meta];
+
+/**
+ * Wraps a command that may change a closed week's actual output (a correction, a deletion, a past
+ * entry): the current week's plan is brought up to date in the same transaction (T-208). Work of
+ * the current week never changes its allocation, so for it this writes nothing.
+ */
+function afterWork<T>(db: LocalDb, registry: Registry, fn: () => Promise<T>): () => Promise<T> {
+  return async () => {
+    const result = await fn();
+    await refreshWeekPlans(db, registry, "change");
+    return result;
+  };
+}
 
 function itemOf<T>(row: RecordRow): Item<T> {
   return { id: row.id, data: row.data as T, createdAt: row.createdAt, updatedAt: row.updatedAt };
@@ -322,7 +337,7 @@ export interface OutputInput {
  */
 export async function startSession(
   db: LocalDb,
-  input: { taskId?: string | null; blockId?: string | null; expectedOutputs?: ExpectedOutput[] } = {},
+  input: { taskId?: string | null; blockId?: string | null; expectedOutputs?: ExpectedOutput[]; occurrenceDate?: string | null } = {},
   now: number = Date.now(),
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<string> {
@@ -331,11 +346,14 @@ export async function startSession(
     if ((await openSessionIds(db)).length > 0) throw new WorkError("SESSION_OPEN", "end the open session first");
     let taskId = input.taskId ?? null;
     let expected = input.expectedOutputs;
+    let occurrenceDate = input.occurrenceDate ?? null;
     if (input.blockId) {
       const block = await get<CalendarBlockData>(db, CALENDAR_BLOCKS, input.blockId);
       if (block.status !== "planned") throw new WorkError("BLOCK_CANCELLED", "a cancelled block cannot start a session");
       if (taskId !== null && taskId !== block.taskId) throw new WorkError("BLOCK_OTHER_TASK", "the block is for another task");
       taskId = block.taskId;
+      // A session started from a block takes the block's occurrence (derived "Session occurrence").
+      occurrenceDate = block.occurrenceDate ?? occurrenceDate;
       if (expected === undefined) {
         // A copy of the block's expected amounts (T-141, T-150), for definitions still offered (T-128).
         expected = [];
@@ -365,9 +383,61 @@ export async function startSession(
       focus: null,
       deletedAt: null,
     };
+    const occurrence = await checkOccurrence(db, taskId, occurrenceDate);
+    if (occurrence !== null) data.occurrenceDate = occurrence;
     await putRecord(db, registry, SESSIONS, id, data);
+    // The occurrence's estimate is captured at its first session when it was never planned (T-189).
+    if (taskId !== null) await captureEstimate(db, registry, taskId, occurrence, "session", now);
     return id;
   });
+}
+
+/**
+ * The occurrence a session may be assigned to (T-190): only for a recurring task, and only a date
+ * on which the task recurs. Returns null for none (one-off tasks never store one).
+ */
+async function checkOccurrence(db: LocalDb, taskId: string | null, occurrenceDate: string | null): Promise<string | null> {
+  if (occurrenceDate === null || taskId === null) return null;
+  const task = await get<TaskDefinitionData>(db, TASK_DEFINITIONS, taskId);
+  if (!task.recurrence) return null;
+  if (!recursOn(task.recurrence, occurrenceDate)) throw new WorkError("NOT_AN_OCCURRENCE", "choose an occurrence of the recurring task");
+  return occurrenceDate;
+}
+
+/**
+ * Moves an ended session by drag on the calendar (T-072, T-179): an explicit correction, written
+ * only after the owner confirms. Start, end, and pauses shift together, so work time is unchanged;
+ * the times before and after are kept in the correction history with an optional reason, and the
+ * session's identity, task, block link, and outputs stay as they were.
+ */
+export async function moveSessionTimes(
+  db: LocalDb,
+  id: string,
+  startedAt: string,
+  reason: string | null = null,
+  now: number = Date.now(),
+  registry: Registry = PRODUCT_REGISTRY,
+): Promise<void> {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
+    const s = await get<SessionData>(db, SESSIONS, id);
+    if (s.deletedAt !== null) throw new WorkError("DELETED", "restore the session first");
+    if (s.endedAt === null) throw new WorkError("NOT_ENDED", "end the session first");
+    const shift = Date.parse(minuteOf(Date.parse(startedAt))) - Date.parse(s.startedAt);
+    if (shift === 0) return;
+    const at = (iso: string) => new Date(Date.parse(iso) + shift).toISOString();
+    const pauses = s.pauses.map((p) => ({ start: at(p.start), end: p.end === null ? null : at(p.end) }));
+    const next: SessionData = { ...s, startedAt: at(s.startedAt), endedAt: at(s.endedAt), pauses, localDate: localDateOf(at(s.startedAt), s.timeZone) };
+    checkTimes(next, now);
+    await putRecord(db, registry, SESSIONS, id, next);
+    await appendCorrection(db, registry, {
+      sessionId: id,
+      outputId: null,
+      field: "times",
+      before: { startedAt: s.startedAt, endedAt: s.endedAt, pauses: s.pauses },
+      after: { startedAt: next.startedAt, endedAt: next.endedAt, pauses },
+      reason,
+    });
+  }));
 }
 
 async function openSession(db: LocalDb, id: string): Promise<SessionData> {
@@ -444,7 +514,7 @@ async function writeOutputs(db: LocalDb, registry: Registry, sessionId: string, 
  * complete the task (T-091). These are choices while recording, not corrections.
  */
 export async function endSession(db: LocalDb, id: string, input: EndInput = {}, now: number = Date.now(), registry: Registry = PRODUCT_REGISTRY): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const s = await openSession(db, id);
     const marks = await importedPaused(db);
     const state = sessionState(s, marks[id]);
@@ -480,7 +550,7 @@ export async function endSession(db: LocalDb, id: string, input: EndInput = {}, 
       const { [id]: _done, ...rest } = marks;
       await setImportedPaused(db, rest);
     }
-  });
+  }));
 }
 
 export interface PastSessionInput {
@@ -517,7 +587,7 @@ export function overlappingSessions(sessions: readonly Session[], times: Session
 
 /** Records a finished past session from start plus duration (T-096): any past date, never in the future. Overlaps are allowed (T-097). */
 export async function recordPastSession(db: LocalDb, input: PastSessionInput, now: number = Date.now(), registry: Registry = PRODUCT_REGISTRY): Promise<string> {
-  return db.transaction("rw", tables(db), async () => {
+  return db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const zone = await requireZone(db);
     const times = pastSessionTimes(input, zone);
     checkTimes(times, now);
@@ -546,7 +616,7 @@ export async function recordPastSession(db: LocalDb, input: PastSessionInput, no
     await putRecord(db, registry, SESSIONS, id, data);
     await writeOutputs(db, registry, id, input.outputs ?? []);
     return id;
-  });
+  }));
 }
 
 /**
@@ -558,7 +628,7 @@ export async function recordPastSession(db: LocalDb, input: PastSessionInput, no
 export async function updateSessionDetails(
   db: LocalDb,
   id: string,
-  patch: { notes?: string; energy?: number | null; focus?: number | null; expectedOutputs?: ExpectedOutput[]; taskId?: string | null; blockId?: string | null },
+  patch: { notes?: string; energy?: number | null; focus?: number | null; expectedOutputs?: ExpectedOutput[]; taskId?: string | null; blockId?: string | null; occurrenceDate?: string | null },
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<void> {
   await db.transaction("rw", tables(db), async () => {
@@ -575,6 +645,7 @@ export async function updateSessionDetails(
       next.taskId = patch.taskId;
       next.snapshot = await snapshotOf(db, patch.taskId);
       if (next.blockId !== null) next.blockId = null;
+      delete next.occurrenceDate; // an occurrence belongs to the earlier task
       if (next.goalId !== null) {
         // The time goal stays only if it is still allowed for the new task.
         const { goals, tasks } = await goalsAndTasks(db);
@@ -590,7 +661,14 @@ export async function updateSessionDetails(
         next.blockId = patch.blockId;
       }
     }
+    if (patch.occurrenceDate !== undefined) {
+      // Assigning an occurrence never changes the recorded times or the block link (T-190).
+      const occurrence = await checkOccurrence(db, next.taskId, patch.occurrenceDate);
+      if (occurrence === null) delete next.occurrenceDate;
+      else next.occurrenceDate = occurrence;
+    }
     await putRecord(db, registry, SESSIONS, id, next);
+    if (next.taskId !== null && next.occurrenceDate !== undefined) await captureEstimate(db, registry, next.taskId, next.occurrenceDate, "session");
   });
 }
 
@@ -607,7 +685,7 @@ export async function correctSessionTimes(
   now: number = Date.now(),
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const s = await get<SessionData>(db, SESSIONS, id);
     if (s.deletedAt !== null) throw new WorkError("DELETED", "restore the session first");
     if (s.endedAt === null) throw new WorkError("NOT_ENDED", "end the session first");
@@ -625,7 +703,7 @@ export async function correctSessionTimes(
       after: { startedAt, endedAt, pauses: s.pauses },
       reason,
     });
-  });
+  }));
 }
 
 /**
@@ -633,34 +711,34 @@ export async function correctSessionTimes(
  * this is the recording choice; after it ended it is a correction with history (T-131).
  */
 export async function setSessionGoal(db: LocalDb, id: string, goalId: string | null, reason: string | null = null, registry: Registry = PRODUCT_REGISTRY): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const s = await get<SessionData>(db, SESSIONS, id);
     if (s.deletedAt !== null) throw new WorkError("DELETED", "restore the session first");
     if (s.goalId === goalId) return;
     await checkTimeGoal(db, s.taskId, goalId);
     await putRecord(db, registry, SESSIONS, id, { ...s, goalId });
     if (s.endedAt !== null) await appendCorrection(db, registry, { sessionId: id, outputId: null, field: "goal", before: s.goalId, after: goalId, reason });
-  });
+  }));
 }
 
 /** Moves a session (and with it its outputs) to the trash for 30 days (T-103, T-142). An open session frees the device's slot. */
 export async function deleteSession(db: LocalDb, id: string, now: number = Date.now(), registry: Registry = PRODUCT_REGISTRY): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const s = await get<SessionData>(db, SESSIONS, id);
     if (s.deletedAt !== null) return;
     await putRecord(db, registry, SESSIONS, id, { ...s, deletedAt: new Date(now).toISOString() });
-  });
+  }));
 }
 
 /** Restores a session from the trash within 30 days. An open session may not join another open one (T-117). */
 export async function restoreSession(db: LocalDb, id: string, now: number = Date.now(), registry: Registry = PRODUCT_REGISTRY): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const s = await get<SessionData>(db, SESSIONS, id);
     if (s.deletedAt === null) throw new WorkError("NOT_DELETED", "the session is not in the trash");
     if (now - Date.parse(s.deletedAt) > TRASH_MS) throw new WorkError("TRASH_EXPIRED", "more than 30 days in the trash");
     if (s.endedAt === null && (await openSessionIds(db)).length > 0) throw new WorkError("SESSION_OPEN", "end the open session first");
     await putRecord(db, registry, SESSIONS, id, { ...s, deletedAt: null });
-  });
+  }));
 }
 
 /* ---------- outputs ---------- */
@@ -676,7 +754,7 @@ async function sessionOfOutput(db: LocalDb, output: OutputRecordData): Promise<S
  * one is recorded in the correction history ("added").
  */
 export async function addOutputs(db: LocalDb, sessionId: string, outputs: OutputInput[], reason: string | null = null, registry: Registry = PRODUCT_REGISTRY): Promise<string[]> {
-  return db.transaction("rw", tables(db), async () => {
+  return db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const s = await get<SessionData>(db, SESSIONS, sessionId);
     if (s.deletedAt !== null) throw new WorkError("SESSION_DELETED", "restore the session first");
     const ids = await writeOutputs(db, registry, sessionId, outputs);
@@ -686,7 +764,7 @@ export async function addOutputs(db: LocalDb, sessionId: string, outputs: Output
       }
     }
     return ids;
-  });
+  }));
 }
 
 async function liveOutput(db: LocalDb, id: string): Promise<OutputRecordData> {
@@ -697,19 +775,19 @@ async function liveOutput(db: LocalDb, id: string): Promise<OutputRecordData> {
 
 /** Corrects an output's value (T-102): old and new value kept with an optional reason once the session ended. 0 is valid (T-159). */
 export async function correctOutputValue(db: LocalDb, id: string, value: number, reason: string | null = null, registry: Registry = PRODUCT_REGISTRY): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const o = await liveOutput(db, id);
     const s = await sessionOfOutput(db, o);
     checkValue(value);
     if (o.value === value) return;
     await putRecord(db, registry, OUTPUT_RECORDS, id, { ...o, value });
     if (s.endedAt !== null) await appendCorrection(db, registry, { sessionId: o.sessionId, outputId: id, field: "value", before: o.value, after: value, reason });
-  });
+  }));
 }
 
 /** Sets the goals an output counts toward (T-049, T-137); after the session ended it is a correction with history (T-131). */
 export async function setOutputGoals(db: LocalDb, id: string, goalIds: string[], reason: string | null = null, registry: Registry = PRODUCT_REGISTRY): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const o = await liveOutput(db, id);
     const s = await sessionOfOutput(db, o);
     await checkOutputGoals(db, o.definitionId, goalIds);
@@ -718,30 +796,30 @@ export async function setOutputGoals(db: LocalDb, id: string, goalIds: string[],
     if (JSON.stringify(before) === JSON.stringify(after)) return;
     await putRecord(db, registry, OUTPUT_RECORDS, id, { ...o, goalIds: [...goalIds] });
     if (s.endedAt !== null) await appendCorrection(db, registry, { sessionId: o.sessionId, outputId: id, field: "goals", before, after, reason });
-  });
+  }));
 }
 
 /** Deletes one output on its own (T-143, T-153): to the trash for 30 days, recorded in history, no longer counted. */
 export async function deleteOutput(db: LocalDb, id: string, reason: string | null = null, now: number = Date.now(), registry: Registry = PRODUCT_REGISTRY): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const o = await get<OutputRecordData>(db, OUTPUT_RECORDS, id);
     if (o.deletedAt !== null) return;
     await sessionOfOutput(db, o);
     await putRecord(db, registry, OUTPUT_RECORDS, id, { ...o, deletedAt: new Date(now).toISOString() });
     await appendCorrection(db, registry, { sessionId: o.sessionId, outputId: id, field: "deleted", before: o.value, after: null, reason });
-  });
+  }));
 }
 
 /** Restores a separately deleted output within 30 days (T-153, T-160); its session must not be in the trash. */
 export async function restoreOutput(db: LocalDb, id: string, now: number = Date.now(), registry: Registry = PRODUCT_REGISTRY): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const o = await get<OutputRecordData>(db, OUTPUT_RECORDS, id);
     if (o.deletedAt === null) throw new WorkError("NOT_DELETED", "the output is not in the trash");
     if (now - Date.parse(o.deletedAt) > TRASH_MS) throw new WorkError("TRASH_EXPIRED", "more than 30 days in the trash");
     await sessionOfOutput(db, o);
     await putRecord(db, registry, OUTPUT_RECORDS, id, { ...o, deletedAt: null });
     await appendCorrection(db, registry, { sessionId: o.sessionId, outputId: id, field: "restored", before: null, after: o.value, reason: null });
-  });
+  }));
 }
 
 /* ---------- trash ---------- */
@@ -952,7 +1030,7 @@ export async function completeTask(
   now: number = Date.now(),
   registry: Registry = PRODUCT_REGISTRY,
 ): Promise<string> {
-  return db.transaction("rw", tables(db), async () => {
+  return db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const task = await get<TaskDefinitionData>(db, TASK_DEFINITIONS, taskId);
     const occurrenceDate = input.occurrenceDate ?? null;
     if (task.recurrence) {
@@ -972,18 +1050,18 @@ export async function completeTask(
     const data: TaskCompletionData = { taskId, occurrenceDate, completedAt: new Date(now).toISOString(), goalId, reopenedAt: null };
     await putRecord(db, registry, TASK_COMPLETIONS, id, data);
     return id;
-  });
+  }));
 }
 
 /** Reopens a completed one-off task or one occurrence: its task-count progress is reversed (T-133, T-147). */
 export async function reopenTask(db: LocalDb, taskId: string, occurrenceDate: string | null = null, now: number = Date.now(), registry: Registry = PRODUCT_REGISTRY): Promise<void> {
-  await db.transaction("rw", tables(db), async () => {
+  await db.transaction("rw", tables(db), afterWork(db, registry, async () => {
     const id = completionId(taskId, occurrenceDate);
     const row = await db.records.get([TASK_COMPLETIONS, id]);
     const data = row?.data as TaskCompletionData | undefined;
     if (!data || data.reopenedAt !== null) throw new WorkError("NOT_COMPLETED", "not completed");
     await putRecord(db, registry, TASK_COMPLETIONS, id, { ...data, reopenedAt: new Date(now).toISOString() });
-  });
+  }));
 }
 
 /* ---------- import of open sessions (T-144, T-152) ---------- */

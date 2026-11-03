@@ -39,6 +39,8 @@ export interface RecordTypeDef {
   singletonDefault?: Record<string, unknown>;
   /** Append-only history: data never changes after creation. */
   appendOnly?: boolean;
+  /** Records of this type are never deleted, so a file holding a tombstone for one is refused. */
+  noTombstones?: boolean;
   /** `dataSchemaVersion` that introduced this type (default 1); older files may not contain it. */
   sinceDataSchemaVersion?: number;
   /**
@@ -372,8 +374,23 @@ const calendarBlockV3Schema = z.object(calendarBlockV3Shape).strict().superRefin
  * Plans only: no completion or actual time. Data schema version 6 adds the optional
  * `expectedOutputs` (T-141, T-150), absent when none — a plan, never an output.
  */
+const calendarBlockV6Shape = { ...calendarBlockV3Shape, expectedOutputs: expectedOutputsShape(1).optional() };
+
+/** A block as written by data schema versions 6 and 7 (no comparison plan). */
+const calendarBlockV6Schema = z.object(calendarBlockV6Shape).strict().superRefine(checkBlock);
+
+/**
+ * The plan used for the planned-versus-actual comparison when it differs from the current times
+ * (T-179): the block's times and status just before the first edit made after its scheduled start.
+ */
+const comparisonPlanSchema = z
+  .object({ startsAt: minuteInstantSchema, endsAt: minuteInstantSchema, status: z.enum(["planned", "cancelled"]) })
+  .strict()
+  .refine((p) => Date.parse(p.endsAt) > Date.parse(p.startsAt), { message: "comparisonPlan.endsAt must be after startsAt" });
+
+/** Data schema version 8 adds the optional `comparisonPlan` (T-179), absent when the current times apply. */
 export const calendarBlockSchema = z
-  .object({ ...calendarBlockV3Shape, expectedOutputs: expectedOutputsShape(1).optional() })
+  .object({ ...calendarBlockV6Shape, comparisonPlan: comparisonPlanSchema.optional() })
   .strict()
   .superRefine(checkBlock);
 export type CalendarBlockData = z.infer<typeof calendarBlockSchema>;
@@ -389,7 +406,10 @@ export const calendarBlocksType: RecordTypeDef = {
   // A block's task is part of its identity (owner, T-171): sessions linked to it belong to that task (T-094, T-135).
   immutableFields: ["taskId"],
   sinceDataSchemaVersion: 3,
-  olderSchemas: [{ untilDataSchemaVersion: 5, schema: calendarBlockV3Schema as unknown as RecordTypeDef["schema"] }],
+  olderSchemas: [
+    { untilDataSchemaVersion: 5, schema: calendarBlockV3Schema as unknown as RecordTypeDef["schema"] },
+    { untilDataSchemaVersion: 7, schema: calendarBlockV6Schema as unknown as RecordTypeDef["schema"] },
+  ],
 };
 
 /* ---------- Stage 4: goals and milestones (dataSchemaVersion 4) ---------- */
@@ -446,16 +466,88 @@ const goalV4Schema = z
  * it has `definitionId` or a legacy `unit` (or both); goals created from Stage 5 on omit `unit`,
  * and a stored legacy unit is never rewritten (T-161). Other kinds have neither.
  */
-export const goalSchema = z
-  .object({ ...goalV4Shape, definitionId: z.uuid().optional() })
+function checkGoalDefinition(g: { kind: GoalKind; unit?: string; definitionId?: string }, ctx: z.RefinementCtx) {
+  if (g.kind === "output" && g.unit === undefined && g.definitionId === undefined) {
+    ctx.addIssue({ code: "custom", message: "an output goal needs a definition or a unit" });
+  }
+  if (g.kind !== "output" && (g.unit !== undefined || g.definitionId !== undefined)) {
+    ctx.addIssue({ code: "custom", message: "only output goals have a unit or an output definition" });
+  }
+}
+
+const goalV6Shape = { ...goalV4Shape, definitionId: z.uuid().optional() };
+
+/** A goal as written by data schema versions 6 and 7 (no workdays, cap, or history). */
+const goalV6Schema = z
+  .object(goalV6Shape)
   .strict()
   .superRefine((g, ctx) => {
     checkGoalBasics(g, ctx);
-    if (g.kind === "output" && g.unit === undefined && g.definitionId === undefined) {
-      ctx.addIssue({ code: "custom", message: "an output goal needs a definition or a unit" });
-    }
-    if (g.kind !== "output" && (g.unit !== undefined || g.definitionId !== undefined)) {
-      ctx.addIssue({ code: "custom", message: "only output goals have a unit or an output definition" });
+    checkGoalDefinition(g, ctx);
+  });
+
+/** Distinct weekdays in ascending order (0 = Sunday … 6 = Saturday). */
+export const weekdayListSchema = z
+  .array(z.number().int().min(0).max(6))
+  .max(7)
+  .refine((days) => days.every((d, i) => i === 0 || d > days[i - 1]!), { message: "weekdays must be distinct and ascending" });
+
+/**
+ * One plan of a goal and the local date it took effect (T-182). The last entry is the current
+ * plan; an earlier one applied from its date until the next entry's date.
+ */
+const goalPlanEntrySchema = z
+  .object({
+    effectiveFrom: localDateSchema,
+    target: z.number().int().min(1),
+    deadline: localDateSchema.nullable(),
+    workdays: weekdayListSchema,
+    dailyCap: z.number().int().min(1).nullable(),
+  })
+  .strict();
+export type GoalPlanEntry = z.infer<typeof goalPlanEntrySchema>;
+
+/**
+ * Status and archive state from a local date on (derived for T-185: paused and archived periods
+ * are not opportunities). The last entry is the current state.
+ */
+const goalStatusEntrySchema = z.object({ from: localDateSchema, status: z.enum(GOAL_STATUSES), archived: z.boolean() }).strict();
+export type GoalStatusEntry = z.infer<typeof goalStatusEntrySchema>;
+
+const datedList = <T extends z.ZodType>(item: T, key: string) =>
+  z
+    .array(item)
+    .min(1)
+    .max(1_000)
+    .refine((list) => list.every((e, i) => i === 0 || (e as Record<string, string>)[key]! > (list[i - 1] as Record<string, string>)[key]!), {
+      message: `${key} dates must be ascending and distinct`,
+    });
+
+/**
+ * A goal (T-037 to T-065, T-077 to T-087): one overall target of a fixed kind (`time` in whole
+ * minutes), a date range, and a status. Archive is separate from status, so restoring returns to
+ * the pre-archive status (T-065). No progress is stored (derived, T-116). Data schema version 6:
+ * an output goal tracks one output definition (`definitionId`, T-137) whose unit it shows (T-154);
+ * it has `definitionId` or a legacy `unit` (or both); goals created from Stage 5 on omit `unit`,
+ * and a stored legacy unit is never rewritten (T-161). Other kinds have neither. Data schema
+ * version 8 (Stage 6) adds the optional `workdays` (selected weekdays, T-180), `dailyCap` (T-183),
+ * `planHistory` (T-182), and `statusHistory`, each absent when unused (T-025).
+ */
+export const goalSchema = z
+  .object({
+    ...goalV6Shape,
+    workdays: weekdayListSchema.refine((d) => d.length > 0, { message: "at least one workday" }).optional(),
+    dailyCap: z.number().int().min(1).optional(),
+    planHistory: datedList(goalPlanEntrySchema, "effectiveFrom").optional(),
+    statusHistory: datedList(goalStatusEntrySchema, "from").optional(),
+  })
+  .strict()
+  .superRefine((g, ctx) => {
+    checkGoalBasics(g, ctx);
+    checkGoalDefinition(g, ctx);
+    if (g.dailyCap !== undefined && g.dailyCap > TARGET_MAX[g.kind]) ctx.addIssue({ code: "custom", message: "dailyCap out of range" });
+    for (const p of g.planHistory ?? []) {
+      if (p.target > TARGET_MAX[g.kind] || (p.dailyCap !== null && p.dailyCap > TARGET_MAX[g.kind])) ctx.addIssue({ code: "custom", message: "plan history out of range" });
     }
   });
 export type GoalData = z.infer<typeof goalSchema>;
@@ -482,7 +574,10 @@ export const goalsType: RecordTypeDef = {
   ],
   sinceDataSchemaVersion: 4,
   immutableFields: ["kind"],
-  olderSchemas: [{ untilDataSchemaVersion: 5, schema: goalV4Schema as unknown as RecordTypeDef["schema"] }],
+  olderSchemas: [
+    { untilDataSchemaVersion: 5, schema: goalV4Schema as unknown as RecordTypeDef["schema"] },
+    { untilDataSchemaVersion: 7, schema: goalV6Schema as unknown as RecordTypeDef["schema"] },
+  ],
 };
 
 /** A milestone belongs to one goal for its whole life (T-083). */
@@ -515,8 +610,7 @@ const instantSchema = z.iso.datetime();
  * energy/focus ratings, and the deletion state of the trash (T-103, T-142). Every field is
  * present; `null` means none (new type, T-109). No end status (T-098).
  */
-export const sessionSchema = z
-  .object({
+const sessionV6Shape = {
     taskId: z.uuid().nullable(),
     blockId: z.uuid().nullable(),
     startedAt: minuteInstantSchema,
@@ -532,9 +626,9 @@ export const sessionSchema = z
     energy: z.number().int().min(RATING_MIN).max(RATING_MAX).nullable(),
     focus: z.number().int().min(RATING_MIN).max(RATING_MAX).nullable(),
     deletedAt: instantSchema.nullable(),
-  })
-  .strict()
-  .superRefine((s, ctx) => {
+};
+
+function checkSession(s: z.infer<z.ZodObject<typeof sessionV6Shape>> & { occurrenceDate?: string }, ctx: z.RefinementCtx) {
     const problem = sessionTimesProblem(s);
     if (problem) ctx.addIssue({ code: "custom", message: problem });
     if (s.blockId !== null && s.taskId === null) ctx.addIssue({ code: "custom", message: "a block link needs a task" });
@@ -542,7 +636,17 @@ export const sessionSchema = z
     if (isValidTimeZone(s.timeZone) && isLocalDate(s.localDate) && localDateOf(s.startedAt, s.timeZone) !== s.localDate) {
       ctx.addIssue({ code: "custom", message: "localDate must be the local date of startedAt in timeZone" });
     }
-  });
+    if (s.occurrenceDate !== undefined && s.taskId === null) ctx.addIssue({ code: "custom", message: "an occurrence needs a task" });
+}
+
+/** A session as written by data schema versions 6 and 7 (no occurrence). */
+const sessionV6Schema = z.object(sessionV6Shape).strict().superRefine(checkSession);
+
+/** Data schema version 8 adds the optional `occurrenceDate` of a recurring task (T-190), absent when unassigned. */
+export const sessionSchema = z
+  .object({ ...sessionV6Shape, occurrenceDate: localDateSchema.optional() })
+  .strict()
+  .superRefine(checkSession);
 export type SessionData = z.infer<typeof sessionSchema>;
 
 /**
@@ -687,6 +791,7 @@ export const sessionsType: RecordTypeDef = {
   ],
   sinceDataSchemaVersion: 6,
   rule: sessionRule,
+  olderSchemas: [{ untilDataSchemaVersion: 7, schema: sessionV6Schema as unknown as RecordTypeDef["schema"] }],
 };
 
 export const outputDefinitionsType: RecordTypeDef = {
@@ -732,6 +837,235 @@ export const taskCompletionsType: RecordTypeDef = {
   rule: taskCompletionRule,
 };
 
+/* ---------- Stage 6: comparison, pace, estimates, dashboards (dataSchemaVersion 8) ---------- */
+
+export const TASK_ESTIMATE_CAPTURES = "taskEstimateCaptures";
+export const DASHBOARDS = "dashboards";
+export const APP_USE_DAYS = "appUseDays";
+export const GOAL_WEEK_ALLOCATIONS = "goalWeekAllocations";
+export const GOAL_WEEK_PLANS = "goalWeekPlans";
+export const GOAL_WEEK_PLAN_CHOICES = "goalWeekPlanChoices";
+
+/**
+ * The estimate of one task occurrence (`occurrenceDate` null for a one-off task), captured when it
+ * is first planned or, if unplanned, when its first session starts (T-189). Never back-filled and
+ * never edited by the app; its ID is derived from the task and the date.
+ */
+export const taskEstimateCaptureSchema = z
+  .object({
+    taskId: z.uuid(),
+    occurrenceDate: localDateSchema.nullable(),
+    estimateMinutes: z.number().int().min(1).max(ESTIMATE_MAX_MINUTES),
+    capturedAt: instantSchema,
+    source: z.enum(["plan", "session"]),
+  })
+  .strict();
+export type TaskEstimateCaptureData = z.infer<typeof taskEstimateCaptureSchema>;
+
+/** Built-in metrics a dashboard card can show (T-197): a closed catalog, so no formula is stored. */
+export const METRIC_IDS = [
+  "appUseStreak",
+  "workTime",
+  "plannedVsActual",
+  "completions",
+  "estimateAccuracy",
+  "outputRate",
+  "goalProgress",
+  "goalStreaks",
+] as const;
+export type MetricId = (typeof METRIC_IDS)[number];
+export const CARD_SIZES = ["small", "medium", "large"] as const;
+export type CardSize = (typeof CARD_SIZES)[number];
+export const WINDOW_PRESETS = ["today", "last7", "last30", "last90", "thisWeek", "lastWeek", "thisMonth", "lastMonth", "all"] as const;
+export type WindowPreset = (typeof WINDOW_PRESETS)[number];
+
+/** A card's own date window (T-200): a preset or a custom inclusive range of local dates. */
+export const cardWindowSchema = z.union([
+  z.object({ kind: z.literal("preset"), preset: z.enum(WINDOW_PRESETS) }).strict(),
+  z
+    .object({ kind: z.literal("custom"), from: localDateSchema, to: localDateSchema })
+    .strict()
+    .refine((w) => w.to >= w.from, { message: "window.to must not be before from" }),
+]);
+export type CardWindow = z.infer<typeof cardWindowSchema>;
+
+/**
+ * A dashboard (T-197 to T-201): a name and its cards in order, each with a catalog metric, a size,
+ * its date window, and a goal for goal metrics. A card's goal is not a restricting link: a goal
+ * this device cannot find shows as unavailable.
+ */
+export const dashboardSchema = z
+  .object({
+    name: nameSchema,
+    cards: z
+      .array(
+        z
+          .object({ id: z.uuid(), metric: z.enum(METRIC_IDS), size: z.enum(CARD_SIZES), window: cardWindowSchema, goalId: z.uuid().nullable() })
+          .strict(),
+      )
+      .max(60)
+      .refine((cards) => new Set(cards.map((c) => c.id)).size === cards.length, { message: "card IDs must be distinct" }),
+  })
+  .strict();
+export type DashboardData = z.infer<typeof dashboardSchema>;
+export type DashboardCard = DashboardData["cards"][number];
+
+/** Reserved ID of the main dashboard, so two devices never create two of them (derived, T-198). */
+export const MAIN_DASHBOARD_ID = "00000000-0000-4000-8000-000000000002";
+
+/** One local date on which the app was used (T-203 to T-205); its ID is derived from the date. */
+export const appUseDaySchema = z.object({ date: localDateSchema }).strict();
+export type AppUseDayData = z.infer<typeof appUseDaySchema>;
+
+/** Largest numerator or denominator of an exact allocation fraction. */
+const FRACTION_MAX = 1e15;
+const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+
+/** An exact, reduced, non-negative fraction (an allocation is never rounded, derived). */
+export const fractionSchema = z
+  .object({ num: z.number().int().min(0).max(FRACTION_MAX), den: z.number().int().min(1).max(FRACTION_MAX) })
+  .strict()
+  .refine((f) => gcd(f.num, f.den) === 1 || (f.num === 0 && f.den === 1), { message: "a fraction must be reduced" });
+
+/**
+ * A week's plan from one date on (T-208, T-217): allocated with its exact amount, a mismatch
+ * (T-207), inactive without a deadline or workdays (T-213), or none (no workday in the goal's
+ * dates); `source` says whether the week had a manual amount.
+ */
+export const segmentSchema = z
+  .object({
+    state: z.enum(["allocated", "mismatch", "inactive", "none"]),
+    allocation: fractionSchema.nullable(),
+    source: z.enum(["manual", "automatic"]),
+  })
+  .strict()
+  .refine((s) => (s.state === "allocated") === (s.allocation !== null), { message: "an allocation is present exactly when allocated" });
+export type SegmentData = z.infer<typeof segmentSchema>;
+
+/** Counters a device had seen of other devices' entries for one date (T-227 to T-229). */
+const seenSchema = z.record(z.uuid(), z.number().int().min(1).max(1_000_000_000));
+
+const planEntrySchema = z
+  .object({ device: z.uuid(), seq: z.number().int().min(1).max(1_000_000_000), segment: segmentSchema, seen: seenSchema })
+  .strict()
+  .refine((e) => !(e.device in e.seen), { message: "an entry does not list its own device as seen" });
+export type PlanEntryData = z.infer<typeof planEntrySchema>;
+
+/** Manual allocation history of one goal and calendar week (T-206, T-218, T-224); `null` = automatic. */
+export const goalWeekAllocationSchema = z
+  .object({
+    goalId: z.uuid(),
+    weekStart: localDateSchema,
+    revisions: z
+      .array(z.object({ from: localDateSchema, amount: z.number().int().min(0).max(OUTPUT_VALUE_MAX).nullable() }).strict())
+      .min(1)
+      .max(1_000)
+      .refine((list) => list.every((r, i) => i === 0 || r.from > list[i - 1]!.from), { message: "revision dates must be ascending and distinct" }),
+  })
+  .strict();
+export type GoalWeekAllocationData = z.infer<typeof goalWeekAllocationSchema>;
+
+/**
+ * The recorded plan of one goal and calendar week (DECISIONS "Segment merge"): per effective date,
+ * one entry per device and the `options` that have been conflict candidates. Kept in a fixed order
+ * (dates, then devices; options by canonical JSON), so equal content always has the same hash.
+ */
+export const goalWeekPlanSchema = z
+  .object({
+    goalId: z.uuid(),
+    weekStart: localDateSchema,
+    dates: z
+      .array(
+        z
+          .object({
+            from: localDateSchema,
+            entries: z
+              .array(planEntrySchema)
+              .min(1)
+              .max(32)
+              .refine((list) => list.every((e, i) => i === 0 || e.device > list[i - 1]!.device), { message: "entries must be sorted by distinct device" }),
+            options: z.array(segmentSchema).max(64),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(7)
+      .refine((list) => list.every((d, i) => i === 0 || d.from > list[i - 1]!.from), { message: "dates must be ascending and distinct" }),
+  })
+  .strict()
+  .superRefine((p, ctx) => {
+    if (!isLocalDate(p.weekStart)) return;
+    const last = new Date(Date.parse(`${p.weekStart}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
+    if (p.dates.some((d) => d.from < p.weekStart || d.from > last)) ctx.addIssue({ code: "custom", message: "a date lies outside its week" });
+  });
+export type GoalWeekPlanData = z.infer<typeof goalWeekPlanSchema>;
+export type PlanDateData = GoalWeekPlanData["dates"][number];
+
+/** One owner decision or change of choice for a weekly-plan date (T-237): history only, never applied. */
+export const goalWeekPlanChoiceSchema = z
+  .object({
+    goalId: z.uuid(),
+    weekStart: localDateSchema,
+    from: localDateSchema,
+    device: z.uuid(),
+    deviceName: z.string().max(80),
+    seq: z.number().int().min(1).max(1_000_000_000),
+    previous: segmentSchema.nullable(),
+    chosen: segmentSchema,
+    seen: seenSchema,
+    recordedAt: instantSchema,
+  })
+  .strict();
+export type GoalWeekPlanChoiceData = z.infer<typeof goalWeekPlanChoiceSchema>;
+
+export const taskEstimateCapturesType: RecordTypeDef = {
+  type: TASK_ESTIMATE_CAPTURES,
+  schema: taskEstimateCaptureSchema as unknown as RecordTypeDef["schema"],
+  links: [{ field: "taskId", target: TASK_DEFINITIONS }],
+  sinceDataSchemaVersion: 8,
+  immutableFields: ["taskId", "occurrenceDate"],
+};
+
+export const dashboardsType: RecordTypeDef = {
+  type: DASHBOARDS,
+  schema: dashboardSchema as unknown as RecordTypeDef["schema"],
+  links: [],
+  sinceDataSchemaVersion: 8,
+};
+
+export const appUseDaysType: RecordTypeDef = {
+  type: APP_USE_DAYS,
+  schema: appUseDaySchema as unknown as RecordTypeDef["schema"],
+  links: [],
+  sinceDataSchemaVersion: 8,
+  appendOnly: true,
+};
+
+export const goalWeekAllocationsType: RecordTypeDef = {
+  type: GOAL_WEEK_ALLOCATIONS,
+  schema: goalWeekAllocationSchema as unknown as RecordTypeDef["schema"],
+  links: [{ field: "goalId", target: GOALS }],
+  sinceDataSchemaVersion: 8,
+  immutableFields: ["goalId", "weekStart"],
+};
+
+export const goalWeekPlansType: RecordTypeDef = {
+  type: GOAL_WEEK_PLANS,
+  schema: goalWeekPlanSchema as unknown as RecordTypeDef["schema"],
+  links: [{ field: "goalId", target: GOALS }],
+  sinceDataSchemaVersion: 8,
+  immutableFields: ["goalId", "weekStart"],
+  noTombstones: true,
+};
+
+export const goalWeekPlanChoicesType: RecordTypeDef = {
+  type: GOAL_WEEK_PLAN_CHOICES,
+  schema: goalWeekPlanChoiceSchema as unknown as RecordTypeDef["schema"],
+  links: [{ field: "goalId", target: GOALS }],
+  sinceDataSchemaVersion: 8,
+  appendOnly: true,
+};
+
 /**
  * Record types allowed in format version 1 product backups. Later stages add their types here
  * (with schemas, links, and a new `dataSchemaVersion` when exported data changes).
@@ -749,6 +1083,12 @@ export const PRODUCT_REGISTRY = createRegistry([
   outputRecordsType,
   correctionsType,
   taskCompletionsType,
+  taskEstimateCapturesType,
+  dashboardsType,
+  appUseDaysType,
+  goalWeekAllocationsType,
+  goalWeekPlansType,
+  goalWeekPlanChoicesType,
 ]);
 
 /** Data of the frozen sync code; never exported, and a file containing it is refused. */

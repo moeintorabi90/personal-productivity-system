@@ -322,6 +322,8 @@ describe("12–13. block rules, editing, quick add (T-027, T-030, T-032, T-036)"
       timeZone: "Asia/Tokyo",
       localDate: "2026-11-03",
       snapshot: { ...before.snapshot, taskTitle: "Gym (evening)" },
+      // Cancelled after its scheduled start: the compared plan keeps the times before (T-179).
+      ...(Date.now() >= Date.parse(before.startsAt) ? { comparisonPlan: { startsAt: before.startsAt, endsAt: before.endsAt, status: "planned" } } : {}),
     });
     const version = (await blockRow(d.db, id)).version;
     await setBlockCancelled(d.db, id, true); // already cancelled: no write

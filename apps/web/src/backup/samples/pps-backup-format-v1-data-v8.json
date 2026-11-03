@@ -1,0 +1,615 @@
+{
+  "format": "pps-backup",
+  "formatVersion": 1,
+  "backupId": "8c1d2e3f-4a5b-4c6d-8e7f-90a1b2c3d4e5",
+  "createdAt": "2026-11-05T09:00:00.000Z",
+  "app": {
+    "version": "0.7.0",
+    "dataSchemaVersion": 8
+  },
+  "sourceDevice": {
+    "id": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+    "name": "A"
+  },
+  "encryption": null,
+  "payload": {
+    "records": {
+      "preferences": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "createdAt": "2026-11-02T08:00:00.000Z",
+          "updatedAt": "2026-11-02T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+          },
+          "contentHash": "a7996caa0dcb648963b359dad35229e0042eca9fe24c01dfc4884dc26b997c58",
+          "data": {
+            "timeZone": "UTC",
+            "weekStart": 1,
+            "calendarDisplay": "gregorian"
+          }
+        }
+      ],
+      "taskDefinitions": [
+        {
+          "id": "299c7ce1-f636-4e24-84c6-db0b25581a34",
+          "createdAt": "2026-11-05T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+          },
+          "contentHash": "40db22f6bd278a53ee30ad2df8af72c1660a83fbfc8462de391063e4ea5b5dec",
+          "data": {
+            "title": "Draft chapter",
+            "notes": "",
+            "projectId": null,
+            "workstreamId": null,
+            "nextAction": "",
+            "estimateMinutes": 90,
+            "archivedAt": null
+          }
+        }
+      ],
+      "calendarBlocks": [
+        {
+          "id": "bdb6edb7-219b-45c0-a91e-e8f8ca17d5c5",
+          "createdAt": "2026-11-05T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 2
+          },
+          "contentHash": "4a6c9758648a2295ead029653e3f45559e9db30dd854dc7ae997a122c6d594ca",
+          "data": {
+            "taskId": "299c7ce1-f636-4e24-84c6-db0b25581a34",
+            "startsAt": "2026-11-05T09:00:00.000Z",
+            "endsAt": "2026-11-05T10:30:00.000Z",
+            "timeZone": "UTC",
+            "localDate": "2026-11-05",
+            "occurrenceDate": null,
+            "status": "planned",
+            "snapshot": {
+              "taskTitle": "Draft chapter",
+              "projectId": null,
+              "projectName": null,
+              "workstreamId": null,
+              "workstreamName": null
+            },
+            "comparisonPlan": {
+              "startsAt": "2026-11-05T06:00:00.000Z",
+              "endsAt": "2026-11-05T07:00:00.000Z",
+              "status": "planned"
+            }
+          }
+        }
+      ],
+      "goals": [
+        {
+          "id": "a8a1b8eb-df3d-4784-b4cd-2a0ea6f32dfa",
+          "createdAt": "2026-11-05T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+          },
+          "contentHash": "c4995d8532004fd8e93d0d73684e61947f70977f81829b4ffd22ece8cbbda64f",
+          "data": {
+            "name": "Reading",
+            "description": "",
+            "projectId": null,
+            "startDate": "2026-11-02",
+            "deadline": null,
+            "kind": "taskCount",
+            "target": 20,
+            "status": "active",
+            "archivedAt": null
+          }
+        },
+        {
+          "id": "e188560b-d82f-47d9-9b59-ca089c17152e",
+          "createdAt": "2026-11-02T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 2
+          },
+          "contentHash": "7e5cde8fb10cdd44befc9d342aaa700935272044768596cce7cae08dee2c6390",
+          "data": {
+            "name": "Pages",
+            "description": "",
+            "projectId": null,
+            "startDate": "2026-11-02",
+            "deadline": "2026-11-22",
+            "kind": "taskCount",
+            "target": 600,
+            "status": "active",
+            "archivedAt": null,
+            "workdays": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "planHistory": [
+              {
+                "effectiveFrom": "2026-11-02",
+                "target": 600,
+                "deadline": "2026-11-29",
+                "workdays": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "dailyCap": null
+              },
+              {
+                "effectiveFrom": "2026-11-05",
+                "target": 600,
+                "deadline": "2026-11-22",
+                "workdays": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "dailyCap": null
+              }
+            ]
+          }
+        }
+      ],
+      "taskEstimateCaptures": [
+        {
+          "id": "5dd5620c-f86c-8771-b27d-4e5d16a416ea",
+          "createdAt": "2026-11-05T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+          },
+          "contentHash": "203f4e88acd00f7132faf9161d88171f620997dc1aca94ec9b099ef1b31ed3d4",
+          "data": {
+            "taskId": "299c7ce1-f636-4e24-84c6-db0b25581a34",
+            "occurrenceDate": null,
+            "estimateMinutes": 90,
+            "capturedAt": "2026-11-05T08:00:00.000Z",
+            "source": "plan"
+          }
+        }
+      ],
+      "dashboards": [
+        {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "createdAt": "2026-11-05T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+          },
+          "contentHash": "9eef39f423d55c8e0fbaa60c3629decea8d60227b12fcdc0bcf185b161ffb896",
+          "data": {
+            "name": "Main",
+            "cards": [
+              {
+                "id": "00000000-0000-4000-8000-0000000000a1",
+                "metric": "appUseStreak",
+                "size": "small",
+                "window": {
+                  "kind": "preset",
+                  "preset": "all"
+                },
+                "goalId": null
+              },
+              {
+                "id": "00000000-0000-4000-8000-0000000000a2",
+                "metric": "completions",
+                "size": "small",
+                "window": {
+                  "kind": "preset",
+                  "preset": "last7"
+                },
+                "goalId": null
+              },
+              {
+                "id": "00000000-0000-4000-8000-0000000000a3",
+                "metric": "workTime",
+                "size": "medium",
+                "window": {
+                  "kind": "preset",
+                  "preset": "last7"
+                },
+                "goalId": null
+              },
+              {
+                "id": "00000000-0000-4000-8000-0000000000a4",
+                "metric": "plannedVsActual",
+                "size": "medium",
+                "window": {
+                  "kind": "preset",
+                  "preset": "last7"
+                },
+                "goalId": null
+              },
+              {
+                "id": "00000000-0000-4000-8000-0000000000a5",
+                "metric": "estimateAccuracy",
+                "size": "medium",
+                "window": {
+                  "kind": "preset",
+                  "preset": "last30"
+                },
+                "goalId": null
+              },
+              {
+                "id": "00000000-0000-4000-8000-0000000000a6",
+                "metric": "outputRate",
+                "size": "large",
+                "window": {
+                  "kind": "preset",
+                  "preset": "last30"
+                },
+                "goalId": null
+              }
+            ]
+          }
+        }
+      ],
+      "appUseDays": [
+        {
+          "id": "0299a659-ae66-80b5-867a-6e9de0449535",
+          "createdAt": "2026-11-05T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+          },
+          "contentHash": "a77588bfdb6950bcd70627b663867dbbb665c21097e097d6e5d9b33bb830c4e9",
+          "data": {
+            "date": "2026-11-05"
+          }
+        },
+        {
+          "id": "216e504d-47f4-8337-b287-8995767a6442",
+          "createdAt": "2026-11-05T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+          },
+          "contentHash": "56f07f4334d934e5e30bf492cc56b0b41dc563f243d54ca4a2d2c1517ad10ec8",
+          "data": {
+            "date": "2026-11-04"
+          }
+        },
+        {
+          "id": "aa603ac2-9a43-860c-8536-9129c927e3c9",
+          "createdAt": "2026-11-05T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+          },
+          "contentHash": "f0f8b12e7918ccbcf8c5e1069353af2220b2276b09a010a3ce84c977fad08379",
+          "data": {
+            "date": "2026-11-03"
+          }
+        }
+      ],
+      "goalWeekAllocations": [
+        {
+          "id": "5ea6037f-b107-8623-9761-dd4135600030",
+          "createdAt": "2026-11-04T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 2
+          },
+          "contentHash": "ccbb4fbe156542fe66ebdd8407d3a876157afc8f265fd5138d549f4257878bd5",
+          "data": {
+            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+            "weekStart": "2026-11-16",
+            "revisions": [
+              {
+                "from": "2026-11-04",
+                "amount": 200
+              },
+              {
+                "from": "2026-11-05",
+                "amount": 150
+              }
+            ]
+          }
+        },
+        {
+          "id": "b8b5078c-306d-8eee-8c99-719391790c73",
+          "createdAt": "2026-11-04T08:00:00.000Z",
+          "updatedAt": "2026-11-04T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+          },
+          "contentHash": "0325a5e67a1c2a35ff0f1ba2b743de9bcd44904c9d595d969499310215f85272",
+          "data": {
+            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+            "weekStart": "2026-11-23",
+            "revisions": [
+              {
+                "from": "2026-11-04",
+                "amount": 50
+              }
+            ]
+          }
+        },
+        {
+          "id": "d90c9c5f-ab89-80f5-a177-068ad23d5837",
+          "createdAt": "2026-11-04T08:00:00.000Z",
+          "updatedAt": "2026-11-04T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 2
+          },
+          "contentHash": "cb0ec412d1ae55e660d4531c6795bcd08e02f428752ba3628510d6f794bdb86a",
+          "data": {
+            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+            "weekStart": "2026-11-09",
+            "revisions": [
+              {
+                "from": "2026-11-04",
+                "amount": null
+              }
+            ]
+          }
+        }
+      ],
+      "goalWeekPlans": [
+        {
+          "id": "2d852c9a-1e20-890b-8945-1fbdfee3d01a",
+          "createdAt": "2026-11-02T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 9,
+            "2f5e437e-af0a-4fae-b29b-e159fa90a5e2": 3
+          },
+          "contentHash": "ed013a52d2c98a3d0d024300c8cee7595afbc150158b126675c3d8751da2840f",
+          "data": {
+            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+            "weekStart": "2026-11-02",
+            "dates": [
+              {
+                "from": "2026-11-02",
+                "entries": [
+                  {
+                    "device": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+                    "seq": 1,
+                    "segment": {
+                      "state": "allocated",
+                      "allocation": {
+                        "num": 150,
+                        "den": 1
+                      },
+                      "source": "automatic"
+                    },
+                    "seen": {}
+                  }
+                ],
+                "options": []
+              },
+              {
+                "from": "2026-11-04",
+                "entries": [
+                  {
+                    "device": "2f5e437e-af0a-4fae-b29b-e159fa90a5e2",
+                    "seq": 2,
+                    "segment": {
+                      "state": "allocated",
+                      "allocation": {
+                        "num": 500,
+                        "den": 3
+                      },
+                      "source": "automatic"
+                    },
+                    "seen": {
+                      "ab74ec63-08e0-4d4f-9827-59734a7e9618": 5
+                    }
+                  },
+                  {
+                    "device": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+                    "seq": 5,
+                    "segment": {
+                      "state": "allocated",
+                      "allocation": {
+                        "num": 175,
+                        "den": 1
+                      },
+                      "source": "automatic"
+                    },
+                    "seen": {
+                      "2f5e437e-af0a-4fae-b29b-e159fa90a5e2": 1
+                    }
+                  }
+                ],
+                "options": [
+                  {
+                    "state": "allocated",
+                    "allocation": {
+                      "num": 175,
+                      "den": 1
+                    },
+                    "source": "automatic"
+                  },
+                  {
+                    "state": "allocated",
+                    "allocation": {
+                      "num": 500,
+                      "den": 3
+                    },
+                    "source": "automatic"
+                  }
+                ]
+              },
+              {
+                "from": "2026-11-05",
+                "entries": [
+                  {
+                    "device": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+                    "seq": 1,
+                    "segment": {
+                      "state": "mismatch",
+                      "allocation": null,
+                      "source": "automatic"
+                    },
+                    "seen": {}
+                  }
+                ],
+                "options": []
+              }
+            ]
+          }
+        }
+      ],
+      "goalWeekPlanChoices": [
+        {
+          "id": "75630a2b-13af-8627-b76d-5524baa27414",
+          "createdAt": "2026-11-04T10:00:00.000Z",
+          "updatedAt": "2026-11-04T10:00:00.000Z",
+          "version": {
+            "2f5e437e-af0a-4fae-b29b-e159fa90a5e2": 1
+          },
+          "contentHash": "b4af6e413c2a6ef5dadb04c515ffe21094ea2917517561da6e02850ae9ce4d82",
+          "data": {
+            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+            "weekStart": "2026-11-02",
+            "from": "2026-11-04",
+            "device": "2f5e437e-af0a-4fae-b29b-e159fa90a5e2",
+            "deviceName": "B",
+            "seq": 2,
+            "previous": {
+              "state": "allocated",
+              "allocation": {
+                "num": 175,
+                "den": 1
+              },
+              "source": "automatic"
+            },
+            "chosen": {
+              "state": "allocated",
+              "allocation": {
+                "num": 500,
+                "den": 3
+              },
+              "source": "automatic"
+            },
+            "seen": {
+              "ab74ec63-08e0-4d4f-9827-59734a7e9618": 5
+            },
+            "recordedAt": "2026-11-04T10:00:00.000Z"
+          }
+        },
+        {
+          "id": "80e331ab-217a-841b-9ca3-8387c86d688f",
+          "createdAt": "2026-11-04T08:00:00.000Z",
+          "updatedAt": "2026-11-04T08:00:00.000Z",
+          "version": {
+            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+          },
+          "contentHash": "324b0db80d984df86414a57c5a7c8fe0d2b80630bc629affb5cd7aeb60c4343f",
+          "data": {
+            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+            "weekStart": "2026-11-02",
+            "from": "2026-11-04",
+            "device": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+            "deviceName": "A",
+            "seq": 5,
+            "previous": {
+              "state": "allocated",
+              "allocation": {
+                "num": 175,
+                "den": 1
+              },
+              "source": "automatic"
+            },
+            "chosen": {
+              "state": "allocated",
+              "allocation": {
+                "num": 175,
+                "den": 1
+              },
+              "source": "automatic"
+            },
+            "seen": {
+              "2f5e437e-af0a-4fae-b29b-e159fa90a5e2": 1
+            },
+            "recordedAt": "2026-11-04T08:00:00.000Z"
+          }
+        }
+      ]
+    },
+    "tombstones": [],
+    "pendingConflicts": [
+      {
+        "conflictId": "4f811953-e1fa-4e05-9a25-c411c9ea52e8",
+        "kind": "edit",
+        "type": "goalWeekAllocations",
+        "id": "b8b5078c-306d-8eee-8c99-719391790c73",
+        "local": {
+          "deleted": false,
+          "envelope": {
+            "id": "b8b5078c-306d-8eee-8c99-719391790c73",
+            "createdAt": "2026-11-04T08:00:00.000Z",
+            "updatedAt": "2026-11-04T08:00:00.000Z",
+            "version": {
+              "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+            },
+            "contentHash": "0325a5e67a1c2a35ff0f1ba2b743de9bcd44904c9d595d969499310215f85272",
+            "data": {
+              "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+              "weekStart": "2026-11-23",
+              "revisions": [
+                {
+                  "from": "2026-11-04",
+                  "amount": 50
+                }
+              ]
+            }
+          }
+        },
+        "incoming": {
+          "deleted": false,
+          "envelope": {
+            "id": "b8b5078c-306d-8eee-8c99-719391790c73",
+            "createdAt": "2026-11-04T08:00:00.000Z",
+            "updatedAt": "2026-11-04T08:00:00.000Z",
+            "version": {
+              "2f5e437e-af0a-4fae-b29b-e159fa90a5e2": 1
+            },
+            "contentHash": "56c24cdccf5b68f0df459d39d069fe96afaa51ad14f24888557b23f4f5c244be",
+            "data": {
+              "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+              "weekStart": "2026-11-23",
+              "revisions": [
+                {
+                  "from": "2026-11-04",
+                  "amount": 100
+                }
+              ]
+            }
+          }
+        },
+        "source": {
+          "backupId": "940166bd-455b-4238-8ba6-a7ae174adcd1",
+          "deviceId": "2f5e437e-af0a-4fae-b29b-e159fa90a5e2",
+          "deviceName": "B",
+          "exportedAt": "2026-11-04T08:00:00.000Z"
+        },
+        "detectedAt": "2026-11-04T08:00:00.000Z",
+        "detectedOn": {
+          "deviceId": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+          "deviceName": "A"
+        }
+      }
+    ],
+    "replacedVersions": [],
+    "sourceDeviceSettings": {
+      "language": "en",
+      "theme": "system"
+    }
+  },
+  "integrity": {
+    "algorithm": "SHA-256",
+    "canonicalization": "JCS-RFC8785",
+    "hash": "efb80cb5e36c95e094153f1ab1a003593b301bde4528ef6b65c7fb486ec1fdca"
+  }
+}

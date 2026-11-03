@@ -59,7 +59,7 @@ describe("an imported running session across further backups (T-173)", () => {
 
     const second = await exportAt(b, time("11:00"));
     const doc = JSON.parse(second);
-    expect(doc.app.dataSchemaVersion).toBe(7);
+    expect(doc.app.dataSchemaVersion).toBe(8);
     expect(doc.payload.importedSessionPauses).toEqual([{ sessionId: session, pausedFrom: time("07:00").toISOString() }]);
     expect(doc.payload.records[SESSIONS][0].data.pauses).toEqual([]);
 

@@ -5,8 +5,20 @@ import { importedMarkOf, markImportedSessions, pauseOfVersion } from "../local/w
 import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
 import type { BackupHeader, BackupPayload } from "./format.ts";
-import { type DataLookup, GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry, SESSIONS } from "./registry.ts";
-import { compareVersions, isContainedIn } from "./versions.ts";
+import {
+  APP_USE_DAYS,
+  type DataLookup,
+  GOAL_WEEK_PLANS,
+  GOALS,
+  type GoalWeekPlanData,
+  linkTargets,
+  OUTPUT_RECORDS,
+  outputsMisfittingGoal,
+  type Registry,
+  SESSIONS,
+} from "./registry.ts";
+import { compareVersions, isContainedIn, mergeVersions, bumpVersion } from "./versions.ts";
+import { conflictDates, mergePlans } from "../insights/plan-merge.ts";
 
 /** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
 export type ItemCategory =
@@ -19,7 +31,9 @@ export type ItemCategory =
   | "deletedHere"
   | "deletedInBackup"
   | "history"
-  | "alreadyPending";
+  | "alreadyPending"
+  /** A weekly plan already here, newer or concurrent: merged date by date with "Apply updates" (T-227, T-229). */
+  | "planMerge";
 
 export interface PreviewItem {
   type: string;
@@ -27,9 +41,22 @@ export interface PreviewItem {
   category: ItemCategory;
   incoming: VersionEntry;
   local: VersionEntry | null;
+  /**
+   * For "planMerge": the merged data (null: the same device and counter with different content, an
+   * integrity issue, so nothing changes) and how many dates would newly need the owner's decision.
+   */
+  planMerge?: { data: GoalWeekPlanData | null; decisions: number };
 }
 
-export type PreviewCounts = Record<ItemCategory | "carriedConflicts" | "carriedReplaced", number>;
+/**
+ * Preview counts. Weekly plans to merge, the dates they would leave to the owner, and plans with an
+ * integrity issue have counts of their own; new app-use dates are counted apart from other new
+ * records (T-204); `planDecisions` also counts undecided dates arriving in new plans (T-228).
+ */
+export type PreviewCounts = Record<
+  ItemCategory | "carriedConflicts" | "carriedReplaced" | "planDecisions" | "planIntegrity" | "appUseDates",
+  number
+>;
 
 export interface ImportPreview {
   header: BackupHeader;
@@ -74,8 +101,12 @@ function emptyCounts(): PreviewCounts {
     deletedInBackup: 0,
     history: 0,
     alreadyPending: 0,
+    planMerge: 0,
     carriedConflicts: 0,
     carriedReplaced: 0,
+    planDecisions: 0,
+    planIntegrity: 0,
+    appUseDates: 0,
   };
 }
 
@@ -119,7 +150,7 @@ async function loadLocal(db: LocalDb, keys: [string, string][]): Promise<Map<str
 }
 
 /** Classifies one incoming record version against this device's state. */
-function classifyRecord(incoming: Envelope, local: LocalState, appendOnly: boolean): ItemCategory {
+function classifyRecord(incoming: Envelope, local: LocalState, appendOnly: boolean, mergeByDate = false): ItemCategory {
   const entry: VersionEntry = { deleted: false, envelope: incoming };
   if (local.pending.some((p) => sameEntry(p.incoming, entry))) return "alreadyPending";
   if (local.record) {
@@ -127,6 +158,7 @@ function classifyRecord(incoming: Envelope, local: LocalState, appendOnly: boole
     const order = compareVersions(incoming.version, local.record.version);
     if (order === "before") return "olderCopy";
     if (appendOnly) return "history"; // history data never changes: a difference is an integrity issue
+    if (mergeByDate) return "planMerge"; // weekly plans: never a whole-record conflict (T-227)
     if (order === "after") return "newerInBackup";
     return "conflict"; // concurrent, or equal versions with different content
   }
@@ -344,13 +376,20 @@ async function classifyAll(db: LocalDb, payload: BackupPayload, registry: Regist
     const appendOnly = !!registry.get(type)!.appendOnly;
     for (const envelope of list) {
       const state = local.get(`${type}/${envelope.id}`)!;
-      items.push({
+      const item: PreviewItem = {
         type,
         id: envelope.id,
-        category: classifyRecord(envelope, state, appendOnly),
+        category: classifyRecord(envelope, state, appendOnly, type === GOAL_WEEK_PLANS),
         incoming: { deleted: false, envelope },
         local: localEntry(state),
-      });
+      };
+      if (item.category === "planMerge") {
+        const here = state.record!.data as GoalWeekPlanData;
+        const merged = mergePlans(here, envelope.data as GoalWeekPlanData);
+        const before = new Set(conflictDates(here));
+        item.planMerge = { data: merged, decisions: merged ? conflictDates(merged).filter((d) => !before.has(d)).length : 0 };
+      }
+      items.push(item);
     }
   }
   for (const tombstone of payload.tombstones) {
@@ -386,7 +425,15 @@ async function carriedCounts(db: LocalDb, payload: BackupPayload): Promise<{ con
 
 function countItems(items: PreviewItem[], carried: { conflicts: unknown[]; replaced: unknown[] }): PreviewCounts {
   const counts = emptyCounts();
-  for (const item of items) counts[item.category] += 1;
+  for (const item of items) {
+    if (item.category === "new" && item.type === APP_USE_DAYS) counts.appUseDates += 1;
+    else if (item.category === "planMerge" && item.planMerge?.data === null) counts.planIntegrity += 1;
+    else counts[item.category] += 1;
+    if (item.planMerge) counts.planDecisions += item.planMerge.decisions;
+    if (item.category === "new" && item.type === GOAL_WEEK_PLANS && !item.incoming.deleted) {
+      counts.planDecisions += conflictDates(item.incoming.envelope.data as GoalWeekPlanData).length;
+    }
+  }
   counts.carriedConflicts = carried.conflicts.length;
   counts.carriedReplaced = carried.replaced.length;
   return counts;
@@ -498,6 +545,28 @@ export async function applyImport(
           written.push({ type: item.type, id: item.id, data: incoming.envelope.data });
           appliedUpdates++;
           break;
+        case "planMerge": {
+          // Merged only with "Apply updates" (T-229); otherwise nothing of the incoming plan is written.
+          if (!choices.applyUpdates || incoming.deleted || !item.local || item.local.deleted) {
+            skippedUpdates++;
+            break;
+          }
+          const merged = item.planMerge?.data;
+          if (!merged) break; // integrity issue: shown, nothing changes
+          const local = item.local.envelope;
+          const version = mergeVersions(local.version, incoming.envelope.version);
+          const next = makeEnvelope(item.id, merged as unknown as Record<string, unknown>, version, local.createdAt, at);
+          if (next.contentHash === local.contentHash) {
+            // Nothing new for this device: only the versions are combined, its counter is not raised.
+            await db.records.put({ type: item.type, ...local, version });
+          } else {
+            registry.get(item.type)!.schema.parse(merged);
+            await db.records.put({ type: item.type, ...next, version: bumpVersion(version, thisDevice.id) });
+            written.push({ type: item.type, id: item.id, data: next.data });
+            appliedUpdates++;
+          }
+          break;
+        }
         default:
           if (CONFLICT_CATEGORIES.has(item.category)) {
             await db.pendingConflicts.put({

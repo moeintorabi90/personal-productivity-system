@@ -288,6 +288,9 @@ function validateTombstone(raw: unknown, registry: Registry, where: string): Tom
   if (registry.get(shaped.data.type)!.singletonId) {
     throw new BackupError("INVALID_PAYLOAD", `${where}: singletons cannot be deleted`);
   }
+  if (registry.get(shaped.data.type)!.noTombstones) {
+    throw new BackupError("INVALID_PAYLOAD", `${where}: ${shaped.data.type} records are never deleted`);
+  }
   return shaped.data;
 }
 

@@ -20,6 +20,7 @@ import {
 } from "../backup/registry.ts";
 import { localDateOf } from "../planning/time.ts";
 import type { LocalDb, RecordRow } from "./db.ts";
+import { refreshWeekPlans, todayOf, withPlanHistory, withStatusHistory } from "./goal-plans.ts";
 import type { Item } from "./organization.ts";
 import { deleteRecord, putRecord } from "./records.ts";
 
@@ -41,7 +42,11 @@ export type GoalErrorCode =
   | "DEADLINE_OUTSIDE_GOAL"
   | "MILESTONES_OUTSIDE_RANGE"
   /** An output goal needs its output definition (T-137, T-151). */
-  | "NO_DEFINITION";
+  | "NO_DEFINITION"
+  /** Workdays are distinct weekdays 0–6 (T-180). */
+  | "INVALID_WORKDAYS"
+  /** A daily cap is a whole number of 1 or more in the goal's measure (T-183). */
+  | "INVALID_CAP";
 
 export class GoalError extends Error {
   readonly code: GoalErrorCode;
@@ -110,6 +115,16 @@ function checkDates(startDate: string, deadline: string | null): void {
   if (deadline !== null && deadline < startDate) throw new GoalError("DEADLINE_BEFORE_START", "deadline before start date");
 }
 
+/** Selected workdays (T-180): distinct weekdays, stored ascending; none = absent. */
+function normalizeWorkdays(days: readonly number[]): number[] {
+  if (days.some((d) => !Number.isInteger(d) || d < 0 || d > 6) || new Set(days).size !== days.length) throw new GoalError("INVALID_WORKDAYS", "weekdays 0–6, each once");
+  return [...days].sort((a, b) => a - b);
+}
+
+function checkCap(kind: GoalKind, cap: number): void {
+  if (!Number.isInteger(cap) || cap < 1 || cap > TARGET_MAX[kind]) throw new GoalError("INVALID_CAP", "a whole number of 1 or more");
+}
+
 /* ---------- commands ---------- */
 
 export interface GoalInput {
@@ -126,6 +141,10 @@ export interface GoalInput {
    * whose unit it shows (T-137, T-151, T-154). Goals created from Stage 5 on have no own unit (T-161).
    */
   definitionId?: string;
+  /** Manually selected workdays (T-180), absent when none. */
+  workdays?: number[];
+  /** Optional daily cap (T-183). */
+  dailyCap?: number | null;
 }
 
 export async function createGoal(db: LocalDb, input: GoalInput, registry: Registry = PRODUCT_REGISTRY): Promise<string> {
@@ -144,7 +163,16 @@ export async function createGoal(db: LocalDb, input: GoalInput, registry: Regist
     status: "active",
     archivedAt: null,
   };
-  await putRecord(db, registry, GOALS, id, data);
+  const workdays = normalizeWorkdays(input.workdays ?? []);
+  if (workdays.length > 0) data.workdays = workdays;
+  if (input.dailyCap !== undefined && input.dailyCap !== null) {
+    checkCap(input.kind, input.dailyCap);
+    data.dailyCap = input.dailyCap;
+  }
+  await db.transaction("rw", WRITE_TABLES(db), async () => {
+    await putRecord(db, registry, GOALS, id, data);
+    await refreshWeekPlans(db, registry, "change");
+  });
   return id;
 }
 
@@ -177,8 +205,9 @@ const WRITE_TABLES = (db: LocalDb) => [db.records, db.tombstones, db.meta];
 export async function updateGoal(
   db: LocalDb,
   id: string,
-  patch: Partial<Pick<GoalData, "name" | "description" | "projectId" | "startDate" | "deadline" | "target">>,
+  patch: Partial<Pick<GoalData, "name" | "description" | "projectId" | "startDate" | "deadline" | "target">> & { workdays?: number[]; dailyCap?: number | null },
   registry: Registry = PRODUCT_REGISTRY,
+  now: number = Date.now(),
 ): Promise<void> {
   await db.transaction("rw", WRITE_TABLES(db), async () => {
     const goal = await editableGoal(db, id);
@@ -190,6 +219,18 @@ export async function updateGoal(
     if (startDate !== undefined) next.startDate = startDate;
     if (deadline !== undefined) next.deadline = deadline;
     if (target !== undefined) next.target = target;
+    if (patch.workdays !== undefined) {
+      const days = normalizeWorkdays(patch.workdays);
+      if (days.length > 0) next.workdays = days;
+      else delete next.workdays;
+    }
+    if (patch.dailyCap !== undefined) {
+      if (patch.dailyCap === null) delete next.dailyCap;
+      else {
+        checkCap(next.kind, patch.dailyCap);
+        next.dailyCap = patch.dailyCap;
+      }
+    }
     checkTarget(next.kind, next.target);
     checkDates(next.startDate, next.deadline);
     if (next.startDate !== goal.startDate || next.deadline !== goal.deadline) {
@@ -198,7 +239,10 @@ export async function updateGoal(
         throw new GoalError("MILESTONES_OUTSIDE_RANGE", "milestone deadlines outside the new dates", outside.map((m) => m.data.name));
       }
     }
-    await putRecord(db, registry, GOALS, id, next);
+    // Target, deadline, workdays, and cap keep their history (T-182); actual records never change.
+    const { today } = await todayOf(db, now);
+    await putRecord(db, registry, GOALS, id, withPlanHistory(goal, next, today));
+    await refreshWeekPlans(db, registry, "change", now);
   });
 }
 
@@ -208,7 +252,9 @@ export async function setGoalStatus(db: LocalDb, id: string, status: GoalStatus,
     const goal = await editableGoal(db, id);
     if (goal.status === status) return;
     if (!canChangeStatus(goal.status, status)) throw new GoalError("INVALID_STATUS_CHANGE", `${goal.status} → ${status}`);
-    await putRecord(db, registry, GOALS, id, { ...goal, status });
+    const { today } = await todayOf(db);
+    await putRecord(db, registry, GOALS, id, withStatusHistory(goal, { ...goal, status }, today));
+    await refreshWeekPlans(db, registry, "change");
   });
 }
 
@@ -217,7 +263,9 @@ export async function setGoalArchived(db: LocalDb, id: string, archived: boolean
   await db.transaction("rw", WRITE_TABLES(db), async () => {
     const goal = await liveGoal(db, id);
     if (archived === (goal.archivedAt !== null)) return;
-    await putRecord(db, registry, GOALS, id, { ...goal, archivedAt: archived ? nowIso() : null });
+    const { today } = await todayOf(db);
+    await putRecord(db, registry, GOALS, id, withStatusHistory(goal, { ...goal, archivedAt: archived ? nowIso() : null }, today));
+    await refreshWeekPlans(db, registry, "change");
   });
 }
 

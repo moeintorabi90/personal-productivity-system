@@ -66,11 +66,11 @@ describe("21. round-trip and merge of blocks, recurrence, and capacity", () => {
     const a = await plannedDevice();
     const text = await exportText(a.d);
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(7);
+    expect(doc.app.dataSchemaVersion).toBe(8);
     expect(doc.payload.records[CALENDAR_BLOCKS]).toHaveLength(3);
     const b = await device("B", null);
     const { preview } = await importInto(b, text, { ...product, applyUpdates: true });
-    expect(preview.counts.new).toBe(5); // 2 tasks, 3 blocks (preferences: newer in backup)
+    expect(preview.counts.new).toBe(6); // 2 tasks, 3 blocks, Gym's estimate captured for 2026-11-02 (preferences: newer in backup)
     expect(preview.counts.newerInBackup).toBe(1);
     expect(await recordsOf(b)).toEqual(await recordsOf(a.d));
   });
@@ -204,7 +204,10 @@ describe("23. versioning and per-version fields", () => {
       doc.app.dataSchemaVersion = 2;
       change(doc);
     });
-    const withoutBlocks = (doc: any) => delete doc.payload.records[CALENDAR_BLOCKS];
+    const withoutBlocks = (doc: any) => {
+      delete doc.payload.records[CALENDAR_BLOCKS];
+      delete doc.payload.records.taskEstimateCaptures; // version 8, captured when the blocks were planned
+    };
     const plainTasks = (doc: any) => {
       for (const env of doc.payload.records[TASK_DEFINITIONS]) {
         delete env.data.recurrence;
@@ -220,7 +223,7 @@ describe("23. versioning and per-version fields", () => {
     expect(await codeOf(importInto(b, asV2((doc) => (withoutBlocks(doc), plainPrefs(doc))), product))).toBe("INVALID_PAYLOAD");
     expect(await codeOf(importInto(b, asV2((doc) => (withoutBlocks(doc), plainTasks(doc))), product))).toBe("INVALID_PAYLOAD");
     expect(await codeOf(importInto(b, asV2((doc) => (withoutBlocks(doc), plainTasks(doc), plainPrefs(doc))), product))).toBe("OK");
-    const newer = mutate(text, (doc) => (doc.app.dataSchemaVersion = 8));
+    const newer = mutate(text, (doc) => (doc.app.dataSchemaVersion = 9));
     await expect(openBackupFile(blobOf(newer), registry)).rejects.toMatchObject({ code: "NEWER_VERSION" });
     const b2 = await device("B2", null);
     expect(await snapshot(b2.db)).toEqual(before);
