@@ -275,7 +275,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 
 ### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; not implemented)
 
-Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-234 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
+Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-235 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
 
 **Calendar**
 
@@ -337,7 +337,8 @@ Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-234 (DECIS
 - [ ] The countdown is an independent tool, with or without a work session, and has its own controls; pausing or resuming a session does not pause or resume it (T-232).
 - [ ] At zero the app shows an in-app completion message and plays an alert sound that the user can turn off. No system notification is sent by default; any later notification must be turned on by the user and follow the browser's permission rules (T-233).
 - [ ] A countdown survives closing and reopening the app on the same device; time keeps passing, and on reopening the app shows the time left or that it expired. It does not travel in backups (T-234).
-- [ ] Open: whether a standalone stopwatch survives closing the app (DECISIONS "Stage 6 decisions").
+- [ ] A standalone stopwatch is kept on the device across closing and reopening the app: a running one includes the time the app was closed, and a paused one stays paused. It never becomes a session, work history, or progress, and never travels in backups (T-235).
+- [ ] The in-app timer and the floating window show and control the same selected timer: the work session's elapsed time, the standalone stopwatch, or the countdown. The floating window never starts a second stopwatch (T-230).
 
 **App-use streak**
 
