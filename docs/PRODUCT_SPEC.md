@@ -275,7 +275,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 
 ### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; not implemented)
 
-Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-229 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
+Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-230 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
 
 **Calendar**
 
@@ -326,6 +326,14 @@ Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-229 (DECIS
 - [ ] Multiple optional dashboards; the main one starts with an editable suggested layout (T-198).
 - [ ] Cards can be added, removed, reordered, and resized, with recommended sizes (T-199). Each has its own date window, with presets and a custom range (T-200).
 - [ ] Names, selected cards, order, and sizes travel in backups and stay editable on the destination; presentation adapts to the screen (T-201).
+
+**Timer**
+
+- [ ] The timer is a normal, built-in part of the app and works inside the app everywhere. It has an elapsed stopwatch and a countdown timer (T-230).
+- [ ] Starting work on a task starts and tracks a work session; pausing and resuming follow the existing session rules, and ending a session does not complete the task (T-091, T-092, T-117, T-230).
+- [ ] A countdown reaching zero never ends or completes a work session (T-230).
+- [ ] Where supported, the timer can open in a floating window that stays on top of other desktop apps, using Document Picture-in-Picture in supported desktop Edge and Chrome. The control to open it appears only where this works; elsewhere, including phones and other browsers, only the in-app timer is offered. The floating window shows and controls the same timer, never a second one (T-230).
+- [ ] Open: whether a stopwatch can run without saving a session, what a countdown belongs to and whether it pauses with the session, what happens at zero, and whether a countdown is kept (DECISIONS "Stage 6 decisions").
 
 **App-use streak**
 
