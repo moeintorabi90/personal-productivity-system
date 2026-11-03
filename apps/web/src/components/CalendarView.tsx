@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import { useT } from "../app-context.tsx";
+import { useServices, useT } from "../app-context.tsx";
+import { formatTime } from "../i18n/index.ts";
+import { minutesByLocalDay } from "../insights/actuals.ts";
+import { plannedVersusActual } from "../insights/reports.ts";
+import { moveSessionTimes, type Session } from "../local/work.ts";
+import { workError } from "./work-actions.tsx";
 import { formatDayNumber, formatLocalDate, formatMonthHeading, formatWeekdayShort } from "../i18n/index.ts";
 import type { BlockTimeInput } from "../local/planning.ts";
 import { NO_FILTER, type PlanFilter } from "../planning/planning.ts";
@@ -162,24 +167,29 @@ function Calendar({ ctx, today }: { ctx: PlanningContext; today: string }) {
 type Panel = { kind: "new"; date: string; startTime?: string; durationMinutes?: number } | { kind: "block"; blockId: string } | null;
 
 /**
- * Day or week as a time grid (T-066, T-067, T-089). On a phone the week shows two days at a time,
- * moved with Previous/Next days (and a sideways swipe). Forms open below the grid; an opened block
- * shows its row (edit, cancel, restore), which is also the keyboard path.
+ * Day or week as a time grid (T-066, T-067, T-089), each day with Planned and Actual subcolumns
+ * (T-174). On a phone the week shows one day at a time (T-175), moved with Previous/Next day (and
+ * a sideways swipe). Forms open below the grid; an opened block shows its row (edit, cancel,
+ * restore), which is also the keyboard path. Dropping an actual session asks for confirmation
+ * and records an explicit correction (T-072); cancelling writes nothing.
  */
 function GridView({ ctx, dates, focus, filter, week }: { ctx: PlanningContext; dates: string[]; focus: string; filter: PlanFilter; week: boolean }) {
   const t = useT();
   const phone = useMediaQuery(PHONE_QUERY);
-  const twoDays = week && phone;
-  const lastFirst = Math.max(dates.length - 2, 0);
+  const oneDay = week && phone;
+  const lastFirst = Math.max(dates.length - 1, 0);
   const focusIndex = Math.max(dates.indexOf(focus), 0);
   const [first, setFirst] = useState(Math.min(focusIndex, lastFirst));
   const [panel, setPanel] = useState<Panel>(null);
   const [offer, setOffer] = useState<UndoOffer | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [moving, setMoving] = useState<{ session: Session; startedAt: string } | null>(null);
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
   const weekKey = dates[0];
   useEffect(() => setFirst(Math.min(focusIndex, lastFirst)), [weekKey, focusIndex, lastFirst]);
-  const shown = twoDays ? dates.slice(first, first + 2) : dates;
-  const step = useCallback((delta: 1 | -1) => setFirst((f) => Math.max(0, Math.min(lastFirst, f + 2 * delta))), [lastFirst]);
+  const shown = oneDay ? dates.slice(first, first + 1) : dates;
+  const step = useCallback((delta: 1 | -1) => setFirst((f) => Math.max(0, Math.min(lastFirst, f + delta))), [lastFirst]);
+  const openSession = openSessionId ? ctx.sessions?.find((s) => s.id === openSessionId) : undefined;
   const closeUndo = useCallback(() => setOffer(null), []);
   const openBlock = panel?.kind === "block" ? ctx.blocks.find((b) => b.id === panel.blockId) : undefined;
 
@@ -190,13 +200,14 @@ function GridView({ ctx, dates, focus, filter, week }: { ctx: PlanningContext; d
           ? t("calendar.weekOf", { first: formatLocalDate(dates[0]!, ctx, "medium"), last: formatLocalDate(dates[dates.length - 1]!, ctx, "medium") })
           : formatLocalDate(dates[0]!, ctx)}
       </h2>
-      {twoDays ? (
+      {oneDay ? (
         <div className="button-row" role="group" aria-label={t("grid.daysNavigation")}>
           <button type="button" className="secondary" disabled={first === 0} onClick={() => step(-1)}>
-            {t("grid.previousDays")}
+            {t("grid.previousDay")}
           </button>
+          <span className="hint" data-testid="phone-day">{formatLocalDate(shown[0]!, ctx, "medium")}</span>
           <button type="button" className="secondary" disabled={first >= lastFirst} onClick={() => step(1)}>
-            {t("grid.nextDays")}
+            {t("grid.nextDay")}
           </button>
         </div>
       ) : null}
@@ -228,8 +239,18 @@ function GridView({ ctx, dates, focus, filter, week }: { ctx: PlanningContext; d
           setOffer(o);
         }}
         onError={setError}
-        onSwipe={twoDays ? step : undefined}
+        onSwipe={oneDay ? step : undefined}
+        onOpenSession={(session) => {
+          setError(null);
+          setOpenSessionId(session.id);
+        }}
+        onMoveSession={(session, startedAt) => {
+          setError(null);
+          setMoving({ session, startedAt });
+        }}
       />
+      {moving ? <SessionMoveConfirm ctx={ctx} moving={moving} onDone={() => setMoving(null)} /> : null}
+      {openSession ? <OpenedSession ctx={ctx} session={openSession} onClose={() => setOpenSessionId(null)} /> : null}
       {panel?.kind === "new" ? (
         <BlockForm key={`${panel.date}/${panel.startTime ?? ""}/${panel.durationMinutes ?? ""}`} ctx={ctx} mode={panel} onDone={() => setPanel(null)} />
       ) : null}
@@ -240,7 +261,115 @@ function GridView({ ctx, dates, focus, filter, week }: { ctx: PlanningContext; d
       ) : null}
       <GridUnscheduled ctx={ctx} dates={shown} filter={filter} />
       <GridCompleted ctx={ctx} dates={shown} filter={filter} />
+      <DayComparison ctx={ctx} dates={shown} />
     </div>
+  );
+}
+
+/**
+ * The owner confirms a dragged session's new time (T-072): the session keeps its identity and
+ * work time, and the times before and after go to its correction history with an optional reason.
+ */
+function SessionMoveConfirm({ ctx, moving, onDone }: { ctx: PlanningContext; moving: { session: Session; startedAt: string }; onDone: () => void }) {
+  const t = useT();
+  const { db } = useServices();
+  const reasonId = useId();
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const s = moving.session.data;
+  const title = s.taskId ? (ctx.tasks.get(s.taskId)?.title ?? s.snapshot?.taskTitle ?? "") : t("work.noTask");
+  return (
+    <section className="day-panel notice-info" role="dialog" aria-labelledby={`${reasonId}-h`} data-testid="session-move-confirm">
+      <h3 id={`${reasonId}-h`}>{t("grid.moveSession.title")}</h3>
+      <p>
+        {t("grid.moveSession.body", {
+          title,
+          from: `${formatLocalDate(s.localDate, ctx, "medium")} ${formatTime(s.startedAt, ctx.zone, ctx.language)}`,
+          to: formatTime(moving.startedAt, ctx.zone, ctx.language),
+        })}
+      </p>
+      <div className="field">
+        <label htmlFor={reasonId}>{t("work.reason")}</label>
+        <input id={reasonId} value={reason} maxLength={2000} onChange={(e) => setReason(e.target.value)} />
+      </div>
+      {error ? (
+        <p className="notice notice-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className="button-row">
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await moveSessionTimes(db, moving.session.id, moving.startedAt, reason.trim() || null);
+              onDone();
+            } catch (e) {
+              setError(workError(t, e));
+            }
+          }}
+        >
+          {t("grid.moveSession.confirm")}
+        </button>
+        <button type="button" className="secondary" onClick={onDone}>
+          {t("org.cancel")}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** A session opened from the Actual subcolumn: its times and work time (details are edited on the Work screen). */
+function OpenedSession({ ctx, session, onClose }: { ctx: PlanningContext; session: Session; onClose: () => void }) {
+  const t = useT();
+  const s = session.data;
+  const title = s.taskId ? (ctx.tasks.get(s.taskId)?.title ?? s.snapshot?.taskTitle ?? "") : t("work.noTask");
+  return (
+    <section className="day-panel" aria-label={t("grid.actual")} data-testid="opened-session">
+      <p>
+        <strong>{title}</strong> <span className="pill pill-actual">{t("grid.actual")}</span>
+      </p>
+      <p className="hint">
+        {formatTime(s.startedAt, ctx.zone, ctx.language)}–{s.endedAt ? formatTime(s.endedAt, ctx.zone, ctx.language) : t("grid.running")} ·{" "}
+        {t("grid.pauses", { count: s.pauses.length })}
+      </p>
+      <p className="hint">{s.endedAt ? t("grid.dragSessionHint") : t("grid.runningHint")}</p>
+      <button type="button" className="secondary" onClick={onClose}>
+        {t("org.close")}
+      </button>
+    </section>
+  );
+}
+
+/** Planned versus actual for the shown dates, by task and local day; report only (T-178). */
+function DayComparison({ ctx, dates }: { ctx: PlanningContext; dates: string[] }) {
+  const t = useT();
+  const rows = plannedVersusActual(ctx.blocks, ctx.sessions ?? [], { from: dates[0]!, to: dates[dates.length - 1]! }, ctx.zone, ctx.tasks);
+  if (rows.length === 0) return null;
+  return (
+    <section className="day-panel" aria-label={t("report.comparison")} data-testid="day-comparison">
+      <h3>{t("report.comparison")}</h3>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th scope="col">{t("report.date")}</th>
+            <th scope="col">{t("report.task")}</th>
+            <th scope="col">{t("grid.planned")}</th>
+            <th scope="col">{t("grid.actual")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.date}/${r.taskId}`}>
+              <td>{formatLocalDate(r.date, ctx, "medium")}</td>
+              <td>{r.title ?? t("work.noTask")}</td>
+              <td>{t("report.minutesCount", { minutes: r.plannedMinutes, count: r.blocks })}</td>
+              <td>{t("report.minutesCount", { minutes: r.actualMinutes, count: r.sessions })}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -345,23 +474,27 @@ function MonthView({
         {dates.map((date) => {
           const plan = dayPlan(ctx, date, filter);
           const over = plan.capacity.kind === "warning";
+          // Actual work shown with planned items in the same cell, with its own treatment (T-176).
+          const actual = (ctx.sessions ?? []).filter((s) => minutesByLocalDay(s.data, ctx.zone, ctx.now ?? Date.now()).has(date)).length;
           const label = t("calendar.monthCell", {
             date: formatLocalDate(date, ctx),
             blocks: plan.blocks.length,
             unscheduled: plan.unscheduled.length,
-          }) + (plan.completed.length ? ` ${t("calendar.completedCount", { count: plan.completed.length })}` : "");
+          }) + (plan.completed.length ? ` ${t("calendar.completedCount", { count: plan.completed.length })}` : "") + (actual ? ` ${t("calendar.actualCount", { count: actual })}` : "");
           return (
             <li key={date} className={`month-cell${over ? " month-over" : ""}`} data-date={date}>
               <button type="button" className="month-day" aria-label={over ? `${label} ${t("calendar.overCapacity")}` : label} onClick={() => onOpenDay(date)}>
                 <span className="month-number">{formatDayNumber(date, calendar, ctx.language)}</span>
                 {ctx.calendarDisplay === "both" ? <span className="month-alt">{formatDayNumber(date, "jalali", ctx.language)}</span> : null}
-                {plan.blocks.length ? <span className="month-count">{t("calendar.blocksCount", { count: plan.blocks.length })}</span> : null}
+                {plan.blocks.length ? <span className="month-count month-planned">{t("calendar.blocksCount", { count: plan.blocks.length })}</span> : null}
+                {actual ? <span className="month-count month-actual" data-testid="month-actual">{t("calendar.actualCount", { count: actual })}</span> : null}
                 {plan.unscheduled.length ? <span className="month-count">{t("calendar.unscheduledCount", { count: plan.unscheduled.length })}</span> : null}
                 {plan.completed.length ? <span className="month-count">{t("calendar.completedCount", { count: plan.completed.length })}</span> : null}
                 {over ? <span className="pill pill-warn month-over-pill">{t("calendar.overCapacity")}</span> : null}
                 {/* Phone width: compact marks; the full text is in the button's label. */}
                 <span className="month-compact" aria-hidden="true">
                   {plan.blocks.length ? `▪${plan.blocks.length} ` : ""}
+                  {actual ? `●${actual} ` : ""}
                   {plan.unscheduled.length ? `○${plan.unscheduled.length} ` : ""}
                   {plan.completed.length ? `✓${plan.completed.length} ` : ""}
                   {over ? "!" : ""}

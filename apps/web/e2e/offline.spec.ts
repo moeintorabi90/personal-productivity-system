@@ -157,7 +157,8 @@ test("backup file flow: export on one device, import into a fresh one, offline, 
   await b.getByRole("button", { name: "Backup" }).click();
   await b.getByLabel("Choose a backup file").setInputFiles(filePath);
   await expect(b.getByTestId("import-preview")).toContainText("You already imported this backup");
-  await expect(b.getByTestId("import-preview")).toContainText("Already on this device: 1");
+  // Shared preferences and today's app-use date, which both devices recorded by viewing the app (T-203).
+  await expect(b.getByTestId("import-preview")).toContainText("Already on this device: 2");
 
   expect([...offendersA, ...offendersB]).toEqual([]);
   rmSync(path.dirname(filePath), { recursive: true, force: true });
@@ -232,10 +233,10 @@ test("Stage 3 offline: zone, capacity, recurring task, scheduling, quick add, re
   await b.getByRole("button", { name: "Backup" }).click();
   await b.getByLabel("Choose a backup file").setInputFiles(filePath);
   const preview = b.getByTestId("import-preview");
-  await expect(preview).toContainText("New items to add: 4"); // 2 tasks, 2 blocks
+  await expect(preview).toContainText("New items to add: 5"); // 2 tasks, 2 blocks, Gym's estimate captured for today (T-189)
   await preview.getByLabel(/Apply 1 newer version/).check(); // zone and capacity
   await preview.getByRole("button", { name: "Import" }).click();
-  await expect(b.getByTestId("import-done")).toContainText("Added: 4");
+  await expect(b.getByTestId("import-done")).toContainText("Added: 5");
   await b.getByRole("button", { name: "Today", exact: true }).click();
   const todayB = b.getByTestId("day-panel");
   await expect(todayB.getByTestId("block-row")).toHaveCount(2);
@@ -357,7 +358,7 @@ test("Stage 4 offline: a goal with milestones, status changes, reload, and the s
   await a.getByLabel("Deadline (optional)").fill("2026-12-31");
   await a.getByRole("button", { name: "Create goal" }).click();
   await expect(a.getByRole("heading", { level: 1, name: /Write the book/ })).toBeVisible();
-  await expect(a.getByText(/Progress is calculated from recorded work sessions/)).toBeVisible();
+  await expect(a.getByRole("heading", { name: "Progress and pace" })).toBeVisible(); // Stage 6 shows progress
 
   const milestones = a.getByTestId("milestones");
   await milestones.getByLabel("Milestone name").fill("First draft");
@@ -409,10 +410,13 @@ function todayIn(zone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
-/** Page coordinates of a wall time in a grid column (24 hours over the column's height). */
+/**
+ * Page coordinates of a wall time in a grid column (24 hours over the column's height), in the
+ * Planned subcolumn: the inline-start half of the day column (T-174; LTR here).
+ */
 async function slot(column: import("@playwright/test").Locator, hours: number, minutes = 0) {
   const box = (await column.boundingBox())!;
-  return { x: box.x + box.width / 2, y: box.y + ((hours * 60 + minutes) / 1440) * box.height };
+  return { x: box.x + box.width / 4, y: box.y + ((hours * 60 + minutes) / 1440) * box.height };
 }
 
 async function setTehran(page: Page) {
@@ -476,7 +480,8 @@ test("Stage 3 follow-up offline: project color, tap to plan, drag-move and resiz
   await expect(block).toContainText("10:15–10:45");
 
   // Resize the end edge from 10:45 to 11:37 → 11:30. While Undo has focus it stays past 5 s; Undo restores 10:45.
-  p = await slot(column, 10, 44);
+  // Pressed 3 minutes above the end: on the end handle, clear of the block's 1 px border.
+  p = await slot(column, 10, 42);
   q = await slot(column, 11, 37);
   await a.mouse.move(p.x, p.y);
   await a.mouse.down();
@@ -518,7 +523,7 @@ test("Stage 3 follow-up offline: project color, tap to plan, drag-move and resiz
   await target.close();
 });
 
-test("Stage 3 follow-up on a phone-sized touch screen: two days at a time, Previous/Next reach the whole week, and a tap pre-fills 30 minutes", async ({ browser }) => {
+test("Stage 3 follow-up on a phone-sized touch screen: one day at a time (Stage 6, T-175), Previous/Next reach the whole week, and a tap pre-fills 30 minutes", async ({ browser }) => {
   const phone = await browser.newContext({ viewport: { width: 375, height: 800 }, hasTouch: true, isMobile: true });
   const page = await phone.newPage();
   const offenders = forbidNetworkUse(page);
@@ -528,14 +533,14 @@ test("Stage 3 follow-up on a phone-sized touch screen: two days at a time, Previ
   await setTehran(page);
   await page.getByRole("button", { name: "Calendar" }).click();
   const columns = page.getByTestId("grid-column");
-  await expect(columns).toHaveCount(2);
+  await expect(columns).toHaveCount(1);
   const seen = new Set<string>();
   const collect = async () => {
     for (const date of await columns.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.date!))) seen.add(date);
   };
   await collect();
-  const previous = page.getByRole("button", { name: "Previous days" });
-  const next = page.getByRole("button", { name: "Next days" });
+  const previous = page.getByRole("button", { name: "Previous day" });
+  const next = page.getByRole("button", { name: "Next day" });
   while (await previous.isEnabled()) {
     await previous.click();
     await collect();

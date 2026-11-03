@@ -59,7 +59,9 @@ import {
   WorkError,
 } from "../local/work.ts";
 import { type ColorKey, itemColor } from "../planning/colors.ts";
-import { isLocalDate, isWallTime, localDateOf, resolveWallTime, wallTimeOf } from "../planning/time.ts";
+import { addDays, datesBetween, isLocalDate, isWallTime, localDateOf, resolveWallTime, wallTimeOf } from "../planning/time.ts";
+import { recursOn } from "../planning/planning.ts";
+import { unitSuggestions } from "../work/unit-suggestions.ts";
 import { MINUTE, sessionState, workMinutes } from "../work/session-time.ts";
 import { useGoals, useOrganization, useWork } from "./data-hooks.ts";
 import { DateField, formatMinutes, TimeZonePrompt, useSharedPreferences } from "./planning-ui.tsx";
@@ -945,6 +947,10 @@ function DetailsEdit({ ctx, session }: { ctx: WorkCtx; session: Session }) {
   const s = session.data;
   const [taskId, setTaskId] = useState(s.taskId ?? "");
   const [blockId, setBlockId] = useState(s.blockId ?? "");
+  const [occurrence, setOccurrence] = useState(s.occurrenceDate ?? "");
+  const recurrence = s.taskId ? ctx.tasks.get(s.taskId)?.recurrence : undefined;
+  // Occurrences of a recurring task within a week of the session (T-190).
+  const occurrences = recurrence ? datesBetween(addDays(s.localDate, -7), addDays(s.localDate, 7)).filter((d) => recursOn(recurrence, d)) : [];
   const [expected, setExpected] = useState<ExpectedDraft[]>(expectedDraftsOf(s.expectedOutputs));
   const [details, setDetails] = useState({ notes: s.notes, energy: s.energy, focus: s.focus });
   const [status, setStatus] = useState<string | null>(null);
@@ -968,6 +974,7 @@ function DetailsEdit({ ctx, session }: { ctx: WorkCtx; session: Session }) {
             expectedOutputs: expectedList,
             ...(taskChanged ? { taskId: taskId || null } : {}),
             ...(!taskChanged && (blockId || null) !== s.blockId ? { blockId: blockId || null } : {}),
+            ...(!taskChanged && recurrence && (occurrence || undefined) !== s.occurrenceDate ? { occurrenceDate: occurrence || null } : {}),
           });
           setStatus(t("work.saved"));
         } catch (err) {
@@ -993,6 +1000,20 @@ function DetailsEdit({ ctx, session }: { ctx: WorkCtx; session: Session }) {
         </div>
       ) : taskId !== (s.taskId ?? "") && s.blockId ? (
         <p className="hint">{t("work.block.unlinkOnTaskChange")}</p>
+      ) : null}
+      {recurrence && taskId === s.taskId ? (
+        <div className="field">
+          <label htmlFor={`${id}-occ`}>{t("work.occurrence")}</label>
+          <select id={`${id}-occ`} value={occurrence} onChange={(e) => setOccurrence(e.target.value)}>
+            <option value="">{t("work.occurrenceNone")}</option>
+            {[...new Set([...occurrences, ...(s.occurrenceDate ? [s.occurrenceDate] : [])])].sort().map((d) => (
+              <option key={d} value={d}>
+                {formatLocalDate(d, ctx, "medium")}
+              </option>
+            ))}
+          </select>
+          <p className="hint">{t("work.occurrenceHint")}</p>
+        </div>
       ) : null}
       <ExpectedEditor defs={ctx.work.definitions} tasks={ctx.tasks} taskId={taskId || null} drafts={expected} onChange={setExpected} />
       <NoteAndRatings {...details} onChange={setDetails} />
@@ -1148,11 +1169,24 @@ export function DefinitionsSection({ ctx }: { ctx: WorkCtx }) {
         <label htmlFor={ids.name}>{t("work.def.name")}</label>
         <input id={ids.name} value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} />
         <label htmlFor={ids.unit}>{t("work.def.unit")}</label>
-        <input id={ids.unit} value={unit} maxLength={UNIT_MAX} onChange={(e) => setUnit(e.target.value)} />
+        <input id={ids.unit} value={unit} maxLength={UNIT_MAX} list={`${ids.unit}-list`} onChange={(e) => setUnit(e.target.value)} />
+        <datalist id={`${ids.unit}-list`}>
+          {unitSuggestions(ctx.language).map((u) => (
+            <option key={u} value={u} />
+          ))}
+        </datalist>
         <button type="submit" disabled={!name.trim() || !unit.trim()}>
           {t("work.def.create")}
         </button>
       </form>
+      {/* Suggestions only fill the field; any custom unit is accepted (T-194). */}
+      <div className="button-row unit-suggestions" role="group" aria-label={t("work.unitSuggestions")} data-testid="unit-suggestions">
+        {unitSuggestions(ctx.language).map((u) => (
+          <button key={u} type="button" className="secondary chip" aria-pressed={unit === u} onClick={() => setUnit(u)}>
+            {u}
+          </button>
+        ))}
+      </div>
       <ErrorLine error={error} />
     </section>
   );

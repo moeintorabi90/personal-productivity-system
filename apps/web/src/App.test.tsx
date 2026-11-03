@@ -78,7 +78,7 @@ describe("v1 app shell (sync frozen and hidden, D-016)", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Welcome" })).toBeTruthy();
     await waitFor(() => expect(document.documentElement.dir).toBe("ltr"));
     const nav = screen.getByRole("navigation", { name: "Main" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Home", "Today", "Work", "Calendar", "Inbox", "Projects", "Goals", "Settings", "Backup"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Home", "Dashboard", "Today", "Work", "Calendar", "Inbox", "Projects", "Goals", "Reports", "Settings", "Backup"]);
     expect(screen.queryByTestId("sync-status")).toBeNull();
     expect(screen.queryByText("Sync check notes")).toBeNull();
     expect((await screen.findByTestId("last-backup")).textContent).toBe("No backup yet");
@@ -596,7 +596,7 @@ describe("Stage 2: inbox, projects, workstreams, tasks", () => {
     fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
     await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
     const nav = screen.getByRole("navigation", { name: "اصلی" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["خانه", "امروز", "کار", "تقویم", "صندوق ورودی", "پروژه‌ها", "اهداف", "تنظیمات", "پشتیبان"]);
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["خانه", "داشبورد", "امروز", "کار", "تقویم", "صندوق ورودی", "پروژه‌ها", "اهداف", "گزارش‌ها", "تنظیمات", "پشتیبان"]);
     fireEvent.click(within(nav).getByRole("button", { name: "صندوق ورودی" }));
     expect(await screen.findByLabelText("ثبت سریع کار یا ایده")).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "پروژه‌ها" }));
@@ -826,8 +826,9 @@ describe("Stage 4: goals and milestones (TESTING.md Stage 4 item 11)", () => {
     expect(goal.data).toMatchObject({ kind: "output", target: 300, projectId: project, startDate: today, deadline: "2099-12-31", status: "active" });
     expect(goal.data).not.toHaveProperty("unit"); // the unit comes from the definition (T-161)
     expect(goal.data.definitionId).toBeTruthy();
-    expect(screen.getByText(/Progress is calculated from recorded work sessions/)).toBeTruthy();
-    expect(document.body.textContent).not.toMatch(/%/);
+    // Stage 6 shows progress from recorded work (none yet), without workday-based pace (T-180).
+    await waitFor(() => expect(screen.getByTestId("goal-progress").textContent).toMatch(/0 pages of 300 pages \(0%\)/));
+    expect(screen.getByText(/Select workdays and a deadline/)).toBeTruthy();
     // The unit comes from the output definition, read by its own live query (T-154).
     await waitFor(() => expect(document.body.textContent).toContain("300 pages"));
 
@@ -937,7 +938,7 @@ describe("Stage 4: goals and milestones (TESTING.md Stage 4 item 11)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "ساختن هدف" }));
     await screen.findByRole("heading", { level: 1, name: /مطالعه/ });
     expect((await loadGoals(services.db)).goals[0]!.data).toMatchObject({ kind: "taskCount", startDate: "2026-11-02", target: 12 });
-    expect(await screen.findByText(/پیشرفت از جلسه‌های کار/)).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "پیشرفت و آهنگ" })).toBeTruthy();
     // 2 Nov 2026 = 11 Aban 1405: wait until the date line uses the Jalali display calendar.
     await waitFor(() => expect(document.body.textContent).toContain("آبان"));
   });
@@ -981,7 +982,8 @@ describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-
   }
 
   const y = (h: number, m = 0) => (h * 60 + m) * (HOUR_PX / 60);
-  const pointer = (clientY: number, clientX = 250) => ({ clientX, clientY, pointerId: 1, pointerType: "mouse", button: 0, bubbles: true });
+  // The Planned subcolumn is the first half of a day column (T-174): x = 225 is in Monday's.
+  const pointer = (clientY: number, clientX = 225) => ({ clientX, clientY, pointerId: 1, pointerType: "mouse", button: 0, bubbles: true });
 
   async function gridWeek() {
     renderApp();
@@ -1147,7 +1149,7 @@ describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-
       return found;
     });
     expect(block.textContent).toContain("01:30 (UTC−05:00)");
-    const x = Number(sunday.getBoundingClientRect().left) + 50;
+    const x = Number(sunday.getBoundingClientRect().left) + 25;
     fireEvent.pointerDown(block, pointer(y(1, 35), x));
     fireEvent.pointerMove(block, pointer(y(1, 41), x));
     fireEvent.pointerUp(block, pointer(y(1, 41), x));
@@ -1170,19 +1172,19 @@ describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-
     expect((within(form).getByLabelText("Start time") as HTMLInputElement).value).toBe(""); // typed by the user
   });
 
-  it("4a. on a phone-sized screen the week shows two days, and Previous/Next days reach every day", async () => {
+  it("4a (Stage 6, T-175). on a phone-sized screen the week shows one day, and Previous/Next day reach every day", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-width: 560px)", media: query, addEventListener() {}, removeEventListener() {} }));
     const week = await gridWeek();
     const shownDays = () => within(week).getAllByTestId("grid-column").map((c) => c.dataset.date);
-    expect(shownDays()).toEqual(["2026-11-02", "2026-11-03"]); // starts at today
+    expect(shownDays()).toEqual(["2026-11-02"]); // starts at today
     const seen = new Set(shownDays());
-    const next = screen.getByRole("button", { name: "Next days" });
+    const next = screen.getByRole("button", { name: "Next day" });
     while (!(next as HTMLButtonElement).disabled) {
       fireEvent.click(next);
       shownDays().forEach((d) => seen.add(d));
     }
-    expect(shownDays()).toEqual(["2026-11-05", "2026-11-06"]);
-    const previous = screen.getByRole("button", { name: "Previous days" });
+    expect(shownDays()).toEqual(["2026-11-06"]);
+    const previous = screen.getByRole("button", { name: "Previous day" });
     while (!(previous as HTMLButtonElement).disabled) {
       fireEvent.click(previous);
       shownDays().forEach((d) => seen.add(d));

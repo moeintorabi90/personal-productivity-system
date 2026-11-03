@@ -9,6 +9,11 @@
  * swipe still scrolls the grid (or, sideways, changes the shown days on a phone). Every action is
  * also available without a pointer: blocks are buttons that open their row (edit, cancel,
  * restore), and each day has an Add button; the List layout stays available.
+ *
+ * Stage 6 (T-174, T-177, T-072): each day is one main column with a Planned and an Actual
+ * subcolumn on one time axis. Actual sessions use the stronger color treatment with an "Actual"
+ * label; a paused session shows its work segments with gaps, and stays one session. Dragging an
+ * ended session only proposes a move: the caller asks the owner to confirm it as a correction.
  */
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useServices, useT } from "../app-context.tsx";
@@ -28,7 +33,10 @@ import {
   wallMinutesOf,
 } from "../planning/grid.ts";
 import { blockLabel, type BlockItem, filterBlocks, type PlanFilter } from "../planning/planning.ts";
-import { formatOffset, localDateOf, MINUTE_MS, offsetMinutesAt } from "../planning/time.ts";
+import { formatOffset, localDateOf, localDayBounds, MINUTE_MS, offsetMinutesAt } from "../planning/time.ts";
+import { itemColor } from "../planning/colors.ts";
+import { workIntervals, workMinutes } from "../work/session-time.ts";
+import type { Session } from "../local/work.ts";
 import { blockColor, dayPlan, formatMinutes, planningError, type PlanningContext } from "./planning-ui.tsx";
 import type { UndoOffer } from "./UndoBar.tsx";
 
@@ -42,7 +50,17 @@ const FIRST_VISIBLE_HOUR = 7;
 type Gesture =
   | { kind: "create"; date: string; startMinutes: number }
   | { kind: "move"; block: BlockItem; date: string; startMinutes: number }
-  | { kind: "resize"; block: BlockItem; edge: "start" | "end" };
+  | { kind: "resize"; block: BlockItem; edge: "start" | "end" }
+  | { kind: "moveSession"; session: Session; date: string; startMinutes: number };
+
+/** Work segments of a session on one date, as minutes from local midnight (pauses are the gaps, T-177). */
+export function sessionSegmentsOn(session: Session, date: string, zone: string, now: number): { top: number; bottom: number }[] {
+  const [dayStart, dayEnd] = localDayBounds(date, zone);
+  return workIntervals(session.data, now)
+    .map(([a, b]) => [Math.max(a, dayStart), Math.min(b, dayEnd)] as const)
+    .filter(([a, b]) => b > a)
+    .map(([a, b]) => ({ top: (a - dayStart) / MINUTE_MS, bottom: (b - dayStart) / MINUTE_MS }));
+}
 
 interface Pending {
   gesture: Gesture;
@@ -73,6 +91,8 @@ export function TimeGrid({
   onMoved,
   onError,
   onSwipe,
+  onOpenSession,
+  onMoveSession,
 }: {
   ctx: PlanningContext;
   dates: string[];
@@ -83,6 +103,9 @@ export function TimeGrid({
   onMoved: (offer: UndoOffer) => void;
   onError: (message: string) => void;
   onSwipe?: (direction: 1 | -1) => void;
+  onOpenSession?: (session: Session) => void;
+  /** A drop of an ended session: the caller confirms it as a correction (T-072); nothing is written here. */
+  onMoveSession?: (session: Session, startedAt: string) => void;
 }) {
   const t = useT();
   const { db } = useServices();
@@ -136,6 +159,12 @@ export function TimeGrid({
       const deltaDays = dates.indexOf(to) - dates.indexOf(g.date);
       return { result: moveTarget(g.block.data, deltaDays, minutesAt(g.date, clientY) - g.startMinutes, ctx.zone), date: to };
     }
+    if (g.kind === "moveSession") {
+      const to = dateAt(clientX);
+      const deltaDays = dates.indexOf(to) - dates.indexOf(g.date);
+      const times = { startsAt: g.session.data.startedAt, endsAt: g.session.data.endedAt! };
+      return { result: moveTarget(times, deltaDays, minutesAt(g.date, clientY) - g.startMinutes, ctx.zone), date: to };
+    }
     const date = dateAt(clientX);
     return { result: resizeTarget(g.block.data, g.edge, date, minutesAt(date, clientY), ctx.zone), date };
   }
@@ -175,7 +204,8 @@ export function TimeGrid({
 
   function activate(p: Pending) {
     p.active = true;
-    if (p.gesture.kind !== "create") setDraggingId(p.gesture.block.id);
+    if (p.gesture.kind === "moveSession") setDraggingId(p.gesture.session.id);
+    else if (p.gesture.kind !== "create") setDraggingId(p.gesture.block.id);
     setPreview(evaluate(p.gesture, p.x0, p.y0));
     navigator.vibrate?.(10);
   }
@@ -209,11 +239,16 @@ export function TimeGrid({
       // A tap or click without a drag.
       if (g.kind === "create") commitCreate(tapSelection(g.date, g.startMinutes, ctx.zone));
       else if (g.kind === "move") onOpenBlock(g.block);
+      else if (g.kind === "moveSession") onOpenSession?.(g.session);
       return;
     }
     const { result } = resultOf(g, event.clientX, event.clientY);
     if (g.kind === "create") commitCreate(result as GridResult);
-    else await commitEdit(g.block, result as EditResult);
+    else if (g.kind === "moveSession") {
+      const r = result as EditResult;
+      if (r.kind === "ok") onMoveSession?.(g.session, r.startsAt);
+      else if (r.kind !== "unchanged") onError(refusal(r));
+    } else await commitEdit(g.block, result as EditResult);
   }
 
   function cancel() {
@@ -264,6 +299,10 @@ export function TimeGrid({
               <button type="button" className="secondary tg-add" aria-label={t("plan.addLabel", { date: formatLocalDate(date, ctx, "medium") })} onClick={() => onAdd(date)}>
                 <span aria-hidden="true">+</span>
               </button>
+              <span className="tg-subheads" aria-hidden="true">
+                <span>{t("grid.planned")}</span>
+                <span>{t("grid.actual")}</span>
+              </span>
             </div>
           );
         })}
@@ -282,6 +321,12 @@ export function TimeGrid({
               .map((block) => ({ block, place: segmentPlacement(block.data, date, ctx.zone) }))
               .filter((x): x is { block: BlockItem; place: NonNullable<ReturnType<typeof segmentPlacement>> } => x.place !== null);
             const lanes = laneLayout(items.map((x) => ({ id: x.block.id, top: x.place.top, bottom: x.place.bottom })));
+            const sessions = (ctx.sessions ?? [])
+              .map((session) => ({ session, segments: sessionSegmentsOn(session, date, ctx.zone, ctx.now ?? Date.now()) }))
+              .filter((x) => x.segments.length > 0);
+            const sessionLanes = laneLayout(
+              sessions.map((x) => ({ id: x.session.id, top: x.segments[0]!.top, bottom: x.segments.at(-1)!.bottom })),
+            );
             return (
               <div
                 key={date}
@@ -293,7 +338,11 @@ export function TimeGrid({
                   else columns.current.delete(date);
                 }}
                 onPointerDown={(e) => {
-                  if ((e.target as Element).closest(".tg-block")) return;
+                  if ((e.target as Element).closest(".tg-block, .tg-session")) return;
+                  // Only the Planned subcolumn creates blocks (T-174); the Actual one holds recorded work.
+                  const rect = columns.current.get(date)!.getBoundingClientRect();
+                  const inPlanned = rtl ? e.clientX > rect.left + rect.width / 2 : e.clientX < rect.left + rect.width / 2;
+                  if (!inPlanned) return;
                   begin(e, { kind: "create", date, startMinutes: minutesAt(date, e.clientY) });
                 }}
                 onPointerMove={move}
@@ -318,6 +367,26 @@ export function TimeGrid({
                     onPointerUp={end}
                     onPointerCancel={cancel}
                     onOpen={() => onOpenBlock(block)}
+                  />
+                ))}
+                {sessions.map(({ session, segments }) => (
+                  <GridSession
+                    key={session.id}
+                    ctx={ctx}
+                    session={session}
+                    date={date}
+                    segments={segments}
+                    lane={sessionLanes.get(session.id)!}
+                    dragging={draggingId === session.id}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      if (session.data.endedAt === null || !onMoveSession) return; // only ended sessions are corrected by drag
+                      begin(e, { kind: "moveSession", session, date, startMinutes: minutesAt(date, e.clientY) });
+                    }}
+                    onPointerMove={move}
+                    onPointerUp={end}
+                    onPointerCancel={cancel}
+                    onOpen={() => onOpenSession?.(session)}
                   />
                 ))}
                 {preview && preview.date === date ? (
@@ -376,8 +445,8 @@ function GridBlock({
   const style = {
     top: `${(place.top / DAY_MINUTES) * 100}%`,
     height: `${(Math.max(place.bottom - place.top, 15) / DAY_MINUTES) * 100}%`,
-    insetInlineStart: `${(lane.lane / lane.lanes) * 100}%`,
-    width: `${100 / lane.lanes}%`,
+    insetInlineStart: `${(lane.lane / lane.lanes) * 50}%`,
+    width: `${50 / lane.lanes}%`,
   } as CSSProperties;
   const handlers = { onPointerMove, onPointerUp, onPointerCancel };
   return (
@@ -407,6 +476,87 @@ function GridBlock({
         <span className="tg-status">{status}</span>
       </button>
       {planned && place.endsHere ? <span className="tg-handle tg-handle-end" aria-hidden="true" onPointerDown={(e) => onPointerDown(e, "end")} {...handlers} /> : null}
+    </div>
+  );
+}
+
+/**
+ * One actual session in the Actual subcolumn (T-174, T-177): its work segments with visible gaps
+ * for pauses, one button for the whole session (the keyboard path), the stronger color treatment,
+ * and an "Actual" label, so color is never the only cue (T-069).
+ */
+function GridSession({
+  ctx,
+  session,
+  date,
+  segments,
+  lane,
+  dragging,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  onOpen,
+}: {
+  ctx: PlanningContext;
+  session: Session;
+  date: string;
+  segments: { top: number; bottom: number }[];
+  lane: { lane: number; lanes: number };
+  dragging: boolean;
+  onPointerDown: (e: ReactPointerEvent) => void;
+  onPointerMove: (e: ReactPointerEvent) => void;
+  onPointerUp: (e: ReactPointerEvent) => void;
+  onPointerCancel: () => void;
+  onOpen: () => void;
+}) {
+  const t = useT();
+  const s = session.data;
+  const title = s.taskId ? (ctx.tasks.get(s.taskId)?.title ?? s.snapshot?.taskTitle ?? t("org.unknownItem")) : t("work.noTask");
+  const color = s.taskId ? itemColor({ taskId: s.taskId, snapshotProjectId: s.snapshot?.projectId ?? null }, ctx.tasks, ctx.projects) : "neutral";
+  const time = `${formatTime(s.startedAt, ctx.zone, ctx.language)}–${s.endedAt ? formatTime(s.endedAt, ctx.zone, ctx.language) : t("grid.running")}`;
+  const label = t("grid.sessionLabel", { title, time, duration: formatMinutes(t, workMinutes(s, ctx.now ?? Date.now())), segments: segments.length });
+  const first = segments[0]!;
+  const last = segments.at(-1)!;
+  const handlers = { onPointerMove, onPointerUp, onPointerCancel };
+  const outer = {
+    top: `${(first.top / DAY_MINUTES) * 100}%`,
+    height: `${(Math.max(last.bottom - first.top, 15) / DAY_MINUTES) * 100}%`,
+    insetInlineStart: `${50 + (lane.lane / lane.lanes) * 50}%`,
+    width: `${50 / lane.lanes}%`,
+  } as CSSProperties;
+  const span = Math.max(last.bottom - first.top, 15);
+  return (
+    <div
+      className={`tg-session${dragging ? " tg-dragging" : ""}`}
+      style={outer}
+      data-color={color}
+      data-testid="grid-session"
+      data-session-id={session.id}
+      data-date={date}
+      data-segments={segments.length}
+      onPointerDown={onPointerDown}
+      {...handlers}
+    >
+      {segments.map((seg, i) => (
+        <span
+          key={i}
+          className="tg-segment"
+          data-testid="grid-segment"
+          aria-hidden="true"
+          style={{ top: `${((seg.top - first.top) / span) * 100}%`, height: `${(Math.max(seg.bottom - seg.top, 4) / span) * 100}%` }}
+        />
+      ))}
+      <button
+        type="button"
+        className="tg-block-button tg-session-button"
+        aria-label={label}
+        onClick={(e) => {
+          if (e.detail === 0 || s.endedAt === null) onOpen();
+        }}
+      >
+        <span className="tg-block-title">{title}</span> <span className="tg-status">{t("grid.actual")}</span>
+      </button>
     </div>
   );
 }

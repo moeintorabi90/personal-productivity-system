@@ -1010,3 +1010,258 @@ textarea {
   margin: 0.25rem 0 0;
   padding-inline-start: 1.25rem;
 }
+
+/* ---------------- Stage 6 ---------------- */
+
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Planned and Actual subcolumns on one time axis (T-174): a divider between the two halves. */
+.tg-column::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 50%;
+  border-inline-start: 1px dashed var(--border);
+  pointer-events: none;
+}
+
+.tg-subheads {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  inline-size: 100%;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* An actual session: the stronger treatment (solid accent, normal surface) plus the "Actual" label (T-069, T-177). */
+.tg-session {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: pan-y;
+}
+
+.tg-segment {
+  position: absolute;
+  inset-inline: 0;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--c-accent);
+  border-inline-start: 5px solid var(--c-accent);
+}
+
+.tg-session-button {
+  position: relative;
+  z-index: 1;
+}
+
+.month-actual {
+  font-weight: 600;
+}
+
+.month-actual::before {
+  content: "● ";
+}
+
+.month-planned::before {
+  content: "▪ ";
+}
+
+.data-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin-block: 0.5rem;
+}
+
+.data-table th,
+.data-table td {
+  padding: 0.3rem 0.4rem;
+  border-block-end: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.day-panel .data-table,
+.dash-card .data-table {
+  display: block;
+  overflow-x: auto;
+}
+
+progress {
+  inline-size: 100%;
+  accent-color: var(--accent);
+}
+
+/* Dashboards (T-199, T-201): four columns wide, two below the phone breakpoint; stored order kept. */
+.dash-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.dash-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  min-width: 0;
+}
+
+.dash-card[data-size="small"] {
+  grid-column: span 1;
+}
+
+.dash-card[data-size="medium"] {
+  grid-column: span 2;
+}
+
+.dash-card[data-size="large"] {
+  grid-column: 1 / -1;
+}
+
+.dash-card h2,
+.dash-card h3 {
+  margin-block: 0 0.25rem;
+  font-size: 1rem;
+}
+
+.dash-controls {
+  border-block-start: 1px solid var(--border);
+  margin-block-start: 0.5rem;
+  padding-block-start: 0.5rem;
+}
+
+.metric-number {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 0.2rem 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-rate + .metric-rate {
+  border-block-start: 1px solid var(--border);
+}
+
+@media (max-width: 560px) {
+  .dash-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Small: half width, number and label; medium and large: full width (DECISIONS "Recommended card sizes"). */
+  .dash-card[data-size="medium"],
+  .dash-card[data-size="large"] {
+    grid-column: 1 / -1;
+  }
+
+  .metric-number {
+    font-size: 1.3rem;
+  }
+}
+
+/* Charts: SVG drawn by the app; colors from the theme tokens. */
+.chart {
+  margin: 0.5rem 0;
+}
+
+.chart-svg {
+  inline-size: 100%;
+  block-size: auto;
+  max-block-size: 10rem;
+}
+
+.chart-compact {
+  max-block-size: 5rem;
+}
+
+.chart-axis {
+  stroke: var(--border);
+}
+
+.chart-bar {
+  fill: var(--accent);
+}
+
+.chart-bar2 {
+  fill: var(--text-muted);
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.chart-dot {
+  fill: var(--accent);
+}
+
+.chart-label {
+  font-size: 7px;
+  fill: var(--text-muted);
+}
+
+.chart-table summary {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+/* Timer (T-230): on every screen; the floating window renders the same view. */
+.timer-bar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.75rem;
+  margin-block-end: 0.75rem;
+}
+
+.timer-bar > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-value {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0.25rem 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-view [role="tab"][aria-selected="true"] {
+  outline: 2px solid var(--accent);
+}
+
+.pip-body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+
+.pip-root {
+  padding: 0.5rem 0.75rem;
+}
+
+.chip {
+  min-height: 2rem;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.unit-suggestions {
+  margin-block: 0.25rem 0.5rem;
+}

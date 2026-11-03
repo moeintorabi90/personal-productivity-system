@@ -62,6 +62,10 @@ export interface PlanningContext {
   language: Language;
   calendarDisplay: CalendarDisplay;
   weekStart: number;
+  /** Actual sessions not in the trash, for the Actual subcolumn (Stage 6, T-174). */
+  sessions?: WorkData["sessions"];
+  /** The clock used for running sessions on display. */
+  now?: number;
 }
 
 /** Everything the planning screens read, or null while loading / without a zone. */
@@ -78,6 +82,8 @@ export function usePlanning(): { ctx: PlanningContext | null; loading: boolean; 
       blocks,
       completions: work.completions,
       definitions: work.definitions,
+      sessions: work.sessions.filter((s) => s.data.deletedAt === null),
+      now: Date.now(),
       tasks: new Map(org.tasks.map((t) => [t.id, t.data])),
       projects: new Map(org.projects.map((p) => [p.id, p.data])),
       zone: shared.timeZone,

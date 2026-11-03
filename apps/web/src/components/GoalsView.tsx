@@ -2,13 +2,14 @@
  * Goals and milestones (PRODUCT_SPEC "Goals and measures"; DECISIONS T-037 to T-065, T-077 to
  * T-087). Every write is an explicit user action. From Stage 5 an output goal tracks one output
  * definition and shows its unit (T-137, T-151, T-154); a pre-Stage-5 output goal is linked to a
- * definition with a matching unit (T-139, T-166 to T-169). Progress is calculated from recorded
- * work but shown only from Stage 6 (T-116, T-145).
+ * definition with a matching unit (T-139, T-166 to T-169). Stage 6 shows progress, pace targets,
+ * allocations, and streaks (GoalPace.tsx), with manually selected workdays and an optional daily
+ * cap on the goal (T-180, T-183).
  */
 import { type FormEvent, useId, useState } from "react";
 import { usePreferences, useServices, useT } from "../app-context.tsx";
 import { type GoalData, type GoalKind, NAME_MAX, type OutputDefinitionData, TARGET_MAX, TEXT_MAX, UNIT_MAX } from "../backup/registry.ts";
-import { formatLocalDate, type MessageKey, type Translate } from "../i18n/index.ts";
+import { formatLocalDate, formatWeekdayShort, type MessageKey, type Translate } from "../i18n/index.ts";
 import {
   createGoal,
   createMilestone,
@@ -35,6 +36,49 @@ import { matchUnits } from "../work/units.ts";
 import { useGoals, useOrganization, useWork } from "./data-hooks.ts";
 import { ArchivedPill } from "./organization-ui.tsx";
 import { DateField, formatMinutes, useSharedPreferences } from "./planning-ui.tsx";
+import { GoalPacePanel } from "./GoalPace.tsx";
+import { useInsights } from "./insights-hooks.ts";
+
+/** Goal workdays, selected manually and never inferred from task recurrence (T-180). */
+function WorkdaysField({ value, onChange, weekStart }: { value: number[]; onChange: (days: number[]) => void; weekStart: number }) {
+  const t = useT();
+  const prefs = usePreferences();
+  const order = Array.from({ length: 7 }, (_, i) => (weekStart + i) % 7);
+  return (
+    <fieldset className="field">
+      <legend>{t("goals.workdays")}</legend>
+      <div className="weekday-picks">
+        {order.map((d) => (
+          <label key={d} className="weekday-pick">
+            <input
+              type="checkbox"
+              checked={value.includes(d)}
+              onChange={(e) => onChange(e.target.checked ? [...value, d].sort((a, b) => a - b) : value.filter((x) => x !== d))}
+            />
+            {formatWeekdayShort(d, prefs.language)}
+          </label>
+        ))}
+      </div>
+      <p className="hint">{t("goals.workdaysHint")}</p>
+    </fieldset>
+  );
+}
+
+/** Optional daily cap (T-183): a whole number in the goal's measure; empty = none. */
+function CapField({ value, onChange, kind }: { value: string; onChange: (v: string) => void; kind: GoalKind }) {
+  const t = useT();
+  const id = useId();
+  const invalid = value.trim() !== "" && !/^[1-9]\d*$/.test(value.trim());
+  return (
+    <div className="field">
+      <label htmlFor={id}>{t(kind === "time" ? "goals.dailyCapMinutes" : "goals.dailyCap")}</label>
+      <input id={id} inputMode="numeric" value={value} aria-invalid={invalid} onChange={(e) => onChange(e.target.value)} />
+      <p className="hint">{invalid ? t("goals.dailyCapInvalid") : t("goals.dailyCapHint")}</p>
+    </div>
+  );
+}
+
+const capOf = (text: string): number | null | "invalid" => (text.trim() === "" ? null : /^[1-9]\d*$/.test(text.trim()) ? Number(text.trim()) : "invalid");
 
 export function goalError(t: Translate, error: unknown): string {
   if (error instanceof GoalError) return t(`goal.error.${error.code}` as MessageKey, { names: error.milestoneNames.join(t("goals.nameSeparator")) });
@@ -277,11 +321,13 @@ function NewGoal({ org, onCreated }: { org: Organization; onCreated: (id: string
   const [projectId, setProjectId] = useState("");
   const [startDate, setStartDate] = useState<string | null>(null); // null = today's default (T-086)
   const [deadline, setDeadline] = useState("");
+  const [workdays, setWorkdays] = useState<number[]>([]);
+  const [cap, setCap] = useState("");
   const [error, setError] = useState<string | null>(null);
   const start = startDate ?? defaultStartDate(shared.timeZone);
   const value = targetOf(kind, target);
   const definitionReady = definitionId !== "" || (!!newDefinition.name.trim() && !!newDefinition.unit.trim());
-  const ready = !!name.trim() && value !== null && !!start && (kind !== "output" || definitionReady);
+  const ready = !!name.trim() && value !== null && !!start && (kind !== "output" || definitionReady) && capOf(cap) !== "invalid";
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -290,7 +336,19 @@ function NewGoal({ org, onCreated }: { org: Organization; onCreated: (id: string
     try {
       const outputDefinition = kind === "output" ? definitionId || (await createOutputDefinition(db, newDefinition)) : undefined;
       if (outputDefinition) setDefinitionId(outputDefinition);
-      const id = await createGoal(db, { name, description, kind, target: value, definitionId: outputDefinition, projectId: projectId || null, startDate: start, deadline: deadline || null });
+      const dailyCap = capOf(cap);
+      const id = await createGoal(db, {
+        name,
+        description,
+        kind,
+        target: value,
+        definitionId: outputDefinition,
+        projectId: projectId || null,
+        startDate: start,
+        deadline: deadline || null,
+        workdays,
+        dailyCap: dailyCap === "invalid" ? null : dailyCap,
+      });
       onCreated(id);
     } catch (e) {
       setError(goalError(t, e));
@@ -325,6 +383,8 @@ function NewGoal({ org, onCreated }: { org: Organization; onCreated: (id: string
         <ProjectSelect org={org} value={projectId} current={null} onChange={setProjectId} />
         <DateField label={t("goals.startDate")} value={start} onChange={setStartDate} required />
         <DateField label={t("goals.deadline")} value={deadline} onChange={setDeadline} hint={t("goals.deadlineHint")} />
+        <WorkdaysField value={workdays} onChange={setWorkdays} weekStart={shared.weekStart} />
+        <CapField value={cap} onChange={setCap} kind={kind} />
         <ErrorNotice error={error} />
         <button type="submit" disabled={!ready}>
           {t("goals.create")}
@@ -344,11 +404,14 @@ function GoalEditor({ goal, org, onDone }: { goal: Goal; org: Organization; onDo
   const [projectId, setProjectId] = useState(goal.data.projectId ?? "");
   const [startDate, setStartDate] = useState(goal.data.startDate);
   const [deadline, setDeadline] = useState(goal.data.deadline ?? "");
+  const [workdays, setWorkdays] = useState<number[]>(goal.data.workdays ?? []);
+  const [cap, setCap] = useState(goal.data.dailyCap === undefined ? "" : String(goal.data.dailyCap));
   const [error, setError] = useState<string | null>(null);
+  const shared = useSharedPreferences();
   const kind = goal.data.kind;
   const value = targetOf(kind, target);
   const work = useWork();
-  const ready = !!name.trim() && value !== null && !!startDate;
+  const ready = !!name.trim() && value !== null && !!startDate && capOf(cap) !== "invalid";
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -362,6 +425,8 @@ function GoalEditor({ goal, org, onDone }: { goal: Goal; org: Organization; onDo
         projectId: projectId || null,
         startDate,
         deadline: deadline || null,
+        workdays,
+        dailyCap: capOf(cap) === "invalid" ? undefined : (capOf(cap) as number | null),
       });
       onDone();
     } catch (e) {
@@ -386,6 +451,9 @@ function GoalEditor({ goal, org, onDone }: { goal: Goal; org: Organization; onDo
       <ProjectSelect org={org} value={projectId} current={goal.data.projectId} onChange={setProjectId} />
       <DateField label={t("goals.startDate")} value={startDate} onChange={setStartDate} required />
       <DateField label={t("goals.deadline")} value={deadline} onChange={setDeadline} hint={t("goals.deadlineHint")} />
+      <WorkdaysField value={workdays} onChange={setWorkdays} weekStart={shared.weekStart} />
+      <CapField value={cap} onChange={setCap} kind={kind} />
+      <p className="hint">{t("goals.planHistoryHint")}</p>
       <ErrorNotice error={error} />
       <div className="button-row">
         <button type="submit" disabled={!ready}>
@@ -414,6 +482,7 @@ function GoalDetail({ goal, goals, org, onBack }: { goal: Goal; goals: Goals; or
   const project = goal.data.projectId ? org.projects.find((p) => p.id === goal.data.projectId) : undefined;
   const milestones = milestonesOfGoal(goals.milestones, goal.id);
   const outside = new Set(milestonesOutside(goals.milestones, goal.id, goal.data).map((m) => m.id));
+  const insights = useInsights();
 
   const act = (action: () => Promise<void>) => async () => {
     setError(null);
@@ -461,8 +530,15 @@ function GoalDetail({ goal, goals, org, onBack }: { goal: Goal; goals: Goals; or
                 <dt>{t("goals.field.dates")}</dt>
                 <dd>{goalDates(t, goal.data, prefs)}</dd>
               </div>
+              <div>
+                <dt>{t("goals.workdays")}</dt>
+                <dd>{goal.data.workdays?.length ? goal.data.workdays.map((d) => formatWeekdayShort(d, prefs.language)).join(t("goals.nameSeparator")) : t("goals.noWorkdays")}</dd>
+              </div>
+              <div>
+                <dt>{t("goals.field.dailyCap")}</dt>
+                <dd>{goal.data.dailyCap === undefined ? t("goals.noCap") : String(goal.data.dailyCap)}</dd>
+              </div>
             </dl>
-            <p className="notice notice-info">{t("goals.progressNote")}</p>
             {goal.data.kind === "output" && !goal.data.definitionId && !archived ? <LegacyGoalMigration goal={goal} work={work} /> : null}
             {archived ? (
               <>
@@ -506,6 +582,8 @@ function GoalDetail({ goal, goals, org, onBack }: { goal: Goal; goals: Goals; or
           </>
         )}
       </section>
+
+      {insights ? <GoalPacePanel ctx={insights} goalId={goal.id} goal={goal.data} definitions={definitions} /> : null}
 
       <section className="card" aria-labelledby="milestones-title" data-testid="milestones">
         <h2 id="milestones-title">{t("goals.milestones")}</h2>

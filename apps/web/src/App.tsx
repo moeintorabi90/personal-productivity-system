@@ -3,6 +3,10 @@ import { usePreferences, useDocumentPreferences, useServices, useT } from "./app
 import { AccountView } from "./components/AccountView.tsx";
 import { BackupView } from "./components/BackupView.tsx";
 import { CalendarView } from "./components/CalendarView.tsx";
+import { DashboardView } from "./components/DashboardView.tsx";
+import { useAppUseRecording } from "./components/insights-hooks.ts";
+import { ReportsView } from "./components/ReportsView.tsx";
+import { TimerBar } from "./components/TimerPanel.tsx";
 import { GoalsView } from "./components/GoalsView.tsx";
 import { HomeView } from "./components/HomeView.tsx";
 import { InboxView } from "./components/InboxView.tsx";
@@ -12,7 +16,7 @@ import { ConnectivityNotice, StatusBar } from "./components/StatusBar.tsx";
 import { TodayView } from "./components/TodayView.tsx";
 import { SessionPrompts, useTrashMaintenance, WorkScreen } from "./components/work-ui.tsx";
 
-type View = "home" | "today" | "work" | "calendar" | "inbox" | "projects" | "goals" | "settings" | "backup" | "account";
+type View = "home" | "dashboard" | "today" | "work" | "calendar" | "inbox" | "projects" | "goals" | "reports" | "settings" | "backup" | "account";
 
 export function App() {
   const prefs = usePreferences();
@@ -21,15 +25,19 @@ export function App() {
   const { syncEnabled } = useServices();
   const [view, setView] = useState<View>("home");
   useTrashMaintenance();
+  // Viewing any section counts as app use (T-203); the first run in a week also starts its plans (T-225).
+  useAppUseRecording();
 
   const navItems: { id: View; label: string }[] = [
     { id: "home", label: t("nav.home") },
+    { id: "dashboard", label: t("nav.dashboard") },
     { id: "today", label: t("nav.today") },
     { id: "work", label: t("nav.work") },
     { id: "calendar", label: t("nav.calendar") },
     { id: "inbox", label: t("nav.inbox") },
     { id: "projects", label: t("nav.projects") },
     { id: "goals", label: t("nav.goals") },
+    { id: "reports", label: t("nav.reports") },
     { id: "settings", label: t("nav.settings") },
     { id: "backup", label: t("nav.backup") },
     // Frozen post-v1 sync screens: only in builds with the flag on (D-016).
@@ -61,8 +69,13 @@ export function App() {
       <main id="main" className="app-main" tabIndex={-1}>
         <ConnectivityNotice />
         <SessionPrompts />
+        <TimerBar onOpenWork={() => setView("work")} />
         {view === "home" ? (
           <HomeView onOpenBackup={() => setView("backup")} />
+        ) : view === "dashboard" ? (
+          <DashboardView />
+        ) : view === "reports" ? (
+          <ReportsView />
         ) : view === "today" ? (
           <TodayView onOpenSettings={() => setView("settings")} onOpenWork={() => setView("work")} />
         ) : view === "work" ? (

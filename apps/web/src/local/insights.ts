@@ -84,6 +84,19 @@ export async function saveDashboard(db: LocalDb, id: string, data: DashboardData
   await putRecord(db, registry, DASHBOARDS, id, { name: checkName(data.name), cards: data.cards.map((c) => ({ ...c })) });
 }
 
+/**
+ * Applies an edit to the dashboard as it is stored now (the main one's suggested layout until its
+ * first edit), in one transaction, so quick successive edits never work from a stale copy.
+ */
+export async function updateDashboard(db: LocalDb, id: string, edit: (current: DashboardData) => DashboardData, registry: Registry = PRODUCT_REGISTRY): Promise<void> {
+  await db.transaction("rw", [db.records, db.tombstones, db.meta], async () => {
+    const stored = (await db.records.get([DASHBOARDS, id]))?.data as DashboardData | undefined;
+    const current = stored ?? (id === MAIN_DASHBOARD_ID ? SUGGESTED_MAIN_DASHBOARD : undefined);
+    if (!current) throw new DashboardError("NOT_FOUND", "no such dashboard");
+    await saveDashboard(db, id, edit(current), registry);
+  });
+}
+
 /** Creates an optional dashboard with no cards (T-198). */
 export async function createDashboard(db: LocalDb, name: string, registry: Registry = PRODUCT_REGISTRY): Promise<string> {
   const id = crypto.randomUUID();

@@ -408,10 +408,10 @@ function ImportPanel() {
             </p>
           ) : null}
           <PreviewCounts preview={state.preview} />
-          {state.preview.counts.newerInBackup > 0 ? (
+          {state.preview.counts.newerInBackup + state.preview.counts.planMerge > 0 ? (
             <div className="checkbox-field">
               <input id={ids.updates} type="checkbox" checked={applyUpdates} onChange={(e) => setApplyUpdates(e.target.checked)} />
-              <label htmlFor={ids.updates}>{t("backup.import.applyUpdates", { count: state.preview.counts.newerInBackup })}</label>
+              <label htmlFor={ids.updates}>{t("backup.import.applyUpdates", { count: state.preview.counts.newerInBackup + state.preview.counts.planMerge })}</label>
             </div>
           ) : null}
           {state.preview.updatesBlockedBy.length > 0 ? (
@@ -467,6 +467,11 @@ function PreviewCounts({ preview }: { preview: ImportPreview }) {
     ["backup.import.count.decisions", decisionsCount(c)],
     ["backup.import.count.alreadyPending", c.alreadyPending],
     ["backup.import.count.carried", c.carriedConflicts],
+    // Stage 6: weekly plans merge date by date only with "Apply updates" (T-229); use dates have their own count (T-204).
+    ["backup.import.count.planMerge", c.planMerge],
+    ["backup.import.count.planDecisions", c.planDecisions],
+    ["backup.import.count.planIntegrity", c.planIntegrity],
+    ["backup.import.count.appUseDates", c.appUseDates],
   ];
   return (
     <ul className="count-list">
@@ -504,6 +509,12 @@ const TYPE_LABELS: Record<string, MessageKey> = {
   outputRecords: "backup.type.outputRecords",
   corrections: "backup.type.corrections",
   taskCompletions: "backup.type.taskCompletions",
+  taskEstimateCaptures: "backup.type.taskEstimateCaptures",
+  dashboards: "backup.type.dashboards",
+  appUseDays: "backup.type.appUseDays",
+  goalWeekAllocations: "backup.type.goalWeekAllocations",
+  goalWeekPlans: "backup.type.goalWeekPlans",
+  goalWeekPlanChoices: "backup.type.goalWeekPlanChoices",
 };
 
 function typeLabel(t: Translate, type: string): string {
