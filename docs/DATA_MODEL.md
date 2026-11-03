@@ -179,7 +179,7 @@ Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-
 
 ### Stage 6 data (proposed; `dataSchemaVersion` 8; not implemented)
 
-Owner decisions T-174 to T-230. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
+Owner decisions T-174 to T-234. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
 
 | Type / field | Data fields (proposed) | Rules |
 |---|---|---|
@@ -196,7 +196,7 @@ Owner decisions T-174 to T-230. **The version number, field names, and shapes be
 
 - **Derived, never stored:** pace targets, automatic allocations of future weeks, the allocation discrepancy, the state of manual allocations, projected attainment, both goal streaks, the app-use streak, comparisons, estimate accuracy, and output rate (T-073, T-181, T-196, T-206, T-207). The allocation in effect in the current and closed weeks is stored in `goalWeekPlans`, so corrections recalculate targets and streaks but never that plan (T-208, T-214, T-217).
 - **Older data:** goals, blocks, and occurrences from before version 8 have no recorded history; they use their current values or show "no data", and nothing is reconstructed. Weeks before version 8, days before a goal's first recorded plan, and weeks in which the app was not run have no weekly plan and show "no data" for allocation, daily target, and pace (T-225); a record for such a week made on another device and imported later applies, and nothing else creates one (T-226).
-- **Timer (T-230):** the stopwatch of a work session and the floating view add no data; the session record is unchanged (T-092). Whether a countdown or a stopwatch not tied to a session is stored is open (DECISIONS); if one is, its type and version-8 fields are added before version 8 ships.
+- **Timer (T-230 to T-234):** the stopwatch of a work session and the floating view add no data; the session record is unchanged (T-092). A standalone stopwatch is kept only in memory and never stored (T-231). The countdown is kept on the device in the `meta` table (`countdown`: `status`, `durationMs`, `endsAt`, `remainingMs`), with the sound setting in `timerSound` (T-232 to T-234); these are device-local rows, not records, like language and theme (D-017). Version 8 gains no type or field for the timer.
 
 ### Streak data (approved 2026-10-25, updated 2026-11-01; not implemented)
 

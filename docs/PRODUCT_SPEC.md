@@ -275,7 +275,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 
 ### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; not implemented)
 
-Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-230 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
+Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-234 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
 
 **Calendar**
 
@@ -332,8 +332,12 @@ Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-230 (DECIS
 - [ ] The timer is a normal, built-in part of the app and works inside the app everywhere. It has an elapsed stopwatch and a countdown timer (T-230).
 - [ ] Starting work on a task starts and tracks a work session; pausing and resuming follow the existing session rules, and ending a session does not complete the task (T-091, T-092, T-117, T-230).
 - [ ] A countdown reaching zero never ends or completes a work session (T-230).
-- [ ] Where supported, the timer can open in a floating window that stays on top of other desktop apps, using Document Picture-in-Picture in supported desktop Edge and Chrome. The control to open it appears only where this works; elsewhere, including phones and other browsers, only the in-app timer is offered. The floating window shows and controls the same timer, never a second one (T-230).
-- [ ] Open: whether a stopwatch can run without saving a session, what a countdown belongs to and whether it pauses with the session, what happens at zero, and whether a countdown is kept (DECISIONS "Stage 6 decisions").
+- [ ] Where supported, the timer can open in a floating window that stays on top of other desktop apps, using Document Picture-in-Picture in desktop browsers that offer it, such as Chrome and Edge. The control to open it appears only where the browser offers this, decided at run time; elsewhere, including phones and other browsers, only the in-app timer is offered. The floating window shows and controls the same timer, never a second one (T-230).
+- [ ] The stopwatch can run on its own without creating or saving a work session; it counts toward no task or goal and is not saved as work history. Starting work on a task stays a separate action (T-231).
+- [ ] The countdown is an independent tool, with or without a work session, and has its own controls; pausing or resuming a session does not pause or resume it (T-232).
+- [ ] At zero the app shows an in-app completion message and plays an alert sound that the user can turn off. No system notification is sent by default; any later notification must be turned on by the user and follow the browser's permission rules (T-233).
+- [ ] A countdown survives closing and reopening the app on the same device; time keeps passing, and on reopening the app shows the time left or that it expired. It does not travel in backups (T-234).
+- [ ] Open: whether a standalone stopwatch survives closing the app (DECISIONS "Stage 6 decisions").
 
 **App-use streak**
 
