@@ -188,15 +188,18 @@ export interface CapProjection {
 }
 
 /**
- * Maximum projected attainment: progress + cap × selected workdays left until the deadline,
- * counting today if it is one. Independent of the weekly allocation, so it is also shown during a
- * mismatch (T-221) and whatever today's target is (T-222).
+ * Maximum projected attainment: progress + cap × work opportunities left until the deadline,
+ * counting today if it is one. An opportunity follows T-185 (`isOpportunity`): a selected workday
+ * of the plan in effect, inside the goal's dates, while the goal is active and not archived, so
+ * paused, archived, and completed periods add no capacity; days after today take the goal's current
+ * status, since no future change is assumed. Independent of the weekly allocation, so it is also
+ * shown during a mismatch (T-221) and whatever today's target is (T-222).
  */
 export function capProjection(goal: GoalData, progress: number, today: string): CapProjection | null {
   const plan = planOn(goal, today);
   if (plan.dailyCap === null || plan.deadline === null || plan.deadline < today || goal.status === "completed") return null;
   const from = today > goal.startDate ? today : goal.startDate;
-  const remainingWorkdays = datesBetween(from, plan.deadline).filter((d) => isPlannedWorkday(goal, plan, d)).length;
+  const remainingWorkdays = datesBetween(from, plan.deadline).filter((d) => isOpportunity(goal, d)).length;
   const maxProjected = progress + plan.dailyCap * remainingWorkdays;
   return { remainingWorkdays, maxProjected, unreachable: maxProjected < plan.target };
 }

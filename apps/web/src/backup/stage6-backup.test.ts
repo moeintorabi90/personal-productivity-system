@@ -353,7 +353,7 @@ describe("13. the version-8 sample", () => {
   it("the committed dataSchemaVersion-8 sample imports and covers the listed cases (fabricated data only)", async () => {
     const text = readFileSync(v8Sample, "utf8");
     const doc = JSON.parse(text);
-    expect(doc.app.dataSchemaVersion).toBe(8);
+    expect(doc.app).toEqual({ version: "0.8.0", dataSchemaVersion: 8 }); // written by the Stage 6 app
     const records = doc.payload.records;
     const revisions = records[GOAL_WEEK_ALLOCATIONS].flatMap((r: { data: { revisions: { amount: number | null }[] } }) => r.data.revisions.map((x) => x.amount));
     expect(revisions).toContain(null);

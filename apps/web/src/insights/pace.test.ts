@@ -214,6 +214,43 @@ describe("5. daily cap and projection (T-183, T-221, T-222)", () => {
     expect(capProjection(goal(), 0, MON)).toBeNull(); // no cap: the required pace is shown instead
   });
 
+  it("counts only work opportunities (T-185): a paused or archived goal adds no capacity, and history applies day by day", () => {
+    // Monday 2026-11-16 to Friday 2026-11-27: ten selected workdays.
+    const active = goal({ dailyCap: 20, deadline: "2026-11-27" });
+    expect(capProjection(active, 200, "2026-11-16")).toEqual({ remainingWorkdays: 10, maxProjected: 400, unreachable: true });
+    const pausedNow = goal({
+      dailyCap: 20,
+      deadline: "2026-11-27",
+      status: "paused",
+      statusHistory: [
+        { from: MON, status: "active", archived: false },
+        { from: "2026-11-16", status: "paused", archived: false },
+      ],
+    });
+    expect(capProjection(pausedNow, 200, "2026-11-16")).toEqual({ remainingWorkdays: 0, maxProjected: 200, unreachable: true });
+    const archivedNow = goal({
+      dailyCap: 20,
+      deadline: "2026-11-27",
+      archivedAt: "2026-11-16T08:00:00.000Z",
+      statusHistory: [
+        { from: MON, status: "active", archived: false },
+        { from: "2026-11-16", status: "active", archived: true },
+      ],
+    });
+    expect(capProjection(archivedNow, 200, "2026-11-16")).toEqual({ remainingWorkdays: 0, maxProjected: 200, unreachable: true });
+    // Paused until Wednesday and active again from then: only Wednesday onward counts (8 workdays).
+    const resumed = goal({
+      dailyCap: 20,
+      deadline: "2026-11-27",
+      statusHistory: [
+        { from: MON, status: "active", archived: false },
+        { from: "2026-11-16", status: "paused", archived: false },
+        { from: "2026-11-18", status: "active", archived: false },
+      ],
+    });
+    expect(capProjection(resumed, 200, "2026-11-16")).toEqual({ remainingWorkdays: 8, maxProjected: 360, unreachable: true });
+  });
+
   it("required pace above the cap shows the capped amount, and meeting it continues the pace streak", () => {
     const g = goal({ dailyCap: 20 });
     const plans = [plan(MON, [[MON, allocated(150)]])];

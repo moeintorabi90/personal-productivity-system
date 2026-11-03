@@ -202,6 +202,8 @@ Acceptance items and where they are tested: 1 and 2 in `stage6-ui.test.tsx` (sub
 
 Earlier tests were updated where Stage 6 changed approved behavior: the navigation has Dashboard and Reports; goals now show progress; new blocks are created in the Planned half of a day column; a phone-sized week shows one day (T-175); backups include estimate captures and app-use dates, so some counts grew; editing a block after its start keeps a compared plan (T-179); and expectations of the data version moved from 7 to 8.
 
+**Fixes after Codex's independent review (2026-11-03, same branch):** the cap projection now counts only work opportunities (T-185), so a paused or archived goal adds no capacity; new regression cases in `insights/pace.test.ts` cover an active, a paused, an archived, and a goal resumed mid-week. The version-8 sample was written again by the Stage 6 app (header `app.version` 0.8.0, still fabricated data), and `backup/stage6-backup.test.ts` now checks that header. `npm.cmd run typecheck` passed; `npx.cmd vitest run apps/web/src/insights apps/web/src/backup apps/web/src/local apps/web/src/stage6-ui.test.tsx`: 28 files, 384 tests passed. The full suite and the end-to-end tests were not run again for this fix.
+
 Not covered, or covered only in part:
 
 - Manual checks on the owner's devices (item 14) have not been done.

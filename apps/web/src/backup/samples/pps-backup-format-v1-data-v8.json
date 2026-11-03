@@ -4,11 +4,11 @@
   "backupId": "8c1d2e3f-4a5b-4c6d-8e7f-90a1b2c3d4e5",
   "createdAt": "2026-11-05T09:00:00.000Z",
   "app": {
-    "version": "0.7.0",
+    "version": "0.8.0",
     "dataSchemaVersion": 8
   },
   "sourceDevice": {
-    "id": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+    "id": "75f0894e-5c7a-4898-ab1f-c637ed28854d",
     "name": "A"
   },
   "encryption": null,
@@ -20,7 +20,7 @@
           "createdAt": "2026-11-02T08:00:00.000Z",
           "updatedAt": "2026-11-02T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
           },
           "contentHash": "a7996caa0dcb648963b359dad35229e0042eca9fe24c01dfc4884dc26b997c58",
           "data": {
@@ -32,11 +32,11 @@
       ],
       "taskDefinitions": [
         {
-          "id": "299c7ce1-f636-4e24-84c6-db0b25581a34",
+          "id": "4d320009-8fb8-4e92-8b3a-1aa0b603cf56",
           "createdAt": "2026-11-05T08:00:00.000Z",
           "updatedAt": "2026-11-05T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
           },
           "contentHash": "40db22f6bd278a53ee30ad2df8af72c1660a83fbfc8462de391063e4ea5b5dec",
           "data": {
@@ -52,15 +52,15 @@
       ],
       "calendarBlocks": [
         {
-          "id": "bdb6edb7-219b-45c0-a91e-e8f8ca17d5c5",
+          "id": "34c47956-8440-4d82-a6ef-6afd5cd08664",
           "createdAt": "2026-11-05T08:00:00.000Z",
           "updatedAt": "2026-11-05T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 2
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 2
           },
-          "contentHash": "4a6c9758648a2295ead029653e3f45559e9db30dd854dc7ae997a122c6d594ca",
+          "contentHash": "6ba6c9099c12e1184bd89849ae888d4371de909ae5f219ff45839d3d29c4a00c",
           "data": {
-            "taskId": "299c7ce1-f636-4e24-84c6-db0b25581a34",
+            "taskId": "4d320009-8fb8-4e92-8b3a-1aa0b603cf56",
             "startsAt": "2026-11-05T09:00:00.000Z",
             "endsAt": "2026-11-05T10:30:00.000Z",
             "timeZone": "UTC",
@@ -84,31 +84,11 @@
       ],
       "goals": [
         {
-          "id": "a8a1b8eb-df3d-4784-b4cd-2a0ea6f32dfa",
-          "createdAt": "2026-11-05T08:00:00.000Z",
-          "updatedAt": "2026-11-05T08:00:00.000Z",
-          "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
-          },
-          "contentHash": "c4995d8532004fd8e93d0d73684e61947f70977f81829b4ffd22ece8cbbda64f",
-          "data": {
-            "name": "Reading",
-            "description": "",
-            "projectId": null,
-            "startDate": "2026-11-02",
-            "deadline": null,
-            "kind": "taskCount",
-            "target": 20,
-            "status": "active",
-            "archivedAt": null
-          }
-        },
-        {
-          "id": "e188560b-d82f-47d9-9b59-ca089c17152e",
+          "id": "372e24b0-7da2-4c0d-ac3e-894e30db16a2",
           "createdAt": "2026-11-02T08:00:00.000Z",
           "updatedAt": "2026-11-05T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 2
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 2
           },
           "contentHash": "7e5cde8fb10cdd44befc9d342aaa700935272044768596cce7cae08dee2c6390",
           "data": {
@@ -157,19 +137,39 @@
               }
             ]
           }
+        },
+        {
+          "id": "9d93d6a8-08cc-4dc2-8371-1d5a8b472a40",
+          "createdAt": "2026-11-05T08:00:00.000Z",
+          "updatedAt": "2026-11-05T08:00:00.000Z",
+          "version": {
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
+          },
+          "contentHash": "c4995d8532004fd8e93d0d73684e61947f70977f81829b4ffd22ece8cbbda64f",
+          "data": {
+            "name": "Reading",
+            "description": "",
+            "projectId": null,
+            "startDate": "2026-11-02",
+            "deadline": null,
+            "kind": "taskCount",
+            "target": 20,
+            "status": "active",
+            "archivedAt": null
+          }
         }
       ],
       "taskEstimateCaptures": [
         {
-          "id": "5dd5620c-f86c-8771-b27d-4e5d16a416ea",
+          "id": "4a83aee5-674f-81f8-a970-74d1db614830",
           "createdAt": "2026-11-05T08:00:00.000Z",
           "updatedAt": "2026-11-05T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
           },
-          "contentHash": "203f4e88acd00f7132faf9161d88171f620997dc1aca94ec9b099ef1b31ed3d4",
+          "contentHash": "d52299e47abf4c71b809d546b24f580ee472ac9f3f9f200c168b34c78c444785",
           "data": {
-            "taskId": "299c7ce1-f636-4e24-84c6-db0b25581a34",
+            "taskId": "4d320009-8fb8-4e92-8b3a-1aa0b603cf56",
             "occurrenceDate": null,
             "estimateMinutes": 90,
             "capturedAt": "2026-11-05T08:00:00.000Z",
@@ -183,7 +183,7 @@
           "createdAt": "2026-11-05T08:00:00.000Z",
           "updatedAt": "2026-11-05T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
           },
           "contentHash": "9eef39f423d55c8e0fbaa60c3629decea8d60227b12fcdc0bcf185b161ffb896",
           "data": {
@@ -259,7 +259,7 @@
           "createdAt": "2026-11-05T08:00:00.000Z",
           "updatedAt": "2026-11-05T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
           },
           "contentHash": "a77588bfdb6950bcd70627b663867dbbb665c21097e097d6e5d9b33bb830c4e9",
           "data": {
@@ -271,7 +271,7 @@
           "createdAt": "2026-11-05T08:00:00.000Z",
           "updatedAt": "2026-11-05T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
           },
           "contentHash": "56f07f4334d934e5e30bf492cc56b0b41dc563f243d54ca4a2d2c1517ad10ec8",
           "data": {
@@ -283,7 +283,7 @@
           "createdAt": "2026-11-05T08:00:00.000Z",
           "updatedAt": "2026-11-05T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
           },
           "contentHash": "f0f8b12e7918ccbcf8c5e1069353af2220b2276b09a010a3ce84c977fad08379",
           "data": {
@@ -293,15 +293,53 @@
       ],
       "goalWeekAllocations": [
         {
-          "id": "5ea6037f-b107-8623-9761-dd4135600030",
+          "id": "1580c9f4-8844-83c6-881a-9d0b8d20f972",
+          "createdAt": "2026-11-04T08:00:00.000Z",
+          "updatedAt": "2026-11-04T08:00:00.000Z",
+          "version": {
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 2
+          },
+          "contentHash": "8be4f25344dd0ec184621ed16ff3bf3af95fea3ab1567cf2e84cd9af4096a6b9",
+          "data": {
+            "goalId": "372e24b0-7da2-4c0d-ac3e-894e30db16a2",
+            "weekStart": "2026-11-09",
+            "revisions": [
+              {
+                "from": "2026-11-04",
+                "amount": null
+              }
+            ]
+          }
+        },
+        {
+          "id": "9baf13e2-84e2-81e1-9dbf-cfe86531fbe2",
+          "createdAt": "2026-11-04T08:00:00.000Z",
+          "updatedAt": "2026-11-04T08:00:00.000Z",
+          "version": {
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
+          },
+          "contentHash": "b013c1e3fc742bb8247760d5481d8cfa99ed46cd5c4d26e1df0c7bd2b885d096",
+          "data": {
+            "goalId": "372e24b0-7da2-4c0d-ac3e-894e30db16a2",
+            "weekStart": "2026-11-23",
+            "revisions": [
+              {
+                "from": "2026-11-04",
+                "amount": 50
+              }
+            ]
+          }
+        },
+        {
+          "id": "c2a28df2-bd62-8f83-a852-12613cba9c4d",
           "createdAt": "2026-11-04T08:00:00.000Z",
           "updatedAt": "2026-11-05T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 2
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 2
           },
-          "contentHash": "ccbb4fbe156542fe66ebdd8407d3a876157afc8f265fd5138d549f4257878bd5",
+          "contentHash": "7ce5db13a7cb3f28130617e76128fe8c631db67a6f7f0a6c74a475cb5babe9ef",
           "data": {
-            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+            "goalId": "372e24b0-7da2-4c0d-ac3e-894e30db16a2",
             "weekStart": "2026-11-16",
             "revisions": [
               {
@@ -314,65 +352,27 @@
               }
             ]
           }
-        },
-        {
-          "id": "b8b5078c-306d-8eee-8c99-719391790c73",
-          "createdAt": "2026-11-04T08:00:00.000Z",
-          "updatedAt": "2026-11-04T08:00:00.000Z",
-          "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
-          },
-          "contentHash": "0325a5e67a1c2a35ff0f1ba2b743de9bcd44904c9d595d969499310215f85272",
-          "data": {
-            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
-            "weekStart": "2026-11-23",
-            "revisions": [
-              {
-                "from": "2026-11-04",
-                "amount": 50
-              }
-            ]
-          }
-        },
-        {
-          "id": "d90c9c5f-ab89-80f5-a177-068ad23d5837",
-          "createdAt": "2026-11-04T08:00:00.000Z",
-          "updatedAt": "2026-11-04T08:00:00.000Z",
-          "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 2
-          },
-          "contentHash": "cb0ec412d1ae55e660d4531c6795bcd08e02f428752ba3628510d6f794bdb86a",
-          "data": {
-            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
-            "weekStart": "2026-11-09",
-            "revisions": [
-              {
-                "from": "2026-11-04",
-                "amount": null
-              }
-            ]
-          }
         }
       ],
       "goalWeekPlans": [
         {
-          "id": "2d852c9a-1e20-890b-8945-1fbdfee3d01a",
+          "id": "0c104c0d-9e15-8c1b-839f-a181b034e9a6",
           "createdAt": "2026-11-02T08:00:00.000Z",
           "updatedAt": "2026-11-05T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 9,
-            "2f5e437e-af0a-4fae-b29b-e159fa90a5e2": 3
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 9,
+            "f2901f28-e5b5-4cf0-bb50-4ac9ce9abde7": 3
           },
-          "contentHash": "ed013a52d2c98a3d0d024300c8cee7595afbc150158b126675c3d8751da2840f",
+          "contentHash": "28a5e18d55fd7499bd8681bf3823b73560d6bc0d54e7d4b0de07c59a6f668e36",
           "data": {
-            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+            "goalId": "372e24b0-7da2-4c0d-ac3e-894e30db16a2",
             "weekStart": "2026-11-02",
             "dates": [
               {
                 "from": "2026-11-02",
                 "entries": [
                   {
-                    "device": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+                    "device": "75f0894e-5c7a-4898-ab1f-c637ed28854d",
                     "seq": 1,
                     "segment": {
                       "state": "allocated",
@@ -391,22 +391,7 @@
                 "from": "2026-11-04",
                 "entries": [
                   {
-                    "device": "2f5e437e-af0a-4fae-b29b-e159fa90a5e2",
-                    "seq": 2,
-                    "segment": {
-                      "state": "allocated",
-                      "allocation": {
-                        "num": 500,
-                        "den": 3
-                      },
-                      "source": "automatic"
-                    },
-                    "seen": {
-                      "ab74ec63-08e0-4d4f-9827-59734a7e9618": 5
-                    }
-                  },
-                  {
-                    "device": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+                    "device": "75f0894e-5c7a-4898-ab1f-c637ed28854d",
                     "seq": 5,
                     "segment": {
                       "state": "allocated",
@@ -417,7 +402,22 @@
                       "source": "automatic"
                     },
                     "seen": {
-                      "2f5e437e-af0a-4fae-b29b-e159fa90a5e2": 1
+                      "f2901f28-e5b5-4cf0-bb50-4ac9ce9abde7": 1
+                    }
+                  },
+                  {
+                    "device": "f2901f28-e5b5-4cf0-bb50-4ac9ce9abde7",
+                    "seq": 2,
+                    "segment": {
+                      "state": "allocated",
+                      "allocation": {
+                        "num": 500,
+                        "den": 3
+                      },
+                      "source": "automatic"
+                    },
+                    "seen": {
+                      "75f0894e-5c7a-4898-ab1f-c637ed28854d": 5
                     }
                   }
                 ],
@@ -444,7 +444,7 @@
                 "from": "2026-11-05",
                 "entries": [
                   {
-                    "device": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+                    "device": "75f0894e-5c7a-4898-ab1f-c637ed28854d",
                     "seq": 1,
                     "segment": {
                       "state": "mismatch",
@@ -462,18 +462,18 @@
       ],
       "goalWeekPlanChoices": [
         {
-          "id": "75630a2b-13af-8627-b76d-5524baa27414",
+          "id": "09e351ff-bc7b-817d-bcca-92864a59585f",
           "createdAt": "2026-11-04T10:00:00.000Z",
           "updatedAt": "2026-11-04T10:00:00.000Z",
           "version": {
-            "2f5e437e-af0a-4fae-b29b-e159fa90a5e2": 1
+            "f2901f28-e5b5-4cf0-bb50-4ac9ce9abde7": 1
           },
-          "contentHash": "b4af6e413c2a6ef5dadb04c515ffe21094ea2917517561da6e02850ae9ce4d82",
+          "contentHash": "8c7ca24c4e51cc7a23ff0e25497e4544c54ba8564e36f9667103c133cda82ee8",
           "data": {
-            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+            "goalId": "372e24b0-7da2-4c0d-ac3e-894e30db16a2",
             "weekStart": "2026-11-02",
             "from": "2026-11-04",
-            "device": "2f5e437e-af0a-4fae-b29b-e159fa90a5e2",
+            "device": "f2901f28-e5b5-4cf0-bb50-4ac9ce9abde7",
             "deviceName": "B",
             "seq": 2,
             "previous": {
@@ -493,24 +493,24 @@
               "source": "automatic"
             },
             "seen": {
-              "ab74ec63-08e0-4d4f-9827-59734a7e9618": 5
+              "75f0894e-5c7a-4898-ab1f-c637ed28854d": 5
             },
             "recordedAt": "2026-11-04T10:00:00.000Z"
           }
         },
         {
-          "id": "80e331ab-217a-841b-9ca3-8387c86d688f",
+          "id": "390ecd9f-795b-8b14-8525-e437a5f6469d",
           "createdAt": "2026-11-04T08:00:00.000Z",
           "updatedAt": "2026-11-04T08:00:00.000Z",
           "version": {
-            "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+            "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
           },
-          "contentHash": "324b0db80d984df86414a57c5a7c8fe0d2b80630bc629affb5cd7aeb60c4343f",
+          "contentHash": "3a6b248df5e59af0216c20723148110610ead9a27e957ee38f6c05f75f6aefef",
           "data": {
-            "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+            "goalId": "372e24b0-7da2-4c0d-ac3e-894e30db16a2",
             "weekStart": "2026-11-02",
             "from": "2026-11-04",
-            "device": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+            "device": "75f0894e-5c7a-4898-ab1f-c637ed28854d",
             "deviceName": "A",
             "seq": 5,
             "previous": {
@@ -530,7 +530,7 @@
               "source": "automatic"
             },
             "seen": {
-              "2f5e437e-af0a-4fae-b29b-e159fa90a5e2": 1
+              "f2901f28-e5b5-4cf0-bb50-4ac9ce9abde7": 1
             },
             "recordedAt": "2026-11-04T08:00:00.000Z"
           }
@@ -540,22 +540,22 @@
     "tombstones": [],
     "pendingConflicts": [
       {
-        "conflictId": "4f811953-e1fa-4e05-9a25-c411c9ea52e8",
+        "conflictId": "a9ef4764-26a2-47cb-a7b2-f0dcd98ec5e5",
         "kind": "edit",
         "type": "goalWeekAllocations",
-        "id": "b8b5078c-306d-8eee-8c99-719391790c73",
+        "id": "9baf13e2-84e2-81e1-9dbf-cfe86531fbe2",
         "local": {
           "deleted": false,
           "envelope": {
-            "id": "b8b5078c-306d-8eee-8c99-719391790c73",
+            "id": "9baf13e2-84e2-81e1-9dbf-cfe86531fbe2",
             "createdAt": "2026-11-04T08:00:00.000Z",
             "updatedAt": "2026-11-04T08:00:00.000Z",
             "version": {
-              "ab74ec63-08e0-4d4f-9827-59734a7e9618": 1
+              "75f0894e-5c7a-4898-ab1f-c637ed28854d": 1
             },
-            "contentHash": "0325a5e67a1c2a35ff0f1ba2b743de9bcd44904c9d595d969499310215f85272",
+            "contentHash": "b013c1e3fc742bb8247760d5481d8cfa99ed46cd5c4d26e1df0c7bd2b885d096",
             "data": {
-              "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+              "goalId": "372e24b0-7da2-4c0d-ac3e-894e30db16a2",
               "weekStart": "2026-11-23",
               "revisions": [
                 {
@@ -569,15 +569,15 @@
         "incoming": {
           "deleted": false,
           "envelope": {
-            "id": "b8b5078c-306d-8eee-8c99-719391790c73",
+            "id": "9baf13e2-84e2-81e1-9dbf-cfe86531fbe2",
             "createdAt": "2026-11-04T08:00:00.000Z",
             "updatedAt": "2026-11-04T08:00:00.000Z",
             "version": {
-              "2f5e437e-af0a-4fae-b29b-e159fa90a5e2": 1
+              "f2901f28-e5b5-4cf0-bb50-4ac9ce9abde7": 1
             },
-            "contentHash": "56c24cdccf5b68f0df459d39d069fe96afaa51ad14f24888557b23f4f5c244be",
+            "contentHash": "cd3d9ccf40a1f4b59ed4c64d6ff981e854e13174f0e421ccffc8006288b24eab",
             "data": {
-              "goalId": "e188560b-d82f-47d9-9b59-ca089c17152e",
+              "goalId": "372e24b0-7da2-4c0d-ac3e-894e30db16a2",
               "weekStart": "2026-11-23",
               "revisions": [
                 {
@@ -589,14 +589,14 @@
           }
         },
         "source": {
-          "backupId": "940166bd-455b-4238-8ba6-a7ae174adcd1",
-          "deviceId": "2f5e437e-af0a-4fae-b29b-e159fa90a5e2",
+          "backupId": "6d624d12-4669-4d57-923f-ed877074b751",
+          "deviceId": "f2901f28-e5b5-4cf0-bb50-4ac9ce9abde7",
           "deviceName": "B",
           "exportedAt": "2026-11-04T08:00:00.000Z"
         },
         "detectedAt": "2026-11-04T08:00:00.000Z",
         "detectedOn": {
-          "deviceId": "ab74ec63-08e0-4d4f-9827-59734a7e9618",
+          "deviceId": "75f0894e-5c7a-4898-ab1f-c637ed28854d",
           "deviceName": "A"
         }
       }
@@ -610,6 +610,6 @@
   "integrity": {
     "algorithm": "SHA-256",
     "canonicalization": "JCS-RFC8785",
-    "hash": "efb80cb5e36c95e094153f1ab1a003593b301bde4528ef6b65c7fb486ec1fdca"
+    "hash": "ecdae9104416328d660a1afbf7aeb597f0eb00fc3dff94c73a4ec36cb1f22e9f"
   }
 }
