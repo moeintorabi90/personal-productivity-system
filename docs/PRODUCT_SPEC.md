@@ -273,7 +273,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 - [ ] The full actual value is shown even beyond the target; goal completion stays manual (T-043, T-106). Goal progress is calculated from these records and shown in Stage 6 (ROADMAP).
 - [ ] (Stage 6) In the day/week time grid, planned work and actual sessions are shown in Planned and Actual subcolumns on the same time axis (T-174); dragging an actual session is only an explicit correction that keeps the original record and its audit history (T-071, T-072).
 
-### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; not implemented)
+### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; implemented on `feat/stage-6`, not merged; TESTING "Stage 6 test report")
 
 Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-237 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
 

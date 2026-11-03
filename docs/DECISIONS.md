@@ -150,7 +150,7 @@ These follow from T-037 to T-065, T-077 to T-080, and the existing backup rules.
 | T-086 | **Default start date** is today's local date in the configured time zone, or the device's local date when no zone is configured; the owner sees and can change it before saving (T-042). Goal dates are local calendar dates, so Stage 4 needs no configured zone. | T-042; no calculation depends on the zone until Stage 5 pacing. | Adopted (derived) |
 | T-087 | **No progress in Stage 4** (T-037): goal screens show the target and say that progress is calculated from recorded work and outputs, which arrive with Stage 5. No percentage, count, or pacing is shown or stored. | Progress must not be fabricated before its source records exist. | Adopted (derived) |
 
-## Calendar interaction, project color, and streak decisions (contract, 2026-10-25; Stage 3 follow-up parts implemented and deployed as 0.6.0 (`7fabdcd`); Stage 6 and Stage 8 parts not implemented)
+## Calendar interaction, project color, and streak decisions (contract, 2026-10-25; Stage 3 follow-up parts implemented and deployed as 0.6.0 (`7fabdcd`); Stage 6 parts implemented on `feat/stage-6`, not merged; Stage 8 parts not implemented)
 
 Owner-approved feature contract. Behavior is in PRODUCT_SPEC ("Stage 3 follow-up: calendar interactions and project colors", "Stage 6: planned versus actual, pace, reports, and dashboards"); data in DATA_MODEL; backup in BACKUP_FORMAT ("Project color"). The approval covers the behavior in the "Decision" column. The derived technical choices below the table are not owner decisions; the open details at the end still need the owner (detail 1 is resolved by T-076).
 
@@ -339,9 +339,9 @@ Owner-approved requirements for Stage 5 (actual execution and outputs). For T-09
 - ~~**S-14. Planned/actual comparison in Stage 5.**~~ **Resolved** by T-145 (owner): not part of Stage 5; it stays in Stage 6 (T-071, T-072).
 - ~~**S-15. Expected output from a planned block.**~~ **Resolved** by T-141 (owner): a block's expected amount is copied into a session started from it (entry in the block form: T-150, derived).
 
-## Stage 6 decisions: calendar comparison, pace, estimation, metrics, dashboards (contract, 2026-11-01; not implemented)
+## Stage 6 decisions: calendar comparison, pace, estimation, metrics, dashboards (contract, 2026-11-01; implemented on `feat/stage-6` at the owner's request of 2026-11-03, not merged; implementation notes in ARCHITECTURE)
 
-Owner-approved contract for Stage 6, approved 2026-11-01 (T-209 to T-226: 2026-11-02; T-227 to T-237: 2026-11-03). Behavior: PRODUCT_SPEC "Stage 6: planned versus actual, pace, reports, and dashboards"; data: DATA_MODEL "Stage 6 data (proposed)"; backup: BACKUP_FORMAT "Data schema version 8 (proposed)"; design: ARCHITECTURE "Stage 6 design outline"; tests: TESTING "Stage 6 acceptance tests". T-071 to T-075 keep their meaning except where noted on those rows.
+Owner-approved contract for Stage 6, approved 2026-11-01 (T-209 to T-226: 2026-11-02; T-227 to T-237: 2026-11-03). Behavior: PRODUCT_SPEC "Stage 6: planned versus actual, pace, reports, and dashboards"; data: DATA_MODEL "Stage 6 data"; backup: BACKUP_FORMAT "Data schema version 8"; design: ARCHITECTURE "Stage 6 design outline"; tests: TESTING "Stage 6 acceptance tests". T-071 to T-075 keep their meaning except where noted on those rows.
 
 | ID | Decision | Reason | Status |
 |---|---|---|---|
@@ -471,9 +471,22 @@ Owner-approved contract for Stage 6, approved 2026-11-01 (T-209 to T-226: 2026-1
 
 **Unresolved technical choices:**
 
-- The segment merge design above (T-227 to T-229), revised 2026-11-03 so that a device's later choice replaces its earlier one, is proposed, not yet reviewed: its per-device entries and `seen` coverage, the integrity case, and the conflict view need independent review and tests before implementation.
+- The segment merge design above (T-227 to T-229), revised 2026-11-03 so that a device's later choice replaces its earlier one, has not had an independent review. On the owner's instruction of 2026-11-03 it is implemented on `feat/stage-6` with the tests listed in TESTING "Stage 6 test report"; the independent review (DEVELOPMENT, "Roles and collaboration") is still open and should happen before the branch is merged.
 
-The derived data design above still gets an independent technical review before implementation (DEVELOPMENT, "Roles and collaboration"). *Chosen 2026-11-02 (derived):* history fields on the existing records, SVG charts with no new dependency, when an app-use date is written and how the preview counts it, card sizes on a phone, how closed-week plans and the plan of each day are kept, how inactive and out-of-range allocations are kept, how a move is recorded, and `null` for "automatic".
+**Implementation choices (derived, recorded 2026-11-03 on `feat/stage-6`; not owner decisions; open to the same review):**
+
+- **Status history:** `goals.statusHistory` lists `{ from, status, archived }` entries, written with each status or archive change, the last being the current state, so paused, archived, and completed periods are known to the consistency streak (T-185). A goal without it uses its current state for every day; the unknown past is not reconstructed. Completion leaves no current streak and keeps the longest.
+- **Plan history shape:** `goals.planHistory` lists every plan with the date it took effect, the last being the current one. The first change of a goal without history also records the plan in effect since its start date; a change on the same local date replaces that day's entry.
+- **Which goals get weekly plans:** a week's record is started only for a running goal (not archived or completed, inside its dates) with a deadline and selected workdays; a goal that already has a record for the current week gets an inactive segment when they are removed (T-213). A plan write after a change never writes a date that has more than one candidate; the owner decides it (T-223).
+- **Estimate captures** are ordinary records the app never edits (not append-only), so two devices that captured different estimates for one occurrence give an ordinary conflict.
+- **Compared plan:** any edit at or after the block's scheduled start keeps `comparisonPlan` if none is kept yet: a form edit, a drag, its Undo, a cancel, or a restore.
+- **Dragging an actual session:** only an ended session, only after the owner confirms; start, end, and pauses move together, so its work time is unchanged, and a `times` correction keeps the times and pauses before and after, with an optional reason. New blocks are created only in the Planned subcolumn; the Actual subcolumn holds sessions.
+- **Metric catalog:** `appUseStreak`, `workTime`, `plannedVsActual`, `completions`, `estimateAccuracy`, `outputRate`, `goalProgress`, `goalStreaks`. Window presets: today, the last 7, 30, or 90 days, this or last week, this or last month, and all time, plus a custom range. Each card has its own `id`. Suggested main layout: app-use streak, completed tasks, work time, planned versus actual, estimate accuracy, output rate. The main dashboard is written under its reserved ID at its first edit and shows the suggested layout until then; each edit applies to the stored dashboard in one transaction. The Reports page shows every catalog metric for one chosen window with the metric dictionary (T-197).
+- **Import of weekly plans:** a plan already here that is newer or concurrent is its own preview category; with "Apply updates" the merged content is written with the merged version vector, raised for this device only when the content changed; a merge that meets the same device and counter with different content leaves the whole record unchanged and is counted as an integrity issue. New app-use dates are counted apart from other new records.
+- **Timer details:** ending a work session from the timer (in the app or the floating window) asks for confirmation and ends it without outputs, which can be added afterwards on the Work screen (T-104, T-113); the task is never completed. The tone is a short Web Audio beep, whose audio context is created when the user starts a countdown.
+- **App version** 0.8.0, which writes `dataSchemaVersion` 8.
+
+The derived data design above still gets an independent technical review; it was implemented before that review on the owner's instruction of 2026-11-03 (DEVELOPMENT, "Roles and collaboration"). *Chosen 2026-11-02 (derived):* history fields on the existing records, SVG charts with no new dependency, when an app-use date is written and how the preview counts it, card sizes on a phone, how closed-week plans and the plan of each day are kept, how inactive and out-of-range allocations are kept, how a move is recorded, and `null` for "automatic".
 
 **Open product details:** none at present.
 

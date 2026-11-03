@@ -225,6 +225,17 @@ describe("5. daily cap and projection (T-183, T-221, T-222)", () => {
   });
 });
 
+describe("7. after the deadline (T-187)", () => {
+  it("an incomplete goal stays active: no open week, no allocation or mismatch, no new opportunities, and nothing is marked complete or failed", () => {
+    const g = goal({ deadline: "2026-11-06" });
+    const r = computeAllocations({ goal: g, plan: planOn(g, "2026-11-10"), weekStart: 1, today: "2026-11-10", progressBeforeCurrentWeek: 40, manual: new Map([["2026-11-02", 150]]) });
+    expect(r).toEqual({ kind: "ended" });
+    expect(capProjection({ ...g, dailyCap: 20 }, 40, "2026-11-10")).toBeNull();
+    expect(isOpportunity(g, "2026-11-09")).toBe(false);
+    expect(g.status).toBe("active"); // derived values never change the goal
+  });
+});
+
 describe("3 and 6. targets and streaks (T-181, T-184 to T-186, T-225, T-226)", () => {
   it("weekly and monthly targets are fractions with whole-number actuals; a week crossing the month counts in both", () => {
     const g = goal({ target: 400, startDate: "2026-11-02", deadline: "2026-12-04" });
