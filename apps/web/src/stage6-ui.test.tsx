@@ -267,7 +267,7 @@ describe("9–10. reports and units (T-192 to T-196)", () => {
   });
 });
 
-describe("19. timer (T-230 to T-236)", () => {
+describe("19. timer (T-230 to T-240)", () => {
   it("without Document Picture-in-Picture there is no floating control; the stopwatch runs without a session; the selection is remembered", async () => {
     await renderApp();
     const bar = await screen.findByTestId("timer-bar");

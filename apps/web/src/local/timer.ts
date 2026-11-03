@@ -1,5 +1,5 @@
 /**
- * The built-in timer's device-local state (DECISIONS T-230 to T-236; "Timer and floating view").
+ * The built-in timer's device-local state (DECISIONS T-230 to T-240; "Timer and floating view").
  * The standalone stopwatch, the countdown, its sound setting, and the selected timer are rows of the
  * existing `meta` table: not records, never exported (export reads only named `meta` keys), and
  * untouched by imports. Each state is timestamps, so nothing ticks in storage and time keeps passing

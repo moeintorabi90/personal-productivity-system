@@ -755,7 +755,7 @@ export const en = {
   "work.error.NOT_OUTPUT_GOAL": "Only output goals track an output definition.",
   "work.error.ALREADY_LINKED": "This goal already tracks an output definition.",
   "work.error.ARCHIVED": "This goal is archived. Restore it first.",
-  // Stage 6 (T-174 to T-237).
+  // Stage 6 (T-174 to T-241).
   "nav.dashboard": "Dashboard",
   "nav.reports": "Reports",
   "org.close": "Close",

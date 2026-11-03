@@ -758,7 +758,7 @@ export const fa: Messages = {
   "work.error.NOT_OUTPUT_GOAL": "فقط هدف‌های خروجی تعریف خروجی دارند.",
   "work.error.ALREADY_LINKED": "این هدف قبلاً به تعریف خروجی وصل است.",
   "work.error.ARCHIVED": "این هدف بایگانی شده است. اول بازگردانید.",
-  // Stage 6 (T-174 to T-237).
+  // Stage 6 (T-174 to T-241).
   "nav.dashboard": "داشبورد",
   "nav.reports": "گزارش‌ها",
   "org.close": "بستن",

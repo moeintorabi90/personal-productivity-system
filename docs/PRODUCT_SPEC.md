@@ -275,11 +275,11 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 
 ### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; implemented on `feat/stage-6`, not merged; TESTING "Stage 6 test report")
 
-Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-237 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
+Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-241 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
 
 **Calendar**
 
-- [ ] Month, week, and day views. In week and day views, each day is one main column with two side-by-side subcolumns, Planned and Actual, on one time axis (T-071, T-174). Planned items use the lighter project-color treatment, actual sessions the stronger one, each with a visible label or marker (T-069).
+- [ ] Month, week, and day views. In week and day views, each day is one main column with two side-by-side subcolumns, Planned and Actual, on one time axis (T-071, T-174). Each day header shows its localized weekday name and date (T-241). Planned items use the lighter project-color treatment, actual sessions the stronger one, each with a visible label or marker (T-069).
 - [ ] On a phone, the week view shows one day at a time, with navigation through the week (T-175; replaces the two-day phone view of T-089).
 - [ ] In month view, planned and actual items appear together in each day cell with distinct visual treatments, not two subcolumns (T-176).
 - [ ] A paused session appears as work segments separated by visible gaps; the segments remain one session (T-177).

@@ -17,7 +17,7 @@
  */
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useServices, useT } from "../app-context.tsx";
-import { formatLocalDate, formatTime } from "../i18n/index.ts";
+import { formatLocalDate, formatTime, formatWeekdayName } from "../i18n/index.ts";
 import { type BlockTimeInput, dragBlockTimes } from "../local/planning.ts";
 import {
   DAY_MINUTES,
@@ -33,7 +33,7 @@ import {
   wallMinutesOf,
 } from "../planning/grid.ts";
 import { blockLabel, type BlockItem, filterBlocks, type PlanFilter } from "../planning/planning.ts";
-import { formatOffset, localDateOf, localDayBounds, MINUTE_MS, offsetMinutesAt } from "../planning/time.ts";
+import { formatOffset, localDateOf, localDayBounds, MINUTE_MS, offsetMinutesAt, weekdayOf } from "../planning/time.ts";
 import { itemColor } from "../planning/colors.ts";
 import { workIntervals, workMinutes } from "../work/session-time.ts";
 import type { Session } from "../local/work.ts";
@@ -293,7 +293,7 @@ export function TimeGrid({
           const plan = dayPlan(ctx, date, filter);
           return (
             <div key={date} className="tg-day-head" data-date={date}>
-              <span className="tg-day-name">{formatLocalDate(date, ctx, "medium")}</span>
+              <span className="tg-day-name">{formatWeekdayName(weekdayOf(date), ctx.language)} · {formatLocalDate(date, ctx, "medium")}</span>
               {plan.capacity.kind === "warning" ? <span className="pill pill-warn">{t("calendar.overCapacity")}</span> : null}
               {plan.unscheduled.length ? <span className="hint">{t("calendar.unscheduledCount", { count: plan.unscheduled.length })}</span> : null}
               <button type="button" className="secondary tg-add" aria-label={t("plan.addLabel", { date: formatLocalDate(date, ctx, "medium") })} onClick={() => onAdd(date)}>

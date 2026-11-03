@@ -1,5 +1,5 @@
 /**
- * The built-in timer (PRODUCT_SPEC "Timer"; DECISIONS T-230 to T-236; "Timer and floating view").
+ * The built-in timer (PRODUCT_SPEC "Timer"; DECISIONS T-230 to T-240; "Timer and floating view").
  * Three timers, one view: the open work session's elapsed time (from its stored start and pauses),
  * a standalone stopwatch, and a countdown. The in-app view and the optional floating window render
  * this same component against the same device-local state, and their commands act only on the
@@ -460,6 +460,7 @@ function CountdownTimer({ countdown, sound, now, language, act }: { countdown: C
   const ids = { hours: useId(), minutes: useId(), seconds: useId(), sound: useId() };
   // The length being set (T-239): a draft until Start, so editing it never changes a running or paused countdown.
   const [fields, setFields] = useState(() => durationFields(countdown.durationMs));
+  useEffect(() => setFields(durationFields(countdown.durationMs)), [countdown.durationMs]);
   const parsed = parseDuration(fields);
   const expired = countdownReachedZero(countdown, now);
   return (

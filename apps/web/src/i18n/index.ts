@@ -103,4 +103,12 @@ export function formatWeekdayShort(weekday: number, language: Language): string 
   );
 }
 
+/** Full weekday name of a weekday number (0 = Sunday). */
+export function formatWeekdayName(weekday: number, language: Language): string {
+  // 2023-01-01 was a Sunday.
+  return new Intl.DateTimeFormat(localeOf(language), { timeZone: "UTC", weekday: "long" }).format(
+    new Date(Date.UTC(2023, 0, 1 + weekday, 12)),
+  );
+}
+
 export type { MessageKey } from "./en.ts";
