@@ -1256,6 +1256,31 @@ progress {
   padding: 0.5rem 0.75rem;
 }
 
+.duration-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Compact floating view (T-238): only the time and one control, sized to the small window. */
+.timer-compact .timer-compact-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.timer-compact .timer-value {
+  margin: 0;
+}
+
+.timer-compact-empty {
+  margin: 0;
+  text-align: center;
+  color: var(--text-muted);
+}
+
 .chip {
   min-height: 2rem;
   padding: 0.1rem 0.6rem;

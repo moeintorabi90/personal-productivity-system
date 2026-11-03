@@ -5,21 +5,26 @@
  * this same component against the same device-local state, and their commands act only on the
  * selected timer, so the floating window never holds a timer of its own. The floating control is
  * shown only when `documentPictureInPicture` exists (feature detection; no browser names, no other
- * floating method). Nothing here completes a task, and a countdown at zero never ends a session.
+ * floating method). When the floating window itself is small, it shows a compact view: the time and
+ * the one main control of the selected timer (T-238). Nothing here completes a task, and a countdown
+ * at zero never ends a session.
  */
 import { useLiveQuery } from "dexie-react-hooks";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useServices, useT } from "../app-context.tsx";
+import type { Translate } from "../i18n/index.ts";
 import { type Session, endSession, openSessions, pauseSession, resumeSession } from "../local/work.ts";
 import {
   countdownReachedZero,
   countdownRemaining,
   type CountdownState,
+  durationFields,
   expireCountdown,
   loadTimer,
   pauseCountdown,
   pauseStopwatch,
+  parseDuration,
   resetCountdown,
   resetStopwatch,
   resumeCountdown,
@@ -90,6 +95,10 @@ interface DocumentPictureInPicture {
   requestWindow(options?: { width?: number; height?: number }): Promise<Window>;
 }
 
+/** Below this size of the floating window's own viewport (CSS pixels), it shows the compact view (T-238). */
+export const COMPACT_FLOATING = { width: 300, height: 240 };
+export const isCompactFloating = (win: Window) => win.innerWidth < COMPACT_FLOATING.width || win.innerHeight < COMPACT_FLOATING.height;
+
 /**
  * The timer shown on every screen (T-230), with its floating window when supported. It also
  * watches the countdown: reaching zero while the app is open shows the message and plays the tone
@@ -102,6 +111,7 @@ export function TimerBar({ onOpenWork }: { onOpenWork?: () => void }) {
   const work = useWork();
   const now = useTick();
   const [pip, setPip] = useState<Window | null>(null);
+  const [compact, setCompact] = useState(false);
   const [alert, setAlert] = useState(false);
   const observedRunning = useRef(false);
 
@@ -122,10 +132,19 @@ export function TimerBar({ onOpenWork }: { onOpenWork?: () => void }) {
 
   useEffect(() => () => pip?.close(), [pip]);
 
+  // The compact view follows the floating window's own size, never the main window's (T-238).
+  useEffect(() => {
+    if (!pip) return;
+    const update = () => setCompact(isCompactFloating(pip));
+    update();
+    pip.addEventListener("resize", update);
+    return () => pip.removeEventListener("resize", update);
+  }, [pip]);
+
   if (!settings || !work) return null;
   const open = openSessions(work.sessions);
   const panel = (floating: boolean) => (
-    <TimerView settings={settings} sessions={open} importedPaused={work.importedPaused} now={now} floating={floating} onOpenWork={onOpenWork} alert={alert} onDismissAlert={() => setAlert(false)} />
+    <TimerView settings={settings} sessions={open} importedPaused={work.importedPaused} now={now} floating={floating} compact={floating && compact} onOpenWork={onOpenWork} alert={alert} onDismissAlert={() => setAlert(false)} />
   );
 
   async function openFloating() {
@@ -190,6 +209,7 @@ function TimerView({
   importedPaused,
   now,
   floating,
+  compact,
   onOpenWork,
   alert,
   onDismissAlert,
@@ -199,6 +219,7 @@ function TimerView({
   importedPaused: Record<string, string>;
   now: number;
   floating: boolean;
+  compact: boolean;
   onOpenWork?: () => void;
   alert: boolean;
   onDismissAlert: () => void;
@@ -215,6 +236,19 @@ function TimerView({
       setError(workError(t, e));
     }
   };
+  const errorNotice = error ? (
+    <p className="notice notice-error" role="alert">
+      {error}
+    </p>
+  ) : null;
+  if (compact) {
+    return (
+      <div className="timer-view timer-floating timer-compact" data-testid="timer-view-floating" data-selected={settings.selected} data-compact="true" role="group" aria-label={t(`timer.${settings.selected}`)}>
+        <CompactTimer t={t} settings={settings} sessions={sessions} importedPaused={importedPaused} now={now} language={language} act={act} />
+        {errorNotice}
+      </div>
+    );
+  }
   return (
     <div className={`timer-view${floating ? " timer-floating" : ""}`} data-testid={floating ? "timer-view-floating" : "timer-view"} data-selected={settings.selected}>
       <div className="button-row" role="tablist" aria-label={t("timer.choose")}>
@@ -260,11 +294,81 @@ function TimerView({
       ) : (
         <CountdownTimer countdown={settings.countdown} sound={settings.sound} now={now} language={language} act={act} />
       )}
-      {error ? (
-        <p className="notice notice-error" role="alert">
-          {error}
+      {errorNotice}
+    </div>
+  );
+}
+
+/**
+ * The compact floating view (T-238): the selected timer's time and its one main control (Pause while
+ * running, Resume while paused, Start when ready), nothing else. With no session open it shows only
+ * the short message and starts nothing. A countdown started here uses its last set length. It takes
+ * the parent's translator, so switching to it never shows the default language while preferences load.
+ */
+function CompactTimer({
+  t,
+  settings,
+  sessions,
+  importedPaused,
+  now,
+  language,
+  act,
+}: {
+  t: Translate;
+  settings: TimerSettings;
+  sessions: Session[];
+  importedPaused: Record<string, string>;
+  now: number;
+  language: "en" | "fa";
+  act: (fn: () => Promise<unknown>) => () => Promise<void>;
+}) {
+  const { db } = useServices();
+  let value: string;
+  let main: { label: string; run: () => Promise<unknown> };
+  if (settings.selected === "session") {
+    const s = sessions[0];
+    if (!s) {
+      return (
+        <p className="timer-compact-empty" data-testid="session-timer-empty">
+          {t("timer.noSession")}
         </p>
-      ) : null}
+      );
+    }
+    const { ms, paused } = sessionElapsed(s, importedPaused, now);
+    value = formatClock(ms, language);
+    main = paused ? { label: t("timer.resume"), run: () => resumeSession(db, s.id) } : { label: t("timer.pause"), run: () => pauseSession(db, s.id) };
+  } else if (settings.selected === "stopwatch") {
+    const sw = settings.stopwatch;
+    value = formatClock(stopwatchElapsed(sw, now), language);
+    main =
+      sw.status === "running"
+        ? { label: t("timer.pause"), run: () => saveStopwatch(db, pauseStopwatch(sw, Date.now())) }
+        : { label: t(sw.status === "paused" ? "timer.resume" : "timer.start"), run: () => saveStopwatch(db, startStopwatch(sw, Date.now())) };
+  } else {
+    const c = settings.countdown;
+    const expired = countdownReachedZero(c, now);
+    value = formatClock(expired ? 0 : countdownRemaining(c, now), language);
+    main =
+      c.status === "running" && !expired
+        ? { label: t("timer.pause"), run: () => saveCountdown(db, pauseCountdown(c, Date.now())) }
+        : c.status === "paused"
+          ? { label: t("timer.resume"), run: () => saveCountdown(db, resumeCountdown(c, Date.now())) }
+          : {
+              label: t("timer.start"),
+              run: async () => {
+                prepareAudio();
+                await saveCountdown(db, startCountdown(c.durationMs, Date.now()));
+              },
+            };
+  }
+  return (
+    <div className="timer-compact-row">
+      <p className="timer-value" data-testid="timer-value" aria-live="off">
+        {value}
+      </p>
+      <button type="button" onClick={act(main.run)}>
+        {main.label}
+      </button>
     </div>
   );
 }
@@ -353,9 +457,10 @@ function SessionTimer({
 function CountdownTimer({ countdown, sound, now, language, act }: { countdown: CountdownState; sound: boolean; now: number; language: "en" | "fa"; act: (fn: () => Promise<unknown>) => () => Promise<void> }) {
   const t = useT();
   const { db } = useServices();
-  const ids = { minutes: useId(), sound: useId() };
-  const [minutes, setMinutes] = useState(String(Math.round(countdown.durationMs / 60_000)));
-  const valid = /^\d+$/.test(minutes.trim()) && Number(minutes) >= 1 && Number(minutes) <= 24 * 60;
+  const ids = { hours: useId(), minutes: useId(), seconds: useId(), sound: useId() };
+  // The length being set (T-239): a draft until Start, so editing it never changes a running or paused countdown.
+  const [fields, setFields] = useState(() => durationFields(countdown.durationMs));
+  const parsed = parseDuration(fields);
   const expired = countdownReachedZero(countdown, now);
   return (
     <Clock value={expired ? formatClock(0, language) : formatClock(countdownRemaining(countdown, now), language)} status={expired ? t("timer.expired") : t(`timer.status.${countdown.status}`)}>
@@ -369,14 +474,29 @@ function CountdownTimer({ countdown, sound, now, language, act }: { countdown: C
         </button>
       ) : (
         <>
-          <label htmlFor={ids.minutes}>{t("timer.minutes")}</label>
-          <input id={ids.minutes} inputMode="numeric" size={4} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+          <fieldset className="field date-parts" data-testid="countdown-length">
+            <legend>{t("timer.duration")}</legend>
+            <div className="date-parts-row">
+              {(["hours", "minutes", "seconds"] as const).map((part) => (
+                <span key={part} className="duration-part">
+                  <input id={ids[part]} inputMode="numeric" size={3} value={fields[part]} aria-invalid={!parsed.ok} onChange={(e) => setFields({ ...fields, [part]: e.target.value })} />
+                  <label htmlFor={ids[part]}>{t(`timer.${part}`)}</label>
+                </span>
+              ))}
+            </div>
+            {parsed.ok ? null : (
+              <p className="hint hint-error" data-testid="countdown-length-error">
+                {t(`timer.lengthError.${parsed.error}`)}
+              </p>
+            )}
+          </fieldset>
           <button
             type="button"
-            disabled={!valid}
+            disabled={!parsed.ok}
             onClick={act(async () => {
+              if (!parsed.ok) return;
               prepareAudio();
-              await saveCountdown(db, startCountdown(Number(minutes) * 60_000, Date.now()));
+              await saveCountdown(db, startCountdown(parsed.ms, Date.now()));
             })}
           >
             {t("timer.start")}

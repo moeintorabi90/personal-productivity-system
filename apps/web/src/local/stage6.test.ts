@@ -27,9 +27,12 @@ import { updateSharedPreferences } from "./settings.ts";
 import {
   countdownReachedZero,
   countdownRemaining,
+  durationFields,
   IDLE_COUNTDOWN,
   IDLE_STOPWATCH,
   loadTimer,
+  MAX_COUNTDOWN_MS,
+  parseDuration,
   pauseCountdown,
   pauseStopwatch,
   resetStopwatch,
@@ -248,6 +251,25 @@ describe("19. timers (T-231 to T-236)", () => {
     const p = pauseCountdown(c, t0 + 2 * MIN);
     expect(countdownRemaining(p, t0 + 100 * MIN)).toBe(8 * MIN);
     expect(countdownRemaining(resumeCountdown(p, t0 + 100 * MIN), t0 + 101 * MIN)).toBe(7 * MIN);
+  });
+
+  it("countdown length from hours, minutes, and seconds (T-239): whole numbers, minutes and seconds 0 to 59, above zero, at most 24 hours", () => {
+    const len = (hours: string, minutes: string, seconds: string) => parseDuration({ hours, minutes, seconds });
+    expect(len("1", "30", "45")).toEqual({ ok: true, ms: 5_445_000 });
+    expect(len("0", "0", "1")).toEqual({ ok: true, ms: 1000 });
+    expect(len("", "25", "")).toEqual({ ok: true, ms: 25 * MIN }); // an empty field counts as 0
+    expect(len("۱", "۳۰", "٤٥")).toEqual({ ok: true, ms: 5_445_000 }); // Persian and Arabic-Indic digits
+    expect(len("24", "0", "0")).toEqual({ ok: true, ms: MAX_COUNTDOWN_MS });
+    expect(len("24", "0", "1")).toEqual({ ok: false, error: "max" });
+    expect(len("25", "0", "0")).toEqual({ ok: false, error: "max" });
+    expect(len("0", "0", "0")).toEqual({ ok: false, error: "zero" });
+    expect(len("", "", "")).toEqual({ ok: false, error: "zero" });
+    expect(len("0", "60", "0")).toEqual({ ok: false, error: "minSecRange" });
+    expect(len("0", "0", "60")).toEqual({ ok: false, error: "minSecRange" });
+    for (const bad of ["-1", "1.5", "1e2", "x", "+3"]) expect(len(bad, "0", "0")).toEqual({ ok: false, error: "wholeNumbers" });
+    expect(durationFields(5_445_000)).toEqual({ hours: "1", minutes: "30", seconds: "45" });
+    expect(durationFields(IDLE_COUNTDOWN.durationMs)).toEqual({ hours: "0", minutes: "25", seconds: "0" });
+    expect(durationFields(MAX_COUNTDOWN_MS)).toEqual({ hours: "24", minutes: "0", seconds: "0" });
   });
 
   it("state and selection survive a restart, and nothing starts, stops, or resets by reopening; no session or record is written", async () => {

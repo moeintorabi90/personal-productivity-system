@@ -340,6 +340,9 @@ Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-237 (DECIS
 - [ ] A standalone stopwatch is kept on the device across closing and reopening the app: a running one includes the time the app was closed, and a paused one stays paused. It never becomes a session, work history, or progress, and never travels in backups (T-235).
 - [ ] The in-app timer and the floating window show and control the same selected timer: the work session's elapsed time, the standalone stopwatch, or the countdown. The floating window never starts a second stopwatch (T-230).
 - [ ] When the app is reopened, it shows the timer last selected on this device. Restoring the selection never starts, stops, resets, or pauses a timer, and the selection is not exported or transferred by backup or import (T-236).
+- [ ] When the floating window is made small, it shows a compact view with only the time and one main control: Pause while the selected timer runs, Resume while it is paused, Start when it is ready. The timer selector, explanatory text, Reset, the sound setting, and other secondary controls are hidden, and they return when the window is enlarged. The switch follows the floating window's own size. With no session open, the compact view shows the short no-session message and starts nothing. Resizing never changes the timer or the selection, and both windows show the same timer and time (T-238).
+- [ ] The countdown length is entered as hours, minutes, and seconds in three number fields: whole numbers of zero or more, at least one above zero, minutes and seconds 0 to 59, and at most 24 hours (`24:00:00` allowed, more refused). Editing them never changes a running or paused countdown; the display shows hours when needed. Labels and errors are in Persian and English (T-239).
+- [ ] With no work session open, the timer says «هیچ جلسهٔ کاری باز نیست.» in Persian, in the app and the floating window (T-240).
 
 **App-use streak**
 

@@ -82,6 +82,43 @@ export function resumeCountdown(c: CountdownState, now: number): CountdownState 
   return c.status !== "paused" ? c : { ...c, status: "running", endsAt: new Date(now + (c.remainingMs ?? 0)).toISOString(), remainingMs: null };
 }
 
+/** The longest countdown (unchanged by T-239): 24 hours, so `24:00:00` is allowed and anything more is refused. */
+export const MAX_COUNTDOWN_MS = 24 * 3_600_000;
+
+export interface DurationFields {
+  hours: string;
+  minutes: string;
+  seconds: string;
+}
+
+export type DurationError = "wholeNumbers" | "minSecRange" | "zero" | "max";
+
+/** The hour, minute, and second fields that show a stored duration (whole seconds). */
+export function durationFields(ms: number): DurationFields {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return { hours: String(Math.floor(total / 3600)), minutes: String(Math.floor((total % 3600) / 60)), seconds: String(total % 60) };
+}
+
+/**
+ * The countdown length from its three fields (T-239), in milliseconds. Each field is a non-negative
+ * whole number, in Latin, Persian, or Arabic-Indic digits; an empty field counts as 0. Minutes and
+ * seconds are 0 to 59, at least one field is above zero, and the total is at most 24 hours.
+ */
+export function parseDuration(fields: DurationFields): { ok: true; ms: number } | { ok: false; error: DurationError } {
+  const values: number[] = [];
+  for (const raw of [fields.hours, fields.minutes, fields.seconds]) {
+    const text = raw.trim().replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0)).replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+    if (text !== "" && !/^\d+$/.test(text)) return { ok: false, error: "wholeNumbers" };
+    values.push(text === "" ? 0 : Number(text));
+  }
+  const [h, m, s] = values as [number, number, number];
+  if (m > 59 || s > 59) return { ok: false, error: "minSecRange" };
+  const ms = ((h * 60 + m) * 60 + s) * 1000;
+  if (ms === 0) return { ok: false, error: "zero" };
+  if (ms > MAX_COUNTDOWN_MS) return { ok: false, error: "max" };
+  return { ok: true, ms };
+}
+
 export const expireCountdown = (c: CountdownState): CountdownState => ({ ...c, status: "expired", endsAt: null, remainingMs: 0 });
 export const resetCountdown = (c: CountdownState): CountdownState => ({ status: "idle", durationMs: c.durationMs, endsAt: null, remainingMs: null });
 

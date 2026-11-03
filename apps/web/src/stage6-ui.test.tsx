@@ -310,6 +310,215 @@ describe("19. timer (T-230 to T-236)", () => {
     expect(stopwatch.stopwatch.status).toBe("idle"); // the floating view did not start a second timer
   });
 
+  /**
+   * A test window standing in for the floating window, stubbed before the app renders. Its own
+   * viewport size is set by the test, separately from the main window's (T-238).
+   */
+  function testFloatingWindow() {
+    const frame = document.createElement("iframe");
+    document.body.appendChild(frame);
+    const pipWindow = frame.contentWindow!;
+    vi.stubGlobal("documentPictureInPicture", { requestWindow: vi.fn(async () => pipWindow) });
+    const current = () => pipWindow.document.querySelector('[data-testid="timer-view-floating"]') as HTMLElement | null;
+    return {
+      resize(width: number, height: number) {
+        Object.defineProperty(pipWindow, "innerWidth", { value: width, configurable: true });
+        Object.defineProperty(pipWindow, "innerHeight", { value: height, configurable: true });
+        fireEvent(pipWindow, new (pipWindow as unknown as typeof globalThis).Event("resize"));
+      },
+      view: () =>
+        waitFor(() => {
+          const el = current();
+          if (!el) throw new Error("not open yet");
+          return el;
+        }),
+      current: () => current()!,
+      buttons: () => within(current()!).queryAllByRole("button").map((b) => b.textContent),
+    };
+  }
+  const valueOf = (el: HTMLElement) => within(el).getByTestId("timer-value").textContent;
+
+  it("the floating window's own size switches it between the compact and the full view; the main window and the selection stay as they are (T-238)", async () => {
+    const f = testFloatingWindow();
+    await renderApp();
+    const bar = await screen.findByTestId("timer-bar");
+    fireEvent.click(within(bar).getByRole("tab", { name: "Stopwatch" }));
+    await waitFor(() => expect(within(bar).getByRole("tab", { name: "Stopwatch" }).getAttribute("aria-selected")).toBe("true"));
+    f.resize(340, 300);
+    fireEvent.click(await within(bar).findByTestId("open-floating"));
+    const full = await f.view();
+    expect(full.dataset.compact).toBeUndefined();
+    expect(within(full).getAllByRole("tab")).toHaveLength(3);
+    expect(within(full).getByRole("button", { name: "Reset" })).toBeTruthy();
+
+    f.resize(220, 140);
+    await waitFor(() => expect(f.current().dataset.compact).toBe("true"));
+    const compact = f.current();
+    expect(compact.dataset.selected).toBe("stopwatch");
+    expect(within(compact).queryAllByRole("tab")).toHaveLength(0); // no timer selector
+    expect(f.buttons()).toEqual(["Start"]); // no Reset or other secondary control
+    expect(compact.querySelector(".hint")).toBeNull(); // no explanatory text
+    expect(within(compact).queryByTestId("timer-status")).toBeNull();
+    expect(valueOf(compact)).toBe("0:00");
+    const inApp = within(bar).getByTestId("timer-view");
+    expect(within(inApp).getAllByRole("tab")).toHaveLength(3); // the main window keeps its full view
+    expect(within(inApp).getByRole("button", { name: "Reset" })).toBeTruthy();
+
+    // Start, Pause, and Resume from the compact view act on the selected stopwatch only.
+    fireEvent.click(within(compact).getByRole("button", { name: "Start" }));
+    await waitFor(async () => expect((await loadTimer(services.db)).stopwatch.status).toBe("running"));
+    await waitFor(() => expect(f.buttons()).toEqual(["Pause"]));
+    at("2026-11-04T12:01:05Z");
+    await waitFor(() => expect(valueOf(f.current())).toBe("1:05"), { timeout: 3000 });
+    expect(valueOf(within(bar).getByTestId("timer-view"))).toBe("1:05"); // the same time in both views
+    fireEvent.click(within(f.current()).getByRole("button", { name: "Pause" }));
+    await waitFor(() => expect(f.buttons()).toEqual(["Resume"]));
+    expect((await loadTimer(services.db)).stopwatch).toMatchObject({ status: "paused", accumulatedMs: 65_000 });
+    expect(within(bar).getByTestId("timer-status").textContent).toBe("Paused");
+    fireEvent.click(within(f.current()).getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(f.buttons()).toEqual(["Pause"]));
+
+    // The main window's size does not make the floating window compact, and enlarging it brings the full view back.
+    const mainWidth = window.innerWidth;
+    try {
+      f.resize(340, 300);
+      await waitFor(() => expect(f.current().dataset.compact).toBeUndefined());
+      Object.defineProperty(window, "innerWidth", { value: 200, configurable: true });
+      fireEvent(window, new Event("resize"));
+      expect(f.current().dataset.compact).toBeUndefined();
+      expect(within(f.current()).getAllByRole("tab")).toHaveLength(3);
+      expect(within(f.current()).getByRole("tab", { name: "Stopwatch" }).getAttribute("aria-selected")).toBe("true");
+      expect(within(f.current()).getByRole("button", { name: "Reset" })).toBeTruthy();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { value: mainWidth, configurable: true });
+    }
+    const after = await loadTimer(services.db);
+    expect(after.selected).toBe("stopwatch"); // resizing changed neither the selection nor the timer
+    expect(after.stopwatch.status).toBe("running");
+    expect(await services.db.records.where("type").equals(SESSIONS).count()).toBe(0);
+  });
+
+  it("the compact view pauses and resumes the work session and starts and pauses the countdown, in step with the main view (T-238)", async () => {
+    const f = testFloatingWindow();
+    await renderApp(async (s) => {
+      await startSession(s.db);
+    });
+    const bar = await screen.findByTestId("timer-bar");
+    f.resize(220, 140);
+    fireEvent.click(await within(bar).findByTestId("open-floating"));
+    await f.view();
+    await waitFor(() => expect(f.current().dataset.compact).toBe("true"));
+    expect(f.current().dataset.selected).toBe("session");
+    expect(f.buttons()).toEqual(["Pause"]); // no End session in the compact view
+    at("2026-11-04T12:02:00Z");
+    await waitFor(() => expect(valueOf(f.current())).toBe("2:00"), { timeout: 3000 });
+    expect(valueOf(within(bar).getByTestId("timer-view"))).toBe("2:00");
+    fireEvent.click(within(f.current()).getByRole("button", { name: "Pause" }));
+    await waitFor(() => expect(f.buttons()).toEqual(["Resume"]));
+    const session = async () => (await services.db.records.where("type").equals(SESSIONS).toArray())[0]!.data as SessionData;
+    expect((await session()).pauses).toHaveLength(1);
+    expect(within(bar).getByRole("button", { name: "Resume" })).toBeTruthy(); // the main view shows the same state
+    fireEvent.click(within(f.current()).getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(f.buttons()).toEqual(["Pause"]));
+    expect((await session()).endedAt).toBeNull();
+
+    // Selecting the countdown in the main window changes the compact view to it.
+    fireEvent.click(within(bar).getByRole("tab", { name: "Countdown" }));
+    await waitFor(() => expect(f.current().dataset.selected).toBe("countdown"));
+    expect(f.buttons()).toEqual(["Start"]); // no length fields, Reset, or sound setting
+    expect(within(f.current()).queryByRole("checkbox")).toBeNull();
+    expect(within(f.current()).queryByRole("textbox")).toBeNull();
+    expect(valueOf(f.current())).toBe("25:00");
+    fireEvent.click(within(f.current()).getByRole("button", { name: "Start" }));
+    await waitFor(async () => expect((await loadTimer(services.db)).countdown).toMatchObject({ status: "running", durationMs: 25 * 60_000 }));
+    await waitFor(() => expect(f.buttons()).toEqual(["Pause"]));
+    fireEvent.click(within(f.current()).getByRole("button", { name: "Pause" }));
+    await waitFor(() => expect(f.buttons()).toEqual(["Resume"]));
+    expect(within(bar).getByTestId("timer-status").textContent).toBe("Paused");
+    expect(valueOf(within(bar).getByTestId("timer-view"))).toBe(valueOf(f.current()));
+    expect((await session()).pauses).toHaveLength(1); // the countdown did not touch the session
+  });
+
+  it("with no session open, both views show the Persian message, and the compact view starts nothing", async () => {
+    const f = testFloatingWindow();
+    await renderApp(async (s) => updateDeviceSettings(s.db, { language: "fa" }));
+    await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+    const bar = await screen.findByTestId("timer-bar");
+    const message = "هیچ جلسهٔ کاری باز نیست.";
+    // Each view shows the default language until its preferences load, so wait for the translation.
+    await waitFor(() => expect(within(bar).getByTestId("session-timer-empty").textContent).toContain(message));
+    await waitFor(() => expect(bar.querySelector("summary")!.textContent).toContain(message));
+    f.resize(340, 300);
+    fireEvent.click(await within(bar).findByTestId("open-floating"));
+    await f.view();
+    await waitFor(() => expect(within(f.current()).getByTestId("session-timer-empty").textContent).toBe(message));
+    f.resize(220, 140);
+    await waitFor(() => expect(f.current().dataset.compact).toBe("true"));
+    expect(within(f.current()).getByTestId("session-timer-empty").textContent).toBe(message);
+    expect(f.buttons()).toEqual([]); // nothing to start a session from here
+    expect(await services.db.records.where("type").equals(SESSIONS).count()).toBe(0);
+  });
+
+  it("the countdown length is set in hours, minutes, and seconds, checked, and kept apart from a running or paused countdown (T-239)", async () => {
+    await renderApp();
+    const bar = await screen.findByTestId("timer-bar");
+    fireEvent.click(within(bar).getByRole("tab", { name: "Countdown" }));
+    const field = (name: string) => within(bar).getByLabelText(name) as HTMLInputElement;
+    await waitFor(() => expect(field("Minutes").value).toBe("25"));
+    expect([field("Hours").value, field("Seconds").value]).toEqual(["0", "0"]);
+    const set = (h: string, m: string, s: string) => {
+      fireEvent.change(field("Hours"), { target: { value: h } });
+      fireEvent.change(field("Minutes"), { target: { value: m } });
+      fireEvent.change(field("Seconds"), { target: { value: s } });
+    };
+    const start = () => within(bar).getByRole("button", { name: "Start" }) as HTMLButtonElement;
+    const cases: [string, string, string, string | null][] = [
+      ["0", "60", "0", "Minutes and seconds must be from 0 to 59."],
+      ["0", "0", "60", "Minutes and seconds must be from 0 to 59."],
+      ["1.5", "0", "0", "Use whole numbers of zero or more."],
+      ["-1", "0", "0", "Use whole numbers of zero or more."],
+      ["0", "0", "0", "Set a length above zero."],
+      ["24", "0", "1", "A countdown can be at most 24 hours."],
+      ["25", "0", "0", "A countdown can be at most 24 hours."],
+      ["24", "0", "0", null],
+    ];
+    for (const [h, m, s, error] of cases) {
+      set(h, m, s);
+      expect(within(bar).queryByTestId("countdown-length-error")?.textContent ?? null).toBe(error);
+      expect(start().disabled).toBe(error !== null);
+    }
+    expect(within(bar).getByTestId("timer-value").textContent).toBe("25:00"); // a draft changes no countdown
+    expect((await loadTimer(services.db)).countdown.status).toBe("idle");
+
+    set("1", "30", "45");
+    fireEvent.click(start());
+    await waitFor(async () => expect((await loadTimer(services.db)).countdown).toMatchObject({ status: "running", durationMs: 5_445_000 }));
+    await waitFor(() => expect(within(bar).getByTestId("timer-value").textContent).toBe("1:30:45"));
+    expect(within(bar).queryByTestId("countdown-length")).toBeNull(); // no length fields while it runs
+    fireEvent.click(within(bar).getByRole("button", { name: "Pause" }));
+    await waitFor(async () => expect((await loadTimer(services.db)).countdown).toMatchObject({ status: "paused", durationMs: 5_445_000, remainingMs: 5_445_000 }));
+    expect(within(bar).queryByTestId("countdown-length")).toBeNull();
+    fireEvent.click(within(bar).getByRole("button", { name: "Reset" }));
+    await waitFor(() => expect(field("Hours").value).toBe("1"));
+    expect([field("Minutes").value, field("Seconds").value]).toEqual(["30", "45"]);
+    expect((await loadTimer(services.db)).countdown).toMatchObject({ status: "idle", durationMs: 5_445_000 });
+  });
+
+  it("the countdown length fields and their errors are in Persian", async () => {
+    await renderApp(async (s) => updateDeviceSettings(s.db, { language: "fa" }));
+    await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+    const bar = await screen.findByTestId("timer-bar");
+    fireEvent.click(await within(bar).findByRole("tab", { name: "شمارش معکوس" }));
+    expect(await within(bar).findByText("مدت شمارش معکوس")).toBeTruthy();
+    for (const label of ["ساعت", "دقیقه", "ثانیه"]) expect(await within(bar).findByLabelText(label)).toBeTruthy();
+    fireEvent.change(within(bar).getByLabelText("ثانیه"), { target: { value: "75" } });
+    expect(within(bar).getByTestId("countdown-length-error").textContent).toBe("دقیقه و ثانیه باید از ۰ تا ۵۹ باشند.");
+    fireEvent.change(within(bar).getByLabelText("ساعت"), { target: { value: "30" } });
+    fireEvent.change(within(bar).getByLabelText("ثانیه"), { target: { value: "0" } });
+    expect(within(bar).getByTestId("countdown-length-error").textContent).toBe("شمارش معکوس حداکثر ۲۴ ساعت است.");
+    expect((within(bar).getByRole("button", { name: "شروع" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("is translated in Persian with right-to-left direction", async () => {
     await renderApp(async (s) => updateDeviceSettings(s.db, { language: "fa" }));
     await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
