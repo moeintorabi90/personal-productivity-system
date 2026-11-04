@@ -57,6 +57,9 @@ function errorMessage(t: Translate, error: unknown): string {
     return t("backup.resolve.error", { reason: t("backup.resolve.invalidRelationship") });
   }
   if (error instanceof ResolutionError && error.code === "STALE") return t("backup.resolve.stale");
+  if (error instanceof ResolutionError && (error.code === "TOO_MANY_DEVICES" || error.code === "RECORD_TOO_LARGE")) {
+    return t("backup.resolve.error", { reason: t(error.code === "TOO_MANY_DEVICES" ? "org.error.TOO_MANY_DEVICES" : "org.error.RECORD_TOO_LARGE") });
+  }
   return t("backup.error.generic");
 }
 
@@ -472,6 +475,7 @@ function PreviewCounts({ preview }: { preview: ImportPreview }) {
     ["backup.import.count.planDecisions", c.planDecisions],
     ["backup.import.count.planIntegrity", c.planIntegrity],
     ["backup.import.count.planTooLarge", c.planTooLarge],
+    ["backup.import.count.planTooManyDevices", c.planTooManyDevices],
     ["backup.import.count.appUseDates", c.appUseDates],
   ];
   return (

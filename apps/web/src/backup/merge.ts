@@ -2,7 +2,7 @@ import type { DeviceSettings, ImportLogRow, LocalDb, PendingConflictRow, Replace
 import { deviceIdentity, getDeviceSettings, toEnvelope } from "../local/records.ts";
 import { ensureSharedPreferences } from "../local/settings.ts";
 import { importedMarkOf, markImportedSessions, pauseOfVersion } from "../local/work.ts";
-import { type Envelope, envelopeFits, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
+import { type Envelope, envelopeFits, type EnvelopeLimit, envelopeLimitProblem, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
 import type { BackupHeader, BackupPayload } from "./format.ts";
 import {
@@ -43,10 +43,11 @@ export interface PreviewItem {
   local: VersionEntry | null;
   /**
    * For "planMerge": the merged data (null when it cannot be merged, so nothing changes: an
-   * integrity issue, or a merged record past the per-record size limit, `tooLarge`) and how many
-   * dates would newly need the owner's decision.
+   * integrity issue, or a written envelope that would break a per-record limit, `limit`: more than
+   * 32 devices in its version vector, or more than 256 KiB) and how many dates would newly need the
+   * owner's decision.
    */
-  planMerge?: { data: GoalWeekPlanData | null; decisions: number; tooLarge?: true };
+  planMerge?: { data: GoalWeekPlanData | null; decisions: number; limit?: EnvelopeLimit };
   /**
    * A new weekly plan whose entries cover one another in a cycle: malformed, a data-integrity issue.
    * It is counted with the plans that have one and is not imported.
@@ -64,7 +65,7 @@ export interface PreviewItem {
  * The envelope a weekly plan merge writes, exactly: the merged data with this record's ID and
  * `createdAt`, `at` as `updatedAt`, the combined version vector raised for this device, and the
  * content hash; when the content does not change, only the versions are combined. The preview and
- * the write both measure this against the per-record limit (owner, 2026-11-04).
+ * the write both measure this against the per-record limits (32 devices, 256 KiB).
  */
 function planMergeEnvelope(local: Envelope, incoming: Envelope, merged: GoalWeekPlanData, thisDevice: string, at: string): Envelope {
   const version = mergeVersions(local.version, incoming.version);
@@ -87,7 +88,7 @@ function mergeWeekPlan(here: GoalWeekPlanData, incoming: GoalWeekPlanData): Goal
  * records (T-204); `planDecisions` also counts undecided dates arriving in new plans (T-228).
  */
 export type PreviewCounts = Record<
-  ItemCategory | "carriedConflicts" | "carriedReplaced" | "planDecisions" | "planIntegrity" | "planTooLarge" | "appUseDates",
+  ItemCategory | "carriedConflicts" | "carriedReplaced" | "planDecisions" | "planIntegrity" | "planTooLarge" | "planTooManyDevices" | "appUseDates",
   number
 >;
 
@@ -140,6 +141,7 @@ function emptyCounts(): PreviewCounts {
     planDecisions: 0,
     planIntegrity: 0,
     planTooLarge: 0,
+    planTooManyDevices: 0,
     appUseDates: 0,
   };
 }
@@ -423,9 +425,10 @@ async function classifyAll(db: LocalDb, payload: BackupPayload, registry: Regist
         const here = state.record!.data as GoalWeekPlanData;
         const merged = mergeWeekPlan(here, envelope.data as GoalWeekPlanData);
         const before = new Set(conflictDates(here));
-        if (merged && !envelopeFits(planMergeEnvelope(state.record!, envelope, merged, thisDevice, at))) {
-          // Too large to keep as one record: shown on its own, and this device's version stays as it is.
-          item.planMerge = { data: null, decisions: 0, tooLarge: true };
+        const limit = merged ? envelopeLimitProblem(planMergeEnvelope(state.record!, envelope, merged, thisDevice, at)) : null;
+        if (limit) {
+          // Past a per-record limit as one record: shown on its own, and this device's version stays as it is.
+          item.planMerge = { data: null, decisions: 0, limit };
         } else {
           item.planMerge = { data: merged, decisions: merged ? conflictDates(merged).filter((d) => !before.has(d)).length : 0 };
         }
@@ -469,7 +472,8 @@ function countItems(items: PreviewItem[], carried: { conflicts: unknown[]; repla
   const counts = emptyCounts();
   for (const item of items) {
     if (item.category === "new" && item.type === APP_USE_DAYS) counts.appUseDates += 1;
-    else if (item.category === "planMerge" && item.planMerge?.tooLarge) counts.planTooLarge += 1;
+    else if (item.category === "planMerge" && item.planMerge?.limit === "size") counts.planTooLarge += 1;
+    else if (item.category === "planMerge" && item.planMerge?.limit === "devices") counts.planTooManyDevices += 1;
     else if ((item.category === "planMerge" && item.planMerge?.data === null) || item.planIntegrity) counts.planIntegrity += 1;
     else counts[item.category] += 1;
     if (item.planMerge) counts.planDecisions += item.planMerge.decisions;
@@ -595,10 +599,10 @@ export async function applyImport(
             break;
           }
           const merged = item.planMerge?.data;
-          if (!merged) break; // integrity issue or too large: shown, nothing changes
+          if (!merged) break; // integrity issue or past a per-record limit: shown, nothing changes
           const local = item.local.envelope;
           const next = planMergeEnvelope(local, incoming.envelope, merged, thisDevice.id, at);
-          // Measured again on exactly what is written now, with this device's current version: nothing passes the limit.
+          // Measured again on exactly what is written now, with this device's current version: nothing breaks a limit.
           if (!envelopeFits(next)) break;
           if (next.contentHash === local.contentHash) {
             await db.records.put({ type: item.type, ...next });

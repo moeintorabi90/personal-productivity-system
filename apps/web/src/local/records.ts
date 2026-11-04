@@ -1,4 +1,4 @@
-import { contentHashOf, type Envelope, envelopeFits, makeEnvelope, nowIso, type Tombstone } from "../backup/envelope.ts";
+import { contentHashOf, type Envelope, envelopeLimitProblem, makeEnvelope, nowIso, type Tombstone, tombstoneFits } from "../backup/envelope.ts";
 import { linkTargets, type Registry } from "../backup/registry.ts";
 import { bumpVersion, type VersionVector } from "../backup/versions.ts";
 import { DEFAULT_DEVICE_SETTINGS, type DeviceIdentity, type DeviceSettings, type LocalDb, type MetaRow, type RecordRow } from "./db.ts";
@@ -18,15 +18,6 @@ export function toEnvelope(row: RecordRow): Envelope {
 }
 
 /** A local write that would break a relationship rule (DATA_MODEL "Ownership and relationships"). */
-/** The written envelope would pass the per-record limit (`MAX_ENVELOPE_BYTES`); nothing is written. */
-export class RecordTooLargeError extends Error {
-  readonly code = "RECORD_TOO_LARGE";
-  constructor(message: string) {
-    super(message);
-    this.name = "RecordTooLargeError";
-  }
-}
-
 /**
  * The envelope `putRecord` stores for `data` (already validated), exactly: an edit keeps the
  * record's `createdAt`, takes `at` as `updatedAt`, and raises this device's version counter; a new
@@ -44,7 +35,11 @@ export function plannedWriteEnvelope(
 }
 
 export class RecordRuleError extends Error {
-  readonly code: "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "IMMUTABLE_FIELD";
+  /**
+   * RECORD_TOO_LARGE / TOO_MANY_DEVICES: the record or tombstone as written would break a per-record
+   * limit of the backup format (256 KiB; 32 devices in its version vector), so nothing is written.
+   */
+  readonly code: "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "IMMUTABLE_FIELD" | "RECORD_TOO_LARGE" | "TOO_MANY_DEVICES";
   constructor(code: RecordRuleError["code"], message: string) {
     super(message);
     this.name = "RecordRuleError";
@@ -93,8 +88,10 @@ export async function putRecord(
       if (contentHashOf(parsed) === current.contentHash) return current;
     }
     const next = plannedWriteEnvelope(current, id, parsed, device.id, nowIso());
-    // No write may pass the per-record limit, or the data could no longer be exported (BACKUP_FORMAT "Input limits").
-    if (!envelopeFits(next)) throw new RecordTooLargeError(`${type}/${id}: the record would pass the per-record size limit`);
+    // No write may break a per-record limit, or the data could no longer be exported (BACKUP_FORMAT "Input limits").
+    const limit = envelopeLimitProblem(next);
+    if (limit === "devices") throw new RecordRuleError("TOO_MANY_DEVICES", `${type}/${id}: the version vector would list more than 32 devices`);
+    if (limit === "size") throw new RecordRuleError("RECORD_TOO_LARGE", `${type}/${id}: the record would pass the per-record size limit`);
     const row: RecordRow = { type, ...next };
     await db.records.put(row);
     return row;
@@ -108,6 +105,7 @@ export async function deleteRecord(db: LocalDb, type: string, id: string): Promi
     const current = await db.records.get([type, id]);
     if (!current) return null;
     const tombstone: Tombstone = { type, id, deletedAt: nowIso(), version: bumpVersion(current.version, device.id) };
+    if (!tombstoneFits(tombstone)) throw new RecordRuleError("TOO_MANY_DEVICES", `${type}/${id}: the tombstone's version vector would list more than 32 devices`);
     await db.records.delete([type, id]);
     await db.tombstones.put(tombstone);
     return tombstone;

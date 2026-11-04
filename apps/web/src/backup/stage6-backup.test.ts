@@ -8,8 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { canonicalize } from "./jcs.ts";
 import { contentHashOf } from "./envelope.ts";
 import { createGoal, updateGoal } from "../local/goals.ts";
-import { decidePlanDate, loadGoalPlanning, refreshWeekPlans, setWeekAllocation } from "../local/goal-plans.ts";
-import { plannedWriteEnvelope, putRecord, toEnvelope } from "../local/records.ts";
+import { decidePlanDate, loadGoalPlanning, planWriteLimit, refreshWeekPlans, setWeekAllocation } from "../local/goal-plans.ts";
+import { deleteRecord, plannedWriteEnvelope, putRecord, toEnvelope } from "../local/records.ts";
 import { envelopeFits, nowIso } from "./envelope.ts";
 import { canonicalBytes } from "./jcs.ts";
 import { MAX_ENVELOPE_BYTES } from "./limits.ts";
@@ -42,7 +42,7 @@ import { weekPlanId } from "./derived-id.ts";
 import { createTestDevice, type TestDevice } from "./test-fixtures.ts";
 import { applyImport, previewImport } from "./merge.ts";
 import { openBackupFile } from "./read.ts";
-import { blobOf, exportFrom, importInto, mutate } from "./test-helpers.ts";
+import { blobOf, decide, exportFrom, importInto, mutate } from "./test-helpers.ts";
 
 const registry = PRODUCT_REGISTRY;
 const product = { registry };
@@ -471,6 +471,94 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
       }
     }
     expect(await codeOf(exportText(c))).toBe("OK"); // the accepted records still export
+  });
+
+  describe("version vectors stay within 32 devices (Codex review, 2026-11-04)", () => {
+    /** A copy of the file whose record `id` of `type` also lists `count` more (made-up) devices. */
+    const withDevices = (text: string, type: string, id: string, count: number) =>
+      mutate(text, (doc) => {
+        const env = doc.payload.records[type].find((e: { id: string }) => e.id === id);
+        for (let i = 0; i < count; i++) env.version[crypto.randomUUID()] = 1;
+      });
+    const vectorOf = async (d: TestDevice, type: string, id: string) => Object.keys((await d.db.records.get([type, id]))!.version).length;
+
+    it("a local write, a deletion, a plan decision, and the app's plan write that would make a 33rd device are refused, nothing changes, and options keep no count limit", async () => {
+      const { a, goalId } = await sharedGoal();
+      const planId = weekPlanId(goalId, "2026-11-02");
+      const original = (await planOf(a, goalId))!;
+      const own = original.dates[0]!.entries[0]!;
+      const theirs: SegmentData = { state: "allocated", allocation: { num: 5, den: 1 }, source: "manual" };
+      const earlier = Array.from({ length: 100 }, (_, i): SegmentData => ({ state: "allocated", allocation: { num: 100_000 + i, den: 1 }, source: "manual" }));
+      // Monday: a conflict with 100 earlier options.
+      await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, {
+        ...original,
+        dates: [{ ...original.dates[0]!, entries: [own, { device: crypto.randomUUID(), seq: 1, seen: {}, segment: theirs }].sort((p, q) => (p.device < q.device ? -1 : 1)), options: earlier.sort((p, q) => (canonicalize(p) < canonicalize(q) ? -1 : 1)) }],
+      });
+      const plain = await exportText(a);
+      const fullFile = (text: string, type: string, id: string) => withDevices(text, type, id, 32 - Object.keys(JSON.parse(text).payload.records[type].find((e: { id: string }) => e.id === id).version).length);
+
+      // C imports the goal and the plan each listing 32 devices already (valid): any write from C would add a 33rd.
+      const c = await device("C");
+      await importInto(c, fullFile(fullFile(plain, GOALS, goalId), GOAL_WEEK_PLANS, planId), product);
+      expect([await vectorOf(c, GOALS, goalId), await vectorOf(c, GOAL_WEEK_PLANS, planId)]).toEqual([32, 32]);
+      const before = await recordsOf(c);
+      const tombstones = await c.db.tombstones.count();
+      expect(await codeOf(updateGoal(c.db, goalId, { name: "Renamed" }, registry, Date.now()))).toBe("TOO_MANY_DEVICES");
+      expect(await codeOf(deleteRecord(c.db, GOALS, goalId))).toBe("TOO_MANY_DEVICES");
+      const monday = (await planOf(c, goalId))!.dates[0]!;
+      expect(await codeOf(decidePlanDate(c.db, planId, "2026-11-02", theirs, canonicalize(monday)))).toBe("DEVICE_LIMIT");
+      expect(await recordsOf(c)).toEqual(before);
+      expect(await c.db.tombstones.count()).toBe(tombstones);
+      // The app's plan write on Tuesday would add C as well: the step reports it, and the plan is not written.
+      at("2026-11-03T08:00:00Z");
+      const plans = (await loadGoalPlanning(c.db)).plans;
+      expect(planWriteLimit(plans, c.deviceId, nowIso())(plans[0]!.data)).toBe("devices");
+      const planRow = await c.db.records.get([GOAL_WEEK_PLANS, planId]);
+      await setWeekAllocation(c.db, goalId, "2026-11-09", 300, Date.now());
+      expect(await c.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(planRow);
+      expect(await codeOf(exportText(c))).toBe("OK"); // the records still export
+
+      // With 31 devices listed, C is the 32nd: the decision is recorded, with all 102 options.
+      at("2026-11-02T08:00:00Z");
+      const d = await device("D");
+      const almost = withDevices(plain, GOAL_WEEK_PLANS, planId, 31 - Object.keys(JSON.parse(plain).payload.records[GOAL_WEEK_PLANS].find((e: { id: string }) => e.id === planId).version).length);
+      await importInto(d, almost, product);
+      await decidePlanDate(d.db, planId, "2026-11-02", theirs, canonicalize((await planOf(d, goalId))!.dates[0]!));
+      expect(await vectorOf(d, GOAL_WEEK_PLANS, planId)).toBe(32);
+      expect((await planOf(d, goalId))!.dates[0]!.options).toHaveLength(102); // no count limit on options
+      expect(await codeOf(exportText(d))).toBe("OK");
+    });
+
+    it("an import whose merge would list more than 32 devices is shown in the preview and writes nothing; resolving a conflict that would do so is refused", async () => {
+      const { a, goalId } = await sharedGoal();
+      const planId = weekPlanId(goalId, "2026-11-02");
+      // C first gets A's goal and plan, each listing 20 more devices.
+      const c = await device("C");
+      const first = await exportText(a);
+      await importInto(c, withDevices(withDevices(first, GOALS, goalId, 20), GOAL_WEEK_PLANS, planId, 20), product);
+      // A then changes both; its next file lists 20 other devices. Each file is valid on its own (21 devices).
+      await setWeekAllocation(a.db, goalId, "2026-11-02", 100, Date.now());
+      await updateGoal(a.db, goalId, { name: "Pages, revised" }, registry, Date.now());
+      const second = withDevices(withDevices(await exportText(a), GOALS, goalId, 20), GOAL_WEEK_PLANS, planId, 20);
+      const planBefore = await c.db.records.get([GOAL_WEEK_PLANS, planId]);
+      for (const applyUpdates of [false, true]) {
+        const { preview } = await importInto(c, second, { ...product, applyUpdates });
+        expect(preview.counts.planTooManyDevices).toBe(1);
+        expect(preview.counts.planMerge).toBe(0);
+        expect(preview.counts.planTooLarge).toBe(0);
+        expect(await c.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(planBefore); // nothing written
+      }
+      // The goal's two versions are an ordinary conflict; keeping either would combine 41 devices plus C.
+      const goalBefore = await c.db.records.get([GOALS, goalId]);
+      const conflict = (await c.db.pendingConflicts.toArray()).find((p) => p.type === GOALS && p.id === goalId)!;
+      expect(conflict).toBeTruthy();
+      for (const resolution of ["keepDevice", "useBackup"] as const) {
+        expect(await codeOf(decide(c.db, conflict.conflictId, resolution, registry))).toBe("TOO_MANY_DEVICES");
+      }
+      expect(await c.db.records.get([GOALS, goalId])).toEqual(goalBefore);
+      expect(await c.db.pendingConflicts.get(conflict.conflictId)).toBeTruthy(); // still the owner's to decide
+      expect(await codeOf(exportText(c))).toBe("OK");
+    });
   });
 
   it("a new plan record carrying an undecided date is imported as new with Apply updates off: a third device shows no data for it (D-015, T-228)", async () => {

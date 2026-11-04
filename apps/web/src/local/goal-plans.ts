@@ -29,7 +29,7 @@ import {
   type TaskCompletionData,
 } from "../backup/registry.ts";
 import { canonicalize } from "../backup/jcs.ts";
-import { envelopeFits, nowIso } from "../backup/envelope.ts";
+import { type EnvelopeLimit, envelopeLimitProblem, nowIso } from "../backup/envelope.ts";
 import { planChoiceId, weekAllocationId, weekPlanId } from "../backup/derived-id.ts";
 import { localDateOf } from "../planning/time.ts";
 import { computeAllocations, segmentFor, type AllocationResult } from "../insights/allocation.ts";
@@ -61,7 +61,9 @@ export type GoalPlanErrorCode =
   /** This device's counter for the date, or a malformed claim about it, is at its maximum: no entry can be written. */
   | "SEQ_LIMIT"
   /** The record would pass the per-record size limit; nothing is written or dropped. */
-  | "RECORD_LIMIT";
+  | "RECORD_LIMIT"
+  /** The record's version vector would list more than the 32 devices a backup record may; nothing is written. */
+  | "DEVICE_LIMIT";
 
 export class GoalPlanError extends Error {
   readonly code: GoalPlanErrorCode;
@@ -92,15 +94,16 @@ async function planRows(db: LocalDb): Promise<PlanItem[]> {
 }
 
 /**
- * Whether this device's write of a weekly plan would stay within the per-record limit, measured on
- * the exact envelope `putRecord` would store at `at` (the record's ID, `createdAt` as stored, the
- * new `updatedAt`, raised version vector, content hash, and data). Nothing is dropped to fit.
+ * Which per-record limit this device's write of a weekly plan would break (32 devices in the
+ * version vector, or 256 KiB), or null, measured on the exact envelope `putRecord` would store at
+ * `at` (the record's ID, `createdAt` as stored, the new `updatedAt`, raised version vector, content
+ * hash, and data). Nothing is dropped to fit.
  */
-export function planWriteFits(rows: readonly PlanItem[], deviceId: string, at: string): (data: GoalWeekPlanData) => boolean {
+export function planWriteLimit(rows: readonly PlanItem[], deviceId: string, at: string): (data: GoalWeekPlanData) => EnvelopeLimit | null {
   return (data) => {
     const row = rows.find((r) => r.data.goalId === data.goalId && r.data.weekStart === data.weekStart);
     const id = row?.id ?? weekPlanId(data.goalId, data.weekStart);
-    return envelopeFits(plannedWriteEnvelope(row, id, data as unknown as Record<string, unknown>, deviceId, at));
+    return envelopeLimitProblem(plannedWriteEnvelope(row, id, data as unknown as Record<string, unknown>, deviceId, at));
   };
 }
 
@@ -185,14 +188,15 @@ function plansToday(goal: GoalData, today: string): boolean {
  * segment is already in effect. `write`: this device's entry for today is to be written.
  * `blocked`: the computed segment differs from the one in effect, but it cannot be written: this
  * device's counter for today is at its maximum (`canWriteEntry`, reason `counter`), or the record's
- * exact envelope would pass the per-record size limit (`fits`, from `planWriteFits`, reason `size`).
- * The recorded plan stays, and the goal view says so.
+ * exact envelope would break a per-record limit of the backup format (`limit`, from
+ * `planWriteLimit`: reason `devices` for more than 32 devices in its version vector, `size` for
+ * more than 256 KiB). The recorded plan stays, and the goal view says so.
  * `none`: the goal is not running, or has no deadline or workdays to start a record with.
  */
 export type PlanWriteStep =
   | { kind: "none" | "owner" | "same" }
   | { kind: "start" | "write"; segment: SegmentData }
-  | { kind: "blocked"; reason: "counter" | "size"; segment: SegmentData; inEffect: SegmentData | null };
+  | { kind: "blocked"; reason: "counter" | EnvelopeLimit; segment: SegmentData; inEffect: SegmentData | null };
 
 export function planWriteStep(
   goal: GoalData,
@@ -201,7 +205,7 @@ export function planWriteStep(
   goalPlans: readonly GoalWeekPlanData[],
   today: string,
   thisDevice: string,
-  fits: (data: GoalWeekPlanData) => boolean,
+  limit: (data: GoalWeekPlanData) => EnvelopeLimit | null,
 ): PlanWriteStep {
   if (!plansToday(goal, today)) return { kind: "none" };
   const segment = segmentFor(state.result, state.currentWeek, manual.get(state.currentWeek) ?? null);
@@ -216,7 +220,8 @@ export function planWriteStep(
   const inEffect = applied ? appliedSegment(applied.resolution) : null;
   if (inEffect && canonicalize(inEffect) === canonicalize(segment)) return { kind: "same" };
   if (!canWriteEntry(todayDate, thisDevice)) return { kind: "blocked", reason: "counter", segment, inEffect };
-  if (!fits(withDate(existing, writeEntry(todayDate, today, thisDevice, segment)))) return { kind: "blocked", reason: "size", segment, inEffect };
+  const problem = limit(withDate(existing, writeEntry(todayDate, today, thisDevice, segment)));
+  if (problem) return { kind: "blocked", reason: problem, segment, inEffect };
   return { kind: "write", segment };
 }
 
@@ -235,13 +240,13 @@ export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "o
   const device = await deviceIdentity(db);
   const allocations = await rowsOf<GoalWeekAllocationData>(db, GOAL_WEEK_ALLOCATIONS);
   const plans = await planRows(db);
-  const fits = planWriteFits(plans, device.id, new Date(now).toISOString());
+  const limit = planWriteLimit(plans, device.id, new Date(now).toISOString());
   const records = await progressRecords(db);
   for (const goal of running) {
     const state = allocationState(goal.id, goal.data, goalDays(goal.id, goal.data, records, zone).amounts, allocations, today, weekStart);
     const id = weekPlanId(goal.id, state.currentWeek);
     const goalPlans = plans.filter((p) => p.data.goalId === goal.id).map((p) => p.data);
-    const step = planWriteStep(goal.data, state, manualAmounts(allocations, goal.id), goalPlans, today, device.id, fits);
+    const step = planWriteStep(goal.data, state, manualAmounts(allocations, goal.id), goalPlans, today, device.id, limit);
     if (step.kind === "start") {
       const data: GoalWeekPlanData = { goalId: goal.id, weekStart: state.currentWeek, dates: [writeEntry(undefined, today, device.id, step.segment)] };
       await putRecord(db, registry, GOAL_WEEK_PLANS, id, data);
@@ -398,9 +403,10 @@ export async function decidePlanDate(
     if (!canWriteEntry(date, device.id)) throw new GoalPlanError("SEQ_LIMIT", "this device's counter for the date is at its maximum; nothing was written");
     const previous = appliedSegment(resolveDate(date, device.id));
     const next = decideEntry(date, from, device.id, chosen);
-    // Nothing is dropped to make room: if the exact envelope would pass the per-record limit, the decision is refused.
-    const fits = planWriteFits([{ ...itemOf<GoalWeekPlanData>(row), version: row.version }], device.id, nowIso());
-    if (!fits(withDate(plan, next))) throw new GoalPlanError("RECORD_LIMIT", "the weekly plan would pass the per-record size limit; nothing was written");
+    // Nothing is dropped to make room: if the exact envelope would break a per-record limit, the decision is refused.
+    const problem = planWriteLimit([{ ...itemOf<GoalWeekPlanData>(row), version: row.version }], device.id, nowIso())(withDate(plan, next));
+    if (problem === "devices") throw new GoalPlanError("DEVICE_LIMIT", "the weekly plan's version vector would list more than 32 devices; nothing was written");
+    if (problem === "size") throw new GoalPlanError("RECORD_LIMIT", "the weekly plan would pass the per-record size limit; nothing was written");
     const entry = next.entries.find((e) => e.device === device.id)!;
     await putRecord(db, registry, GOAL_WEEK_PLANS, planId, withDate(plan, next));
     const event: GoalWeekPlanChoiceData = {

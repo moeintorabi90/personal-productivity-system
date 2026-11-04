@@ -1,7 +1,7 @@
 import { getMeta, type LocalDb, type PendingConflictRow, setMeta, type VersionEntry } from "../local/db.ts";
 import { deviceIdentity, toEnvelope } from "../local/records.ts";
 import { importedMarkOf, markImportedSessions, markRestoredSession, pauseOfVersion } from "../local/work.ts";
-import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
+import { type Envelope, envelopeLimitProblem, makeEnvelope, nowIso, type Tombstone, tombstoneFits } from "./envelope.ts";
 import { canonicalize } from "./jcs.ts";
 import { CALENDAR_BLOCKS, GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry, SESSIONS } from "./registry.ts";
 import { mergeAndBump, type VersionVector } from "./versions.ts";
@@ -34,7 +34,10 @@ export class ResolutionError extends Error {
     | "IMMUTABLE_FIELD"
     | "INCONSISTENT_HISTORY"
     | "NOT_FOUND"
-    | "STALE";
+    | "STALE"
+    /** The combined version would break a per-record limit of the backup format; nothing is written. */
+    | "TOO_MANY_DEVICES"
+    | "RECORD_TOO_LARGE";
   /** HAS_LINKED_ITEMS: the records that still block the deletion; LINKED_ITEMS_MISMATCH: those that would no longer fit. */
   readonly linkedItems: LinkedItem[];
   constructor(code: ResolutionError["code"], message: string, linkedItems: LinkedItem[] = []) {
@@ -229,14 +232,24 @@ export async function assertLinksLive(db: LocalDb, registry: Registry, type: str
   if (problem) throw new ResolutionError("INVALID_RELATIONSHIP", `${type}: ${problem}`);
 }
 
+/**
+ * The combined version of a resolution must stay within the backup format's per-record limits (32
+ * devices, 256 KiB), or the result could not be exported; otherwise nothing is written and the
+ * decision stays pending.
+ */
 async function writeRecord(db: LocalDb, type: string, id: string, data: Record<string, unknown>, createdAt: string, version: VersionVector) {
+  const envelope = makeEnvelope(id, data, version, createdAt, nowIso());
+  const problem = envelopeLimitProblem(envelope);
+  if (problem === "devices") throw new ResolutionError("TOO_MANY_DEVICES", `${type}/${id}: the combined version would list more than 32 devices`);
+  if (problem === "size") throw new ResolutionError("RECORD_TOO_LARGE", `${type}/${id}: the record would pass the per-record size limit`);
   await db.tombstones.delete([type, id]);
-  await db.records.put({ type, ...makeEnvelope(id, data, version, createdAt, nowIso()) });
+  await db.records.put({ type, ...envelope });
 }
 
 async function writeTombstone(db: LocalDb, type: string, id: string, version: VersionVector) {
-  await db.records.delete([type, id]);
   const tombstone: Tombstone = { type, id, deletedAt: nowIso(), version };
+  if (!tombstoneFits(tombstone)) throw new ResolutionError("TOO_MANY_DEVICES", `${type}/${id}: the combined version would list more than 32 devices`);
+  await db.records.delete([type, id]);
   await db.tombstones.put(tombstone);
 }
 
