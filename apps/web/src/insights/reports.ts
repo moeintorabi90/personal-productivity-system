@@ -256,17 +256,23 @@ export interface OutputRate extends RateBucket {
  * recorded, per hour. Ended sessions only, not in the trash; deleted outputs excluded; a recorded 0
  * counts, an absent record does not; several records of one definition in a session add up and the
  * session's time counts once; units are never combined. The trend splits the range into weeks.
+ * Session-level (owner, 2026-11-05): a session's whole output and whole active time count together
+ * on the local date of its start in the configured `zone` (not its stored `localDate`), and in the
+ * week bucket holding that date; neither is split at local midnight, unlike the comparisons.
  */
 export function outputRates(
   outputs: readonly Item<OutputRecordData>[],
   sessions: readonly Item<SessionData>[],
   range: { from: string; to: string },
+  zone: string,
 ): OutputRate[] {
-  const live = new Map(reportSessions(sessions).map((s) => [s.id, s.data]));
+  const ended = reportSessions(sessions);
+  const live = new Map(ended.map((s) => [s.id, s.data]));
+  const startDate = new Map(ended.map((s) => [s.id, localDateOf(s.data.startedAt, zone)]));
   const perSession = new Map<string, Map<string, number>>(); // definition → session → total
   for (const o of outputs) {
     const s = live.get(o.data.sessionId);
-    if (o.data.deletedAt !== null || !s || !inRange(s.localDate, range)) continue;
+    if (o.data.deletedAt !== null || !s || !inRange(startDate.get(o.data.sessionId)!, range)) continue;
     const m = perSession.get(o.data.definitionId) ?? new Map<string, number>();
     m.set(o.data.sessionId, (m.get(o.data.sessionId) ?? 0) + o.data.value);
     perSession.set(o.data.definitionId, m);
@@ -277,7 +283,8 @@ export function outputRates(
     let samples = 0;
     for (const [sessionId, value] of definitionSessions) {
       const s = live.get(sessionId)!;
-      if (s.localDate < from || s.localDate > to) continue;
+      const date = startDate.get(sessionId)!;
+      if (date < from || date > to) continue;
       total += value;
       minutes += workMinutes(s);
       samples += 1;

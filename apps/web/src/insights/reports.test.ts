@@ -123,14 +123,42 @@ describe("10. output rate (T-195, T-196)", () => {
     const s3 = session("2026-11-04T08:00:00Z", 60); // no output record for DEF: not part of its rate
     const s4 = session("2026-11-05T08:00:00Z", 60, { deletedAt: "2026-11-05T10:00:00.000Z" });
     const outputs = [output(s1.id, 10), output(s1.id, 2), output(s1.id, 5, DEF2), output(s2.id, 0), output(s2.id, 99, DEF, { deletedAt: "2026-11-03T10:00:00.000Z" }), output(s4.id, 50)];
-    const rates = outputRates(outputs, [s1, s2, s3, s4], { from: "2026-11-02", to: "2026-11-08" });
+    const rates = outputRates(outputs, [s1, s2, s3, s4], { from: "2026-11-02", to: "2026-11-08" }, "UTC");
     const def = rates.find((r) => r.definitionId === DEF)!;
     expect(def).toMatchObject({ total: 12, minutes: 120, samples: 2, perHour: 6 });
     expect(rates.find((r) => r.definitionId === DEF2)).toMatchObject({ total: 5, minutes: 60, perHour: 5 });
     expect(def.trend).toHaveLength(1);
-    const withoutZero = outputRates(outputs.filter((o) => o.data.value !== 0), [s1, s2, s3], { from: "2026-11-02", to: "2026-11-08" });
+    const withoutZero = outputRates(outputs.filter((o) => o.data.value !== 0), [s1, s2, s3], { from: "2026-11-02", to: "2026-11-08" }, "UTC");
     expect(withoutZero.find((r) => r.definitionId === DEF)!.perHour).toBe(12);
-    expect(outputRates([], [s1], { from: "2026-11-02", to: "2026-11-08" })).toEqual([]); // no data, not zero
+    expect(outputRates([], [s1], { from: "2026-11-02", to: "2026-11-08" }, "UTC")).toEqual([]); // no data, not zero
+  });
+
+  it("a session crossing local midnight counts whole on its start date and in that week's bucket; planned versus actual still splits it (owner, 2026-11-05)", () => {
+    const s = session("2026-11-08T23:00:00Z", 120); // Sunday 23:00 to Monday 01:00
+    const outputs = [output(s.id, 12)];
+    const whole = { total: 12, minutes: 120, samples: 1, perHour: 6 };
+    // Two weeks: the whole session, output and time, is in the first week's bucket (it started Sunday).
+    const rate = outputRates(outputs, [s], { from: "2026-11-02", to: "2026-11-15" }, "UTC")[0]!;
+    expect(rate).toMatchObject(whole);
+    expect(rate.trend[0]).toMatchObject({ from: "2026-11-02", to: "2026-11-08", ...whole });
+    expect(rate.trend[1]).toMatchObject({ from: "2026-11-09", to: "2026-11-15", total: 0, minutes: 0, samples: 0, perHour: null });
+    expect(outputRates(outputs, [s], { from: "2026-11-08", to: "2026-11-08" }, "UTC")[0]).toMatchObject(whole);
+    expect(outputRates(outputs, [s], { from: "2026-11-09", to: "2026-11-15" }, "UTC")).toEqual([]); // the end date alone: no data
+    // The comparison keeps the local-midnight split.
+    const rows = plannedVersusActual([], [s], { from: "2026-11-02", to: "2026-11-15" }, "UTC", tasks);
+    expect(rows.map((r) => [r.date, r.actualMinutes])).toEqual([["2026-11-08", 60], ["2026-11-09", 60]]);
+  });
+
+  it("the start date comes from the configured time zone, not the session's stored zone and local date (owner, 2026-11-05)", () => {
+    // Started 21:00 UTC Monday: 00:30 Tuesday in Tehran (UTC+3:30), where it was recorded.
+    const s = session("2026-11-02T21:00:00Z", 60, { timeZone: "Asia/Tehran", localDate: "2026-11-03" });
+    const outputs = [output(s.id, 5)];
+    const monday = { from: "2026-11-02", to: "2026-11-02" };
+    const tuesday = { from: "2026-11-03", to: "2026-11-03" };
+    expect(outputRates(outputs, [s], monday, "UTC")[0]).toMatchObject({ total: 5, minutes: 60, samples: 1, perHour: 5 });
+    expect(outputRates(outputs, [s], tuesday, "UTC")).toEqual([]);
+    expect(outputRates(outputs, [s], tuesday, "Asia/Tehran")[0]).toMatchObject({ total: 5, minutes: 60, samples: 1 });
+    expect(outputRates(outputs, [s], monday, "Asia/Tehran")).toEqual([]);
   });
 });
 

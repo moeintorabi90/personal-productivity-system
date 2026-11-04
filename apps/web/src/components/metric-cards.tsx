@@ -147,7 +147,7 @@ export function MetricBody({ ctx, metric, window, size, goalId }: { ctx: Insight
       );
     }
     case "outputRate": {
-      const rates = outputRates(ctx.work.outputs, ctx.work.sessions, range);
+      const rates = outputRates(ctx.work.outputs, ctx.work.sessions, range, ctx.zone);
       if (rates.length === 0) return <NoData />;
       return (
         <div data-testid="metric-outputRate">
