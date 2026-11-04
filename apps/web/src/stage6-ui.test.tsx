@@ -75,6 +75,23 @@ describe("1–2. calendar: Planned and Actual subcolumns, segments, drag correct
     return await screen.findByTestId("grid-week-view");
   }
 
+  it("each day header of the week view shows the full local weekday name with its date (T-241), in English and Persian", async () => {
+    await renderApp();
+    await goTo("Calendar");
+    const week = await screen.findByTestId("grid-week-view");
+    const head = (date: string) => week.querySelector(`.tg-day-head[data-date="${date}"] .tg-day-name`)!.textContent;
+    expect(head("2026-11-04")).toMatch(/^Wednesday · /);
+    expect(head("2026-11-08")).toMatch(/^Sunday · /);
+    cleanup();
+    await services.engine.stop();
+    services.db.close();
+    await renderApp(async (s) => updateDeviceSettings(s.db, { language: "fa" }));
+    await goTo("تقویم");
+    const weekFa = await screen.findByTestId("grid-week-view");
+    await waitFor(() => expect(weekFa.querySelector('.tg-day-head[data-date="2026-11-04"] .tg-day-name')!.textContent).toMatch(/^چهارشنبه، /));
+    expect(weekFa.querySelector('.tg-day-head[data-date="2026-11-04"] .tg-day-name')!.textContent).not.toContain("·");
+  });
+
   it("a session with two pauses shows three segments and gaps in the Actual subcolumn and acts as one session", async () => {
     const week = await withPausedSession();
     expect(within(week).getAllByText("Planned").length).toBeGreaterThan(0);
@@ -502,6 +519,29 @@ describe("19. timer (T-230 to T-240)", () => {
     await waitFor(() => expect(field("Hours").value).toBe("1"));
     expect([field("Minutes").value, field("Seconds").value]).toEqual(["30", "45"]);
     expect((await loadTimer(services.db)).countdown).toMatchObject({ status: "idle", durationMs: 5_445_000 });
+  });
+
+  it("the length draft follows the last set length in both views: a countdown started in the main window updates the floating window's fields", async () => {
+    const f = testFloatingWindow();
+    await renderApp();
+    const bar = await screen.findByTestId("timer-bar");
+    fireEvent.click(within(bar).getByRole("tab", { name: "Countdown" }));
+    await waitFor(() => expect(within(bar).getByRole("tab", { name: "Countdown" }).getAttribute("aria-selected")).toBe("true"));
+    f.resize(340, 300);
+    fireEvent.click(await within(bar).findByTestId("open-floating"));
+    await f.view();
+    const floatingField = (name: string) => within(f.current()).getByLabelText(name) as HTMLInputElement;
+    await waitFor(() => expect(floatingField("Minutes").value).toBe("25"));
+    fireEvent.change(within(bar).getByLabelText("Hours"), { target: { value: "1" } });
+    fireEvent.change(within(bar).getByLabelText("Minutes"), { target: { value: "30" } });
+    fireEvent.change(within(bar).getByLabelText("Seconds"), { target: { value: "45" } });
+    expect(floatingField("Minutes").value).toBe("25"); // an unsaved draft stays in its own view
+    fireEvent.click(within(bar).getByRole("button", { name: "Start" }));
+    await waitFor(async () => expect((await loadTimer(services.db)).countdown.durationMs).toBe(5_445_000));
+    await waitFor(() => expect(within(f.current()).getByTestId("timer-status").textContent).toBe("Running"));
+    fireEvent.click(within(f.current()).getByRole("button", { name: "Reset" }));
+    await waitFor(() => expect(floatingField("Hours").value).toBe("1"));
+    expect([floatingField("Minutes").value, floatingField("Seconds").value]).toEqual(["30", "45"]);
   });
 
   it("the countdown length fields and their errors are in Persian", async () => {

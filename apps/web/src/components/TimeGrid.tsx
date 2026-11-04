@@ -293,7 +293,11 @@ export function TimeGrid({
           const plan = dayPlan(ctx, date, filter);
           return (
             <div key={date} className="tg-day-head" data-date={date}>
-              <span className="tg-day-name">{formatWeekdayName(weekdayOf(date), ctx.language)} · {formatLocalDate(date, ctx, "medium")}</span>
+              <span className="tg-day-name">
+                {formatWeekdayName(weekdayOf(date), ctx.language)}
+                {t("stage6.sep")}
+                {formatLocalDate(date, ctx, "medium")}
+              </span>
               {plan.capacity.kind === "warning" ? <span className="pill pill-warn">{t("calendar.overCapacity")}</span> : null}
               {plan.unscheduled.length ? <span className="hint">{t("calendar.unscheduledCount", { count: plan.unscheduled.length })}</span> : null}
               <button type="button" className="secondary tg-add" aria-label={t("plan.addLabel", { date: formatLocalDate(date, ctx, "medium") })} onClick={() => onAdd(date)}>
