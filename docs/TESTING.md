@@ -165,7 +165,7 @@ Contract: PRODUCT_SPEC "Stage 3 follow-up", "Stage 6: planned versus actual, pac
 
 ## Stage 6 acceptance tests (specified 2026-11-01; implemented on `feat/stage-6`, see "Stage 6 test report")
 
-Contract: DECISIONS T-174 to T-241. Expected values that depend on derived choices (weekly allocation and daily-target formulas, day splitting, version 8) follow DECISIONS "Derived technical choices". Fixed dates and zones.
+Contract: DECISIONS T-174 to T-242. Expected values that depend on derived choices (weekly allocation and daily-target formulas, day splitting, version 8) follow DECISIONS "Derived technical choices". Fixed dates and zones.
 
 1. **Calendar layout (T-174 to T-177):** week and day views show one main column per day with Planned and Actual subcolumns; a phone-sized week shows one day with navigation reaching all seven; week and day headers show each localized weekday name with its date; a month cell shows both kinds with distinct treatments and a non-color cue; a session with two pauses shows three segments and gaps, and acts as one session.
 2. **Comparison (T-178, T-179):** two blocks and three sessions of one task on one day aggregate; a session with no link still counts, and no `blockId` changes; sessions stay at recorded times. A block edited before its start changes the compared plan; edited after its start, it does not. Drag corrections stay audited (T-072).

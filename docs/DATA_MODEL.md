@@ -179,7 +179,7 @@ Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-
 
 ### Stage 6 data (`dataSchemaVersion` 8; implemented on `feat/stage-6`, not merged)
 
-Owner decisions T-174 to T-241. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
+Owner decisions T-174 to T-242. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
 
 | Type / field | Data fields | Rules |
 |---|---|---|

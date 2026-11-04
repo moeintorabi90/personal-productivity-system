@@ -275,7 +275,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 
 ### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; implemented on `feat/stage-6`, not merged; TESTING "Stage 6 test report")
 
-Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-241 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
+Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-242 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
 
 **Calendar**
 
