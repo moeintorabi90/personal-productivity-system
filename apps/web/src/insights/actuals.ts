@@ -39,7 +39,9 @@ export interface GoalDays {
 /**
  * Per-day amounts and attributed days of one goal: work minutes of ended sessions counted toward a
  * time goal, attributed output values (including recorded zeros) of an output goal's definition on
- * the session's date, or completions of a task-count goal on their date (T-134, T-156).
+ * the session's start date, or completions of a task-count goal on their date (T-134, T-156). All
+ * dates are local dates in the configured `zone` (D-020), never a session's stored zone or
+ * `localDate`; a time session also attributes its start date, so work shorter than a minute counts.
  */
 export function goalDays(goalId: string, goal: GoalData, records: ProgressRecords, zone: string): GoalDays {
   const amounts = new Map<string, number>();
@@ -54,7 +56,7 @@ export function goalDays(goalId: string, goal: GoalData, records: ProgressRecord
       for (const s of liveSessions.values()) {
         if (s.goalId !== goalId || s.endedAt === null) continue;
         for (const [date, minutes] of minutesByLocalDay(s, zone)) addAmount(date, minutes);
-        attributed.add(s.localDate);
+        attributed.add(localDateOf(s.startedAt, zone));
       }
       break;
     case "output":
@@ -62,7 +64,7 @@ export function goalDays(goalId: string, goal: GoalData, records: ProgressRecord
       for (const o of records.outputs) {
         const d = o.data;
         const session = liveSessions.get(d.sessionId);
-        if (d.deletedAt === null && session && d.definitionId === goal.definitionId && d.goalIds.includes(goalId)) addAmount(session.localDate, d.value);
+        if (d.deletedAt === null && session && d.definitionId === goal.definitionId && d.goalIds.includes(goalId)) addAmount(localDateOf(session.startedAt, zone), d.value);
       }
       break;
     case "taskCount":
