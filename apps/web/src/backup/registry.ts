@@ -942,11 +942,14 @@ export const segmentSchema = z
   .refine((s) => (s.state === "allocated") === (s.allocation !== null), { message: "an allocation is present exactly when allocated" });
 export type SegmentData = z.infer<typeof segmentSchema>;
 
+/** The highest counter of a weekly plan entry, a counter it has seen, or a choice event. */
+export const PLAN_SEQ_MAX = 1_000_000_000;
+
 /** Counters a device had seen of other devices' entries for one date (T-227 to T-229). */
-const seenSchema = z.record(z.uuid(), z.number().int().min(1).max(1_000_000_000));
+const seenSchema = z.record(z.uuid(), z.number().int().min(1).max(PLAN_SEQ_MAX));
 
 const planEntrySchema = z
-  .object({ device: z.uuid(), seq: z.number().int().min(1).max(1_000_000_000), segment: segmentSchema, seen: seenSchema })
+  .object({ device: z.uuid(), seq: z.number().int().min(1).max(PLAN_SEQ_MAX), segment: segmentSchema, seen: seenSchema })
   .strict()
   .refine((e) => !(e.device in e.seen), { message: "an entry does not list its own device as seen" });
 export type PlanEntryData = z.infer<typeof planEntrySchema>;
@@ -1009,7 +1012,7 @@ export const goalWeekPlanChoiceSchema = z
     from: localDateSchema,
     device: z.uuid(),
     deviceName: z.string().max(80),
-    seq: z.number().int().min(1).max(1_000_000_000),
+    seq: z.number().int().min(1).max(PLAN_SEQ_MAX),
     previous: segmentSchema.nullable(),
     chosen: segmentSchema,
     seen: seenSchema,

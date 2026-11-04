@@ -35,7 +35,7 @@ import { localDateOf } from "../planning/time.ts";
 import { computeAllocations, segmentFor, type AllocationResult } from "../insights/allocation.ts";
 import { amountBetween, goalDays } from "../insights/actuals.ts";
 import { currentPlan, goalWeekStarts, isClosedWeek, planOn, weekStartOf, workdaysIn, type GoalPlan } from "../insights/goal-plan.ts";
-import { appliedSegment, decisionChoices, needsDecision, planDateOn, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
+import { appliedSegment, canWriteEntry, decisionChoices, needsDecision, planDateOn, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
 import type { LocalDb, RecordRow } from "./db.ts";
 import type { Item } from "./organization.ts";
 import { deviceIdentity, putRecord } from "./records.ts";
@@ -56,7 +56,9 @@ export type GoalPlanErrorCode =
   /** The choice is not one of the recorded versions shown for that date (T-223, T-227). */
   | "NOT_A_CHOICE"
   /** The date changed after it was shown; show it again. */
-  | "CHANGED";
+  | "CHANGED"
+  /** This device's counter for the date, or a malformed claim about it, is at its maximum: no entry can be written. */
+  | "SEQ_LIMIT";
 
 export class GoalPlanError extends Error {
   readonly code: GoalPlanErrorCode;
@@ -188,6 +190,7 @@ export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "o
     if (todayDate && needsDecision(todayDate)) continue; // undecided, in conflict, or inconsistent: the owner decides
     const inEffect = applied ? appliedSegment(applied.resolution) : null;
     if (inEffect && canonicalize(inEffect) === canonicalize(segment)) continue;
+    if (!canWriteEntry(todayDate, device.id)) continue; // counter at its maximum: the recorded plan stays
     await putRecord(db, registry, GOAL_WEEK_PLANS, id, withDate(existing, writeEntry(todayDate, today, device.id, segment)));
   }
 }
@@ -334,6 +337,7 @@ export async function decidePlanDate(
     const offered = needsDecision(date) ? decisionChoices(date) : date.options;
     if (!offered.some((s) => canonicalize(s) === canonicalize(chosen))) throw new GoalPlanError("NOT_A_CHOICE", "choose one of the recorded versions");
     const device = await deviceIdentity(db);
+    if (!canWriteEntry(date, device.id)) throw new GoalPlanError("SEQ_LIMIT", "this device's counter for the date is at its maximum; nothing was written");
     const previous = appliedSegment(resolveDate(date, device.id));
     const next = writeEntry(date, from, device.id, chosen);
     const entry = next.entries.find((e) => e.device === device.id)!;

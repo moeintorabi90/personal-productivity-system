@@ -19,6 +19,7 @@ import {
   type GoalWeekAllocationData,
   type GoalWeekPlanData,
   MAIN_DASHBOARD_ID,
+  PLAN_SEQ_MAX,
   PRODUCT_REGISTRY,
   SESSIONS,
   type SessionData,
@@ -201,6 +202,24 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     fireEvent.click(within(await screen.findByTestId("confirm-choice")).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(screen.queryByTestId("plan-conflict")).toBeNull());
     await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("20")); // 100 over 5 workdays
+  });
+
+  it("when this device's counter for such a date is claimed at the maximum, the view says no choice can be recorded here and offers none (Codex review)", async () => {
+    const goalId = await goal();
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30"));
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const plan = (await services.db.records.get([GOAL_WEEK_PLANS, planId]))!.data as GoalWeekPlanData;
+    const own = plan.dates[0]!.entries[0]!;
+    const other = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const theirs = { state: "allocated" as const, allocation: { num: 100, den: 1 }, source: "manual" as const };
+    await putRecord(services.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, planId, {
+      ...plan,
+      dates: [{ ...plan.dates[0]!, entries: [{ ...own, seen: { [other]: 1 } }, { device: other, seq: 1, seen: { [own.device]: PLAN_SEQ_MAX }, segment: theirs }].sort((p, q) => (p.device < q.device ? -1 : 1)) }],
+    });
+    expect((await screen.findByTestId("plan-conflict")).dataset.kind).toBe("inconsistent");
+    expect((await screen.findByTestId("decision-blocked")).textContent).toMatch(/^This device cannot record a choice for this date/);
+    expect(screen.queryByTestId("decide")).toBeNull();
+    expect(screen.getByTestId("today-target").textContent).toBe("30"); // this device's plan still applies
   });
 
   it("shows today's target from the recorded plan, the week's and month's targets, and both streaks by default", async () => {

@@ -6,7 +6,7 @@
  * import and the decide commands call them, and the goal views read them.
  */
 import { canonicalize } from "../backup/jcs.ts";
-import type { GoalWeekPlanChoiceData, GoalWeekPlanData, PlanDateData, PlanEntryData, SegmentData } from "../backup/registry.ts";
+import { type GoalWeekPlanChoiceData, type GoalWeekPlanData, PLAN_SEQ_MAX, type PlanDateData, type PlanEntryData, type SegmentData } from "../backup/registry.ts";
 import { addDays } from "../planning/time.ts";
 
 const key = (value: unknown) => canonicalize(value);
@@ -149,19 +149,33 @@ export function conflictDates(plan: GoalWeekPlanData): string[] {
 }
 
 /**
- * Writes this device's entry for a date (a plan write or an owner decision): `seq` one more than
- * its previous entry for the date, `seen` = every other device's entry now on this device, so the
- * entries the owner saw are covered (DECISIONS "Deciding a date"). In well-formed data no other
- * entry has seen a higher `seq` of this device than its own; if malformed data claims one, the new
- * `seq` goes past it, so the decision is never covered at once.
+ * The `seq` of this device's next entry for a date: one more than its previous entry. In
+ * well-formed data no other entry has seen a higher `seq` of this device than its own; if
+ * malformed data claims one, the next `seq` goes past it, so the new entry is never covered at once.
+ */
+export function nextSeq(date: Pick<PlanDateData, "entries"> | undefined, device: string): number {
+  const entries = date?.entries ?? [];
+  const own = entries.find((e) => e.device === device);
+  return Math.max(own?.seq ?? 0, ...entries.filter((e) => e.device !== device).map((e) => e.seen[device] ?? 0)) + 1;
+}
+
+/**
+ * Whether this device can still write an entry for a date: the next `seq` stays within the
+ * schema's maximum. It cannot only when this device's counter, or a malformed claim about it, is
+ * already at `PLAN_SEQ_MAX`; nothing is then written (a decision is refused, a plan write skipped).
+ */
+export const canWriteEntry = (date: Pick<PlanDateData, "entries"> | undefined, device: string) => nextSeq(date, device) <= PLAN_SEQ_MAX;
+
+/**
+ * Writes this device's entry for a date (a plan write or an owner decision): `seq` from `nextSeq`,
+ * `seen` = every other device's entry now on this device, so the entries the owner saw are covered
+ * (DECISIONS "Deciding a date"). Callers check `canWriteEntry` first.
  */
 export function writeEntry(date: PlanDateData | undefined, from: string, device: string, segment: SegmentData): PlanDateData {
   const entries = date?.entries ?? [];
-  const own = entries.find((e) => e.device === device);
   const seen: Record<string, number> = {};
   for (const e of entries) if (e.device !== device) seen[e.device] = e.seq;
-  const claimed = Math.max(own?.seq ?? 0, ...entries.filter((e) => e.device !== device).map((e) => e.seen[device] ?? 0));
-  const entry: PlanEntryData = { device, seq: claimed + 1, segment, seen };
+  const entry: PlanEntryData = { device, seq: nextSeq(date, device), segment, seen };
   const next: PlanDateData = { from, entries: sortEntries([...entries.filter((e) => e.device !== device), entry]), options: date?.options ?? [] };
   return withConflictOptions(next);
 }

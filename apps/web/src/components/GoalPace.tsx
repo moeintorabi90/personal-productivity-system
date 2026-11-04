@@ -12,7 +12,7 @@ import { type GoalData, type GoalWeekPlanData, type OutputDefinitionData, type P
 import { formatLocalDate, type MessageKey, type Translate } from "../i18n/index.ts";
 import { type Fraction, roundForDisplay, toNumber } from "../insights/fraction.ts";
 import { goalWeekStarts, workdaysIn } from "../insights/goal-plan.ts";
-import { appliedSegment, canChangeChoice, decisionChoices, eventStatus, needsDecision, orderEvents, resolveDate } from "../insights/plan-merge.ts";
+import { appliedSegment, canChangeChoice, canWriteEntry, decisionChoices, eventStatus, needsDecision, orderEvents, resolveDate } from "../insights/plan-merge.ts";
 import { decidePlanDate, GoalPlanError, manualAmountOn, moveWeekAllocation, setWeekAllocation, weekTakesManual } from "../local/goal-plans.ts";
 import { addDays } from "../planning/time.ts";
 import { goalUnit } from "../local/work.ts";
@@ -369,6 +369,8 @@ function PlanDateRow({ ctx, goalId, goal, plan, date, definitions }: { ctx: Insi
   const conflict = needsDecision(date);
   const changeable = canChangeChoice(date);
   const offered = conflict ? decisionChoices(date) : changeable ? date.options : [];
+  // A choice needs a new entry; with this device's counter at its maximum none can be written here.
+  const blocked = offered.length > 0 && !canWriteEntry(date, ctx.deviceId);
   const applied = appliedSegment(resolution);
   const events = ctx.planning.choices.filter((c) => c.data.goalId === goalId && c.data.weekStart === plan.weekStart && c.data.from === date.from);
   const planId = ctx.planning.plans.find((p) => p.data.goalId === goalId && p.data.weekStart === plan.weekStart)!.id;
@@ -385,7 +387,12 @@ function PlanDateRow({ ctx, goalId, goal, plan, date, definitions }: { ctx: Insi
                 : t("pace.conflictOwn")}
           </p>
         ) : null}
-        {offered.length > 0 && goal.archivedAt === null ? (
+        {blocked && goal.archivedAt === null ? (
+          <p className="notice notice-warn" data-testid="decision-blocked">
+            {t("pace.decisionBlocked")}
+          </p>
+        ) : null}
+        {offered.length > 0 && !blocked && goal.archivedAt === null ? (
           <div data-testid={conflict ? "decide" : "change-choice"}>
             <p className="hint">{conflict ? t("pace.chooseVersion") : t("pace.changeChoice")}</p>
             <ul className="count-list">

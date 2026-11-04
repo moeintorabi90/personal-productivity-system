@@ -878,6 +878,8 @@ export const en = {
   "pace.error.SAME_WEEK": "Choose another week.",
   "pace.error.NOT_A_CHOICE": "Choose one of the recorded versions.",
   "pace.error.CHANGED": "This date changed meanwhile. Review it again.",
+  "pace.error.SEQ_LIMIT": "This device cannot record a choice for this date: its counter is at the maximum. Nothing was changed.",
+  "pace.decisionBlocked": "This device cannot record a choice for this date: the recorded data puts its counter at the maximum. Nothing is changed here; choose on another device, or import a backup from before the issue.",
   "dash.title": "Dashboards",
   "dash.choose": "Dashboard",
   "dash.main": "Main",
