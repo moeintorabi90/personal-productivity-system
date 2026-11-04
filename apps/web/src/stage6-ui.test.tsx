@@ -223,17 +223,30 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
   });
 
   it("a plan change that cannot be recorded because today's counter is at the maximum shows a warning and keeps the recorded plan; otherwise no warning (Codex review)", async () => {
-    const goalId = await goal();
-    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30"));
+    // The counter is set to the maximum before the app first renders, so the goal page never shows an
+    // earlier version of the record and the checks below cannot run against a stale render.
+    let goalId = "";
+    await renderApp(async (s) => {
+      at("2026-11-02T08:00:00Z");
+      goalId = await createGoal(s.db, { name: "Pages", startDate: "2026-11-02", deadline: "2026-11-29", kind: "taskCount", target: 600, workdays: [1, 2, 3, 4, 5] });
+      const id = weekPlanId(goalId, "2026-11-02");
+      const plan = (await s.db.records.get([GOAL_WEEK_PLANS, id]))!.data as GoalWeekPlanData;
+      // Well-formed data whose counter for today is at the maximum.
+      await putRecord(s.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, id, { ...plan, dates: [{ ...plan.dates[0]!, entries: [{ ...plan.dates[0]!.entries[0]!, seq: PLAN_SEQ_MAX }] }] });
+    });
     const planId = weekPlanId(goalId, "2026-11-02");
     const recorded = async () => (await services.db.records.get([GOAL_WEEK_PLANS, planId]))!;
-    const plan = (await recorded()).data as GoalWeekPlanData;
-    expect(screen.queryByTestId("plan-not-updated")).toBeNull(); // nothing to update: no warning
-    // Well-formed data whose counter for today is at the maximum.
-    await putRecord(services.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, planId, { ...plan, dates: [{ ...plan.dates[0]!, entries: [{ ...plan.dates[0]!.entries[0]!, seq: PLAN_SEQ_MAX }] }] });
-    await waitFor(async () => expect(((await recorded()).data as GoalWeekPlanData).dates[0]!.entries[0]!.seq).toBe(PLAN_SEQ_MAX));
-    expect(screen.queryByTestId("plan-not-updated")).toBeNull(); // at the maximum, but the plan is unchanged: still no warning
     const before = await recorded();
+    const entries = (before.data as GoalWeekPlanData).dates.flatMap((d) => d.entries);
+    expect(entries.map((e) => e.seq)).toEqual([PLAN_SEQ_MAX]); // the stored record really is at the maximum
+    await goTo("Goals");
+    fireEvent.click(await screen.findByRole("button", { name: "Open goal: Pages" }));
+    await screen.findByTestId("goal-pace");
+    // Today's target comes from the recorded plan, so it appears only once the page has loaded that record.
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30"));
+    expect(screen.getByTestId("plan-date").dataset.from).toBe("2026-11-02");
+    expect(await recorded()).toEqual(before); // opening the page wrote nothing
+    expect(screen.queryByTestId("plan-not-updated")).toBeNull(); // at the maximum, but the plan is unchanged: no warning
     // 300 in the next week leaves 100 for this one: today's computed plan changes, but cannot be written.
     await setWeekAllocation(services.db, goalId, "2026-11-09", 300);
     const warning = await screen.findByTestId("plan-not-updated");

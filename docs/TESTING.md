@@ -215,6 +215,8 @@ Earlier tests were updated where Stage 6 changed approved behavior: the navigati
 
 **Warning when today's plan cannot be recorded (Codex review of `d4ed8f6`, 2026-11-04):** `refreshWeekPlans` and the goal page now share `planWriteStep`; two tests in `stage6-ui.test.tsx` cover the counter at the maximum (no warning while unchanged, the warning and the unchanged record and target after a change) and the normal case (recorded, no warning). With the warning removed from `GoalPace.tsx`, the first test failed at the warning (1 failed, 23 passed). `npm.cmd run typecheck` passed; `npx.cmd vitest run apps/web/src/stage6-ui.test.tsx`: 24 passed in each of three runs; `npm.cmd test`: 42 files, 532 tests passed. The end-to-end tests were not run for this change.
 
+**That test made reliable (Codex review of `276db7a`, 2026-11-04; test only):** its "no warning" checks ran right after a database write, before the page had necessarily shown the new record. The record at the maximum is now written before the app first renders, the test checks that the stored counter is `PLAN_SEQ_MAX`, opens the goal page, waits until today's target (30) appears from that record, and only then checks that the record is unchanged and no warning is shown; the change of the next week's amount and its checks follow as before. With the page made to warn also when nothing would change, both counter tests failed on the absent-warning check, so that check is effective. `npm.cmd run typecheck` passed; `npx.cmd vitest run apps/web/src/stage6-ui.test.tsx`: 24 passed in each of three runs.
+
 Not covered, or covered only in part:
 
 - Manual checks on the owner's devices (item 14) have not been done.
