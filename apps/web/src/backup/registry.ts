@@ -2,6 +2,7 @@ import { CALENDAR_DISPLAYS, isValidTimeZone, timeZoneSchema } from "@pps/shared"
 import { z } from "zod";
 import { isLocalDate, localDateOf } from "../planning/time.ts";
 import { sessionTimesProblem } from "../work/session-time.ts";
+import { appUseDayId, estimateCaptureId, planChoiceId, weekAllocationId, weekPlanId } from "./derived-id.ts";
 import { SHARED_PREFERENCES_ID } from "./limits.ts";
 
 /**
@@ -41,6 +42,12 @@ export interface RecordTypeDef {
   appendOnly?: boolean;
   /** Records of this type are never deleted, so a file holding a tombstone for one is refused. */
   noTombstones?: boolean;
+  /**
+   * For types whose ID is derived from what the record is about (`derived-id.ts`): the ID its
+   * (validated) data must have. A record under any other ID would be a second record for the same
+   * natural key, so a file holding one is refused and no local write may create one.
+   */
+  derivedId?: (data: Record<string, unknown>) => string;
   /** `dataSchemaVersion` that introduced this type (default 1); older files may not contain it. */
   sinceDataSchemaVersion?: number;
   /**
@@ -86,7 +93,8 @@ export function createRegistry(defs: RecordTypeDef[]): Registry {
     isIndependent,
     allowsKeepBoth: (type) => {
       const def = types.get(type);
-      return !!def && isIndependent(type) && !def.singletonId && !def.appendOnly;
+      // A copy gets a new random ID, which a type with a derived ID cannot have.
+      return !!def && isIndependent(type) && !def.singletonId && !def.appendOnly && !def.derivedId;
     },
   };
 }
@@ -1029,6 +1037,7 @@ export const taskEstimateCapturesType: RecordTypeDef = {
   links: [{ field: "taskId", target: TASK_DEFINITIONS }],
   sinceDataSchemaVersion: 8,
   immutableFields: ["taskId", "occurrenceDate"],
+  derivedId: (d) => estimateCaptureId(d.taskId as string, d.occurrenceDate as string | null),
 };
 
 export const dashboardsType: RecordTypeDef = {
@@ -1044,6 +1053,7 @@ export const appUseDaysType: RecordTypeDef = {
   links: [],
   sinceDataSchemaVersion: 8,
   appendOnly: true,
+  derivedId: (d) => appUseDayId(d.date as string),
 };
 
 export const goalWeekAllocationsType: RecordTypeDef = {
@@ -1052,6 +1062,7 @@ export const goalWeekAllocationsType: RecordTypeDef = {
   links: [{ field: "goalId", target: GOALS }],
   sinceDataSchemaVersion: 8,
   immutableFields: ["goalId", "weekStart"],
+  derivedId: (d) => weekAllocationId(d.goalId as string, d.weekStart as string),
 };
 
 export const goalWeekPlansType: RecordTypeDef = {
@@ -1061,6 +1072,7 @@ export const goalWeekPlansType: RecordTypeDef = {
   sinceDataSchemaVersion: 8,
   immutableFields: ["goalId", "weekStart"],
   noTombstones: true,
+  derivedId: (d) => weekPlanId(d.goalId as string, d.weekStart as string),
 };
 
 export const goalWeekPlanChoicesType: RecordTypeDef = {
@@ -1069,6 +1081,7 @@ export const goalWeekPlanChoicesType: RecordTypeDef = {
   links: [{ field: "goalId", target: GOALS }],
   sinceDataSchemaVersion: 8,
   appendOnly: true,
+  derivedId: (d) => planChoiceId(d.goalId as string, d.weekStart as string, d.from as string, d.device as string, d.seq as number),
 };
 
 /**

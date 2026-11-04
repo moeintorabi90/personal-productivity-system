@@ -106,6 +106,7 @@ export const en = {
   "org.error.TOO_MANY_DEVICES": "This item has been changed on the most devices a backup can list for one item (32), so it cannot be changed on this device. Nothing was changed.",
   "org.error.VERSION_COUNTER_EXHAUSTED": "This item has been changed on this device the most times a backup can count, so it cannot be changed or deleted here. Nothing was changed.",
   "org.error.RECORD_TOO_LARGE": "This change would make the item larger than a backup can hold for one item. Nothing was changed.",
+  "org.error.ID_MISMATCH": "This item could not be saved because its identity does not match its content. Nothing was changed.",
   "org.error.generic": "This could not be saved. Check the fields and try again.",
 
   "today.title": "Today",

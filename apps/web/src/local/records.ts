@@ -40,7 +40,7 @@ export class RecordRuleError extends Error {
    * written would break a per-record limit of the backup format (256 KiB; 32 devices in its version
    * vector; this device's edit counter past `MAX_VERSION_COUNTER`), so nothing is written.
    */
-  readonly code: "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "IMMUTABLE_FIELD" | "RECORD_TOO_LARGE" | "TOO_MANY_DEVICES" | "VERSION_COUNTER_EXHAUSTED";
+  readonly code: "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "IMMUTABLE_FIELD" | "RECORD_TOO_LARGE" | "TOO_MANY_DEVICES" | "VERSION_COUNTER_EXHAUSTED" | "ID_MISMATCH";
   constructor(code: RecordRuleError["code"], message: string) {
     super(message);
     this.name = "RecordRuleError";
@@ -65,6 +65,8 @@ export async function putRecord(
   const def = registry.get(type);
   if (!def) throw new Error(`Unknown record type ${type}`);
   const parsed = def.schema.parse(data) as Record<string, unknown>;
+  // A type with a derived ID has exactly one record per natural key (goal and week, date, event, …).
+  if (def.derivedId && id !== def.derivedId(parsed)) throw new RecordRuleError("ID_MISMATCH", `${type}/${id}: the ID does not match the record's natural key`);
   return db.transaction("rw", [db.records, db.tombstones, db.meta], async () => {
     const device = await deviceIdentity(db);
     const current = await db.records.get([type, id]);

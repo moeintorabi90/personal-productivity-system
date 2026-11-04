@@ -272,6 +272,9 @@ function validateEnvelope(raw: unknown, type: string, registry: Registry, where:
   if (def.singletonId && envelope.id !== def.singletonId) {
     throw new BackupError("INVALID_PAYLOAD", `${where}: singleton must use its reserved ID`);
   }
+  if (def.derivedId && envelope.id !== def.derivedId(data.data)) {
+    throw new BackupError("INVALID_PAYLOAD", `${where}: the ID does not match what the record is about (its natural key)`);
+  }
   if (contentHashOf(envelope.data) !== envelope.contentHash) {
     throw new BackupError("INVALID_PAYLOAD", `${where}: content hash does not match`);
   }

@@ -38,11 +38,11 @@ import {
   type SegmentData,
   TASK_ESTIMATE_CAPTURES,
 } from "./registry.ts";
-import { weekPlanId } from "./derived-id.ts";
+import { planChoiceId, weekPlanId } from "./derived-id.ts";
 import { createTestDevice, type TestDevice } from "./test-fixtures.ts";
 import { applyImport, previewImport } from "./merge.ts";
 import { openBackupFile } from "./read.ts";
-import { blobOf, decide, exportFrom, importInto, mutate } from "./test-helpers.ts";
+import { blobOf, decide, exportFrom, importInto, mutate, snapshot } from "./test-helpers.ts";
 
 const registry = PRODUCT_REGISTRY;
 const product = { registry };
@@ -674,9 +674,102 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
       doc.payload.records[GOAL_WEEK_PLAN_CHOICES][0].data.goalId = "99999999-9999-4999-8999-999999999999";
       const env = doc.payload.records[GOAL_WEEK_PLAN_CHOICES][0];
       env.contentHash = contentHashOf(env.data);
+      // Its ID follows its data, so the file is refused for the unknown goal, not for a mismatched ID.
+      env.id = planChoiceId(env.data.goalId, env.data.weekStart, env.data.from, env.data.device, env.data.seq);
     });
     const c = await device("C");
     expect(await codeOf(importInto(c, text, product))).toBe("UNRESOLVED_REFERENCE");
+  });
+});
+
+describe("derived IDs match their natural keys (Codex review, 2026-11-04)", () => {
+  const DERIVED = [TASK_ESTIMATE_CAPTURES, APP_USE_DAYS, GOAL_WEEK_ALLOCATIONS, GOAL_WEEK_PLANS, GOAL_WEEK_PLAN_CHOICES];
+  const sample = () => readFileSync(new URL("./samples/pps-backup-format-v1-data-v8.json", import.meta.url), "utf8");
+  type Env = { id: string; data: any; contentHash: string };
+  /** A copy of `text` changed by `change`, with content hashes and the integrity hash computed again. */
+  const changed = (text: string, change: (records: Record<string, Env[]>, doc: any) => void) =>
+    mutate(text, (doc) => {
+      change(doc.payload.records, doc);
+      for (const list of Object.values(doc.payload.records) as Env[][]) for (const env of list) env.contentHash = contentHashOf(env.data);
+    });
+  const refusal = async (text: string) => {
+    try {
+      await openBackupFile(blobOf(text), registry);
+      return "OK";
+    } catch (e) {
+      expect((e as { code?: string }).code).toBe("INVALID_PAYLOAD");
+      return (e as Error).message; // starts with the code
+    }
+  };
+
+  it("a correct backup whose weekly plan gets another ID (integrity recomputed) is refused before anything is written", async () => {
+    const { a, b, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const text = await exportText(a);
+    const otherId = crypto.randomUUID();
+    const renamed = changed(text, (records) => {
+      records[GOAL_WEEK_PLANS]!.find((e) => e.id === planId)!.id = otherId;
+    });
+    // B already holds the same goal and week under the derived ID; C has nothing yet.
+    const c = await device("C");
+    for (const d of [b, c]) {
+      const before = await snapshot(d.db);
+      const imports = await d.db.importLog.count();
+      for (const applyUpdates of [false, true]) expect(await codeOf(importInto(d, renamed, { ...product, applyUpdates }))).toBe("INVALID_PAYLOAD");
+      expect(await snapshot(d.db)).toEqual(before);
+      expect(await d.db.importLog.count()).toBe(imports);
+      expect(await d.db.records.get([GOAL_WEEK_PLANS, otherId])).toBeUndefined();
+    }
+    expect(await codeOf(importInto(c, text, product))).toBe("OK"); // the correct file still imports
+    expect((await c.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).map((r) => r.id)).toEqual([planId]);
+  });
+
+  it("every type with a derived ID is refused under another ID, under its old ID with another key, and as a second record for the same key", async () => {
+    expect(await refusal(sample())).toBe("OK");
+    for (const type of DERIVED) {
+      // Another ID for the same content.
+      const other = changed(sample(), (records) => {
+        records[type]![0]!.id = crypto.randomUUID();
+      });
+      expect(await refusal(other)).toMatch(/^INVALID_PAYLOAD: records\.\w+\[0\]: the ID does not match/);
+      // A second record for the same natural key (e.g. the same goal and week, the same choice event).
+      const twice = changed(sample(), (records) => {
+        records[type]!.push({ ...structuredClone(records[type]![0]!), id: crypto.randomUUID() });
+      });
+      expect(await refusal(twice)).toMatch(/^INVALID_PAYLOAD: .*the ID does not match/);
+    }
+    // The old ID with another natural key.
+    const otherKey: [string, (d: any) => void][] = [
+      [TASK_ESTIMATE_CAPTURES, (d) => (d.occurrenceDate = d.occurrenceDate === null ? "2026-11-30" : null)],
+      [APP_USE_DAYS, (d) => (d.date = "2026-12-31")],
+      [GOAL_WEEK_ALLOCATIONS, (d) => (d.goalId = crypto.randomUUID())],
+      [GOAL_WEEK_PLANS, (d) => (d.goalId = crypto.randomUUID())],
+      [GOAL_WEEK_PLAN_CHOICES, (d) => (d.seq += 1)],
+    ];
+    for (const [type, change] of otherKey) {
+      const text = changed(sample(), (records) => change(records[type]![0]!.data));
+      expect(await refusal(text)).toMatch(/^INVALID_PAYLOAD: .*the ID does not match/);
+    }
+    // A pending conflict's versions under another ID.
+    const conflictText = changed(sample(), (_records, doc) => {
+      const conflict = doc.payload.pendingConflicts[0];
+      expect(DERIVED).toContain(conflict.type);
+      const id = crypto.randomUUID();
+      conflict.id = id;
+      for (const entry of [conflict.local, conflict.incoming]) if (entry && !entry.deleted) entry.envelope.id = id;
+      for (const entry of [conflict.local, conflict.incoming]) if (entry && !entry.deleted) entry.envelope.contentHash = contentHashOf(entry.envelope.data);
+    });
+    expect(await refusal(conflictText)).toMatch(/^INVALID_PAYLOAD: pendingConflicts.*the ID does not match/);
+  });
+
+  it("no local write stores a derived-ID record under another ID, and keeping both is never offered for these types", async () => {
+    const { a, goalId } = await sharedGoal();
+    const plan = (await planOf(a, goalId))!;
+    const before = await recordsOf(a);
+    expect(await codeOf(putRecord(a.db, registry, GOAL_WEEK_PLANS, crypto.randomUUID(), plan))).toBe("ID_MISMATCH");
+    expect(await codeOf(putRecord(a.db, registry, APP_USE_DAYS, crypto.randomUUID(), { date: "2026-11-02" }))).toBe("ID_MISMATCH");
+    expect(await recordsOf(a)).toEqual(before);
+    for (const type of DERIVED) expect(registry.allowsKeepBoth(type)).toBe(false);
   });
 });
 
