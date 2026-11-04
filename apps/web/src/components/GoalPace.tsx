@@ -13,7 +13,7 @@ import { formatLocalDate, type MessageKey, type Translate } from "../i18n/index.
 import { type Fraction, roundForDisplay, toNumber } from "../insights/fraction.ts";
 import { goalWeekStarts, workdaysIn } from "../insights/goal-plan.ts";
 import { appliedSegment, canChangeChoice, canWriteEntry, decisionChoices, eventStatus, needsDecision, orderEvents, resolveDate } from "../insights/plan-merge.ts";
-import { decidePlanDate, GoalPlanError, manualAmountOn, moveWeekAllocation, setWeekAllocation, weekTakesManual } from "../local/goal-plans.ts";
+import { decidePlanDate, GoalPlanError, manualAmountOn, manualAmounts, moveWeekAllocation, planWriteStep, setWeekAllocation, weekTakesManual } from "../local/goal-plans.ts";
 import { addDays } from "../planning/time.ts";
 import { goalUnit } from "../local/work.ts";
 import { goalInsight, type InsightsCtx } from "./insights-hooks.ts";
@@ -39,6 +39,8 @@ export function GoalPacePanel({ ctx, goalId, goal, definitions }: { ctx: Insight
   const amount = (v: number | Fraction) => formatAmount(t, goal, v, definitions);
   const result = g.allocation.result;
   const ratio = goal.target > 0 ? g.progress / goal.target : null;
+  // Today's plan differs from the recorded one but this device's counter cannot go higher (refreshWeekPlans leaves it).
+  const step = planWriteStep(goal, g.allocation, manualAmounts(ctx.planning.allocations, goalId), g.plans, ctx.today, ctx.deviceId);
   return (
     <section className="card" aria-labelledby="pace-title" data-testid="goal-pace">
       <h2 id="pace-title">{t("pace.title")}</h2>
@@ -57,6 +59,11 @@ export function GoalPacePanel({ ctx, goalId, goal, definitions }: { ctx: Insight
           <p>{result.discrepancy > 0 ? t("pace.mismatch", { amount: amount(result.discrepancy) }) : t("pace.mismatchOutOfRange")}</p>
           <p className="hint">{t("pace.mismatchHint")}</p>
         </div>
+      ) : null}
+      {step.kind === "blocked" ? (
+        <p className="notice notice-warn" role="status" data-testid="plan-not-updated">
+          {t("pace.planNotUpdated")}
+        </p>
       ) : null}
       {g.cap?.unreachable ? (
         <p className="notice notice-warn" role="status" data-testid="cap-warning">

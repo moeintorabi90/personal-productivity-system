@@ -222,6 +222,35 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     expect(screen.getByTestId("today-target").textContent).toBe("30"); // this device's plan still applies
   });
 
+  it("a plan change that cannot be recorded because today's counter is at the maximum shows a warning and keeps the recorded plan; otherwise no warning (Codex review)", async () => {
+    const goalId = await goal();
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30"));
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const recorded = async () => (await services.db.records.get([GOAL_WEEK_PLANS, planId]))!;
+    const plan = (await recorded()).data as GoalWeekPlanData;
+    expect(screen.queryByTestId("plan-not-updated")).toBeNull(); // nothing to update: no warning
+    // Well-formed data whose counter for today is at the maximum.
+    await putRecord(services.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, planId, { ...plan, dates: [{ ...plan.dates[0]!, entries: [{ ...plan.dates[0]!.entries[0]!, seq: PLAN_SEQ_MAX }] }] });
+    await waitFor(async () => expect(((await recorded()).data as GoalWeekPlanData).dates[0]!.entries[0]!.seq).toBe(PLAN_SEQ_MAX));
+    expect(screen.queryByTestId("plan-not-updated")).toBeNull(); // at the maximum, but the plan is unchanged: still no warning
+    const before = await recorded();
+    // 300 in the next week leaves 100 for this one: today's computed plan changes, but cannot be written.
+    await setWeekAllocation(services.db, goalId, "2026-11-09", 300);
+    const warning = await screen.findByTestId("plan-not-updated");
+    expect(warning.textContent).toMatch(/^Today's plan changed, but it could not be recorded on this device: .*comes from the last recorded plan\./);
+    expect(await recorded()).toEqual(before); // the recorded plan is not rewritten
+    expect(screen.getByTestId("today-target").textContent).toBe("30"); // still the recorded plan's target
+    expect(screen.queryByTestId("plan-conflict")).toBeNull();
+  });
+
+  it("the same plan change with a counter below the maximum is recorded, with no warning", async () => {
+    const goalId = await goal();
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30"));
+    await setWeekAllocation(services.db, goalId, "2026-11-09", 300);
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("20")); // 100 over 5 workdays
+    expect(screen.queryByTestId("plan-not-updated")).toBeNull();
+  });
+
   it("shows today's target from the recorded plan, the week's and month's targets, and both streaks by default", async () => {
     await goal();
     await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30")); // 150 for the week over 5 workdays

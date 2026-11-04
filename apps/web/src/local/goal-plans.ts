@@ -156,6 +156,44 @@ function plansToday(goal: GoalData, today: string): boolean {
 }
 
 /**
+ * What a refresh would write for one goal's current week today (pure; `refreshWeekPlans` acts on it
+ * and the goal view reads it, so the two never disagree). `start`: no record yet, a first segment
+ * from today. `owner`: today's date waits for the owner's decision (T-223). `same`: the computed
+ * segment is already in effect. `write`: this device's entry for today is to be written.
+ * `blocked`: the computed segment differs from the one in effect, but this device's counter for
+ * today is at its maximum (`canWriteEntry`), so the recorded plan stays; the goal view says so.
+ * `none`: the goal is not running, or has no deadline or workdays to start a record with.
+ */
+export type PlanWriteStep =
+  | { kind: "none" | "owner" | "same" }
+  | { kind: "start" | "write"; segment: SegmentData }
+  | { kind: "blocked"; segment: SegmentData; inEffect: SegmentData | null };
+
+export function planWriteStep(
+  goal: GoalData,
+  state: AllocationState,
+  manual: ReadonlyMap<string, number | null>,
+  goalPlans: readonly GoalWeekPlanData[],
+  today: string,
+  thisDevice: string,
+): PlanWriteStep {
+  if (!plansToday(goal, today)) return { kind: "none" };
+  const segment = segmentFor(state.result, state.currentWeek, manual.get(state.currentWeek) ?? null);
+  const existing = goalPlans.find((p) => p.weekStart === state.currentWeek);
+  if (!existing) {
+    // Without a deadline and workdays there is nothing to allocate (T-180): no record is started.
+    return state.plan.deadline === null || state.plan.workdays.length === 0 ? { kind: "none" } : { kind: "start", segment };
+  }
+  const todayDate = existing.dates.find((d) => d.from === today);
+  if (todayDate && needsDecision(todayDate)) return { kind: "owner" }; // undecided, in conflict, or inconsistent
+  const applied = planDateOn(goalPlans, today, thisDevice);
+  const inEffect = applied ? appliedSegment(applied.resolution) : null;
+  if (inEffect && canonicalize(inEffect) === canonicalize(segment)) return { kind: "same" };
+  if (!canWriteEntry(todayDate, thisDevice)) return { kind: "blocked", segment, inEffect }; // counter at its maximum
+  return { kind: "write", segment };
+}
+
+/**
  * Records the current week's plan of every running goal (T-208, T-225). "open": only a week that
  * has no record yet gets its first segment, from today (never backdated). "change": after a change
  * that may alter the current week's allocation, this device's entry for today is written when the
@@ -173,25 +211,17 @@ export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "o
   const records = await progressRecords(db);
   for (const goal of running) {
     const state = allocationState(goal.id, goal.data, goalDays(goal.id, goal.data, records, zone).amounts, allocations, today, weekStart);
-    const segment = segmentFor(state.result, state.currentWeek, manualAmounts(allocations, goal.id).get(state.currentWeek) ?? null);
     const id = weekPlanId(goal.id, state.currentWeek);
-    const existing = plans.find((p) => p.id === id)?.data;
-    if (!existing) {
-      // Without a deadline and workdays there is nothing to allocate (T-180): no record is started.
-      if (state.plan.deadline === null || state.plan.workdays.length === 0) continue;
-      const data: GoalWeekPlanData = { goalId: goal.id, weekStart: state.currentWeek, dates: [writeEntry(undefined, today, device.id, segment)] };
-      await putRecord(db, registry, GOAL_WEEK_PLANS, id, data);
-      continue;
-    }
-    if (mode === "open") continue;
     const goalPlans = plans.filter((p) => p.data.goalId === goal.id).map((p) => p.data);
-    const applied = planDateOn(goalPlans, today, device.id);
-    const todayDate = existing.dates.find((d) => d.from === today);
-    if (todayDate && needsDecision(todayDate)) continue; // undecided, in conflict, or inconsistent: the owner decides
-    const inEffect = applied ? appliedSegment(applied.resolution) : null;
-    if (inEffect && canonicalize(inEffect) === canonicalize(segment)) continue;
-    if (!canWriteEntry(todayDate, device.id)) continue; // counter at its maximum: the recorded plan stays
-    await putRecord(db, registry, GOAL_WEEK_PLANS, id, withDate(existing, writeEntry(todayDate, today, device.id, segment)));
+    const step = planWriteStep(goal.data, state, manualAmounts(allocations, goal.id), goalPlans, today, device.id);
+    if (step.kind === "start") {
+      const data: GoalWeekPlanData = { goalId: goal.id, weekStart: state.currentWeek, dates: [writeEntry(undefined, today, device.id, step.segment)] };
+      await putRecord(db, registry, GOAL_WEEK_PLANS, id, data);
+    } else if (step.kind === "write" && mode === "change") {
+      const existing = goalPlans.find((p) => p.weekStart === state.currentWeek)!;
+      await putRecord(db, registry, GOAL_WEEK_PLANS, id, withDate(existing, writeEntry(existing.dates.find((d) => d.from === today), today, device.id, step.segment)));
+    }
+    // "owner", "same", "blocked", and "none" write nothing; "blocked" is shown on the goal page.
   }
 }
 
