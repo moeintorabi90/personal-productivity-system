@@ -11,12 +11,14 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AppServices, createServices, ServicesProvider } from "./app-context.tsx";
 import { App } from "./App.tsx";
-import { weekPlanId } from "./backup/derived-id.ts";
+import { planChoiceId, weekPlanId } from "./backup/derived-id.ts";
 import {
   CORRECTIONS,
   GOAL_WEEK_ALLOCATIONS,
+  GOAL_WEEK_PLAN_CHOICES,
   GOAL_WEEK_PLANS,
   type GoalWeekAllocationData,
+  type GoalWeekPlanChoiceData,
   type GoalWeekPlanData,
   MAIN_DASHBOARD_ID,
   PLAN_SEQ_MAX,
@@ -203,6 +205,29 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     fireEvent.click(within(await screen.findByTestId("confirm-choice")).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(screen.queryByTestId("plan-conflict")).toBeNull());
     await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("20")); // 100 over 5 workdays
+  });
+
+  it("two choice events that each claim to have seen the other are shown as a data-integrity issue with uncertain order, and the plan is unchanged (independent review)", async () => {
+    const goalId = await goal();
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30"));
+    const plan = (await services.db.records.get([GOAL_WEEK_PLANS, weekPlanId(goalId, "2026-11-02")]))!.data as GoalWeekPlanData;
+    const [p, q] = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"];
+    const segment = { state: "allocated" as const, allocation: { num: 100, den: 1 }, source: "manual" as const };
+    const choice = (device: string, other: string, name: string, recordedAt: string): GoalWeekPlanChoiceData => ({
+      goalId, weekStart: "2026-11-02", from: plan.dates[0]!.from, device, deviceName: name, seq: 1, previous: null, chosen: segment, seen: { [other]: 1 }, recordedAt,
+    });
+    for (const data of [choice(p, q, "Phone", "2026-11-02T08:00:00.000Z"), choice(q, p, "Laptop", "2026-11-02T09:00:00.000Z")])
+      await putRecord(services.db, PRODUCT_REGISTRY, GOAL_WEEK_PLAN_CHOICES, planChoiceId(data.goalId, data.weekStart, data.from, data.device, data.seq), data);
+    const history = await screen.findByTestId("choice-history");
+    await waitFor(() => expect(within(history).getAllByTestId("choice-event")).toHaveLength(2)); // both events loaded
+    const items = within(history).getAllByTestId("choice-event");
+    for (const li of items) {
+      expect(li.dataset.cyclic).toBe("true");
+      expect(li.textContent).toContain("order not certain");
+      expect(li.textContent).toContain("contradictory order: data integrity issue");
+    }
+    expect(screen.getByTestId("today-target").textContent).toBe("30"); // no event changes the plan
+    expect((await services.db.records.get([GOAL_WEEK_PLANS, weekPlanId(goalId, "2026-11-02")]))!.data).toEqual(plan);
   });
 
   it("when this device's counter for such a date is claimed at the maximum, the view says no choice can be recorded here and offers none (Codex review)", async () => {

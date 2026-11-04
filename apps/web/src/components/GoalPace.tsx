@@ -455,10 +455,10 @@ function PlanDateRow({ ctx, goalId, goal, plan, date, definitions }: { ctx: Insi
           <details data-testid="choice-history">
             <summary>{t("pace.choiceHistory", { count: events.length })}</summary>
             <ol className="count-list">
-              {orderEvents(events).map(({ event, uncertain }) => {
+              {orderEvents(events).map(({ event, uncertain, cyclic }) => {
                 const status = eventStatus(event.data, ctx.planning.plans.map((p) => p.data));
                 return (
-                  <li key={event.id} data-testid="choice-event" data-status={status}>
+                  <li key={event.id} data-testid="choice-event" data-status={status} data-cyclic={cyclic ? "true" : undefined}>
                     {t("pace.choiceEvent", {
                       previous: segmentText(t, goal, event.data.previous, definitions),
                       chosen: segmentText(t, goal, event.data.chosen, definitions),
@@ -467,6 +467,7 @@ function PlanDateRow({ ctx, goalId, goal, plan, date, definitions }: { ctx: Insi
                     })}{" "}
                     <span className={status === "integrity" ? "pill pill-warn" : "pill pill-muted"}>{t(`pace.eventStatus.${status}` as MessageKey)}</span>
                     {uncertain ? <span className="pill pill-muted"> {t("pace.orderUncertain")}</span> : null}
+                    {cyclic ? <span className="pill pill-warn"> {t("pace.orderCycle")}</span> : null}
                   </li>
                 );
               })}

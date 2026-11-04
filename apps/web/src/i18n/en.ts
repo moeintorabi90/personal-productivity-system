@@ -873,6 +873,7 @@ export const en = {
   "pace.eventStatus.notApplied": "not applied here",
   "pace.eventStatus.integrity": "data integrity issue",
   "pace.orderUncertain": "order not certain",
+  "pace.orderCycle": "contradictory order: data integrity issue",
   "pace.error.NOT_FOUND": "This goal or plan is not on this device.",
   "pace.error.ARCHIVED": "This goal is archived. Restore it first.",
   "pace.error.INVALID_AMOUNT": "Enter a whole number of 0 or more.",

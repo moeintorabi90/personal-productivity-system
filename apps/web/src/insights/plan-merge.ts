@@ -248,13 +248,21 @@ export function happenedAfter(b: GoalWeekPlanChoiceData, a: GoalWeekPlanChoiceDa
 
 export interface OrderedEvent<T> {
   event: T;
-  /** Another event of the date neither came before nor after it (T-237). */
+  /** Another event of the date neither came before nor after it (T-237), or the event is `cyclic`. */
   uncertain: boolean;
+  /**
+   * The event both came before and after another (each claims in `seen` to have seen the other):
+   * malformed history, a data-integrity issue. An app device can only see an event written before.
+   */
+  cyclic: boolean;
 }
 
 /**
  * The events of one date oldest first: by counter and `seen` where they tell; independent events
  * are placed by their device clocks only to keep them near each other, and marked uncertain.
+ * Events in a causal cycle are kept together after what they all saw and before what saw them,
+ * placed among themselves by their clocks only for display, and marked cyclic and uncertain: no
+ * clock decides which of them came first.
  */
 export function orderEvents<T extends { data: GoalWeekPlanChoiceData }>(events: readonly T[]): OrderedEvent<T>[] {
   const n = events.length;
@@ -270,10 +278,14 @@ export function orderEvents<T extends { data: GoalWeekPlanChoiceData }>(events: 
   const placed: number[] = [];
   const left = new Set(events.map((_, i) => i));
   while (left.size > 0) {
-    const ready = [...left].filter((i) => [...left].every((j) => j === i || !reach[i]![j]));
-    const next = (ready.length > 0 ? ready : [...left]).sort(tie)[0]!;
+    // Ready: nothing left came before it, except events in a cycle with it (never empty).
+    const ready = [...left].filter((i) => [...left].every((j) => j === i || !reach[i]![j] || reach[j]![i]));
+    const next = ready.sort(tie)[0]!;
     placed.push(next);
     left.delete(next);
   }
-  return placed.map((i) => ({ event: events[i]!, uncertain: events.some((_, j) => j !== i && !reach[i]![j] && !reach[j]![i]) }));
+  return placed.map((i) => {
+    const cyclic = reach[i]![i]!;
+    return { event: events[i]!, cyclic, uncertain: cyclic || events.some((_, j) => j !== i && !reach[i]![j] && !reach[j]![i]) };
+  });
 }

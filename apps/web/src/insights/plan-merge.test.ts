@@ -15,6 +15,7 @@ import {
   decideEntry,
   decisionChoices,
   eventStatus,
+  happenedAfter,
   hasCoverageCycle,
   isInconsistentDate,
   mergePlans,
@@ -302,5 +303,23 @@ describe("18. choice history (T-237)", () => {
     const withB2 = orderEvents([b2, a2, a1, b1]);
     expect(withB2.at(-1)!.event).toBe(b2);
     expect(withB2.find((o) => o.event === b2)!.uncertain).toBe(false);
+    expect(withB2.some((o) => o.cyclic)).toBe(false); // ordinary history has no cycle
+  });
+
+  it("two events that each claim to have seen the other are a cycle: both marked cyclic and uncertain, never ordered as certain by their clocks (independent review)", () => {
+    const a1 = { data: event(A, 2, x, { [B]: 2 }, "2026-11-02T08:00:00.000Z") }; // claims B's choice
+    const b1 = { data: event(B, 2, y, { [A]: 2 }, "2026-11-02T09:00:00.000Z") }; // claims A's choice
+    expect(happenedAfter(a1.data, b1.data) && happenedAfter(b1.data, a1.data)).toBe(true);
+    for (const list of [[a1, b1], [b1, a1]]) {
+      const ordered = orderEvents(list);
+      expect(ordered).toHaveLength(2);
+      expect(ordered.every((o) => o.cyclic && o.uncertain)).toBe(true);
+    }
+    // Events outside the cycle keep their causal place and certainty: one both saw, one that saw both.
+    const before = { data: event(A, 1, y, {}, "2026-11-02T10:00:00.000Z") }; // clock after the cycle's
+    const later = { data: event(C, 1, x, { [A]: 2, [B]: 2 }, "2026-11-01T00:00:00.000Z") }; // clock before it
+    const ordered = orderEvents([later, b1, a1, before]);
+    expect(ordered.map((o) => o.event)).toEqual([before, a1, b1, later]); // the cycle's inner order is display only
+    expect(ordered.map((o) => [o.cyclic, o.uncertain])).toEqual([[false, false], [true, true], [true, true], [false, false]]);
   });
 });

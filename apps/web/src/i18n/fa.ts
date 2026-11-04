@@ -876,6 +876,7 @@ export const fa: Messages = {
   "pace.eventStatus.notApplied": "اینجا اعمال نشده",
   "pace.eventStatus.integrity": "ناسازگاری داده",
   "pace.orderUncertain": "ترتیب نامشخص",
+  "pace.orderCycle": "ترتیب متناقض: ناسازگاری داده",
   "pace.error.NOT_FOUND": "این هدف یا برنامه روی این دستگاه نیست.",
   "pace.error.ARCHIVED": "این هدف بایگانی شده است. اول بازگردانید.",
   "pace.error.INVALID_AMOUNT": "عدد صحیح ۰ یا بیشتر وارد کنید.",
