@@ -30,6 +30,7 @@ import {
   GOAL_WEEK_PLAN_CHOICES,
   GOAL_WEEK_PLANS,
   GOALS,
+  type GoalWeekAllocationData,
   type GoalWeekPlanData,
   MAIN_DASHBOARD_ID,
   PLAN_SEQ_MAX,
@@ -38,8 +39,9 @@ import {
   type SegmentData,
   TASK_ESTIMATE_CAPTURES,
 } from "./registry.ts";
-import { planChoiceId, weekPlanId } from "./derived-id.ts";
+import { planChoiceId, weekAllocationId, weekPlanId } from "./derived-id.ts";
 import { createTestDevice, type TestDevice } from "./test-fixtures.ts";
+import { restoreReplacedVersion } from "./conflicts.ts";
 import { applyImport, previewImport } from "./merge.ts";
 import { openBackupFile } from "./read.ts";
 import { blobOf, decide, exportFrom, importInto, mutate, snapshot } from "./test-helpers.ts";
@@ -770,6 +772,63 @@ describe("derived IDs match their natural keys (Codex review, 2026-11-04)", () =
     expect(await codeOf(putRecord(a.db, registry, APP_USE_DAYS, crypto.randomUUID(), { date: "2026-11-02" }))).toBe("ID_MISMATCH");
     expect(await recordsOf(a)).toEqual(before);
     for (const type of DERIVED) expect(registry.allowsKeepBoth(type)).toBe(false);
+  });
+
+  it("resolving a conflict or restoring an archived version whose ID does not match its data is refused with nothing changed; matching versions still work", async () => {
+    const { a, b, goalId } = await sharedGoal();
+    await setWeekAllocation(a.db, goalId, "2026-11-09", 200, Date.now());
+    await setWeekAllocation(b.db, goalId, "2026-11-09", 100, Date.now());
+    await importInto(a, await exportText(b), product);
+    const allocationId = weekAllocationId(goalId, "2026-11-09");
+    const conflict = (await a.db.pendingConflicts.toArray()).find((p) => p.type === GOAL_WEEK_ALLOCATIONS && p.id === allocationId)!;
+    expect(conflict).toBeTruthy();
+    const current = (await a.db.records.get([GOAL_WEEK_ALLOCATIONS, allocationId]))!;
+    const amount = async () => ((await a.db.records.get([GOAL_WEEK_ALLOCATIONS, allocationId]))!.data as GoalWeekAllocationData).revisions.at(-1)!.amount;
+    const state = async () => ({
+      records: await recordsOf(a),
+      pending: await a.db.pendingConflicts.toArray(),
+      replaced: await a.db.replacedVersions.toArray(),
+      tombstones: await a.db.tombstones.toArray(),
+    });
+    // As a build before the check might have left them: every version agrees on another week, so the
+    // immutable-field checks pass, but none derives this record's ID.
+    const otherWeek = <T>(entry: T): T => {
+      const copy = structuredClone(entry) as T & { deleted?: boolean; envelope?: { data: GoalWeekAllocationData } };
+      if (copy.envelope) copy.envelope.data.weekStart = "2026-11-16";
+      return copy;
+    };
+    await a.db.records.put({ ...current, data: { ...current.data, weekStart: "2026-11-16" } });
+    await a.db.pendingConflicts.put({ ...conflict, incoming: otherWeek(conflict.incoming), local: conflict.local && otherWeek(conflict.local) });
+    const before = await state();
+    for (const resolution of ["useBackup", "keepDevice"] as const) {
+      expect(await codeOf(decide(a.db, conflict.conflictId, resolution, registry))).toBe("ID_MISMATCH");
+      expect(await state()).toEqual(before); // the record, the conflict, and the archive are unchanged
+    }
+
+    // With matching versions, using the backup's works; this device's 200 goes to the archive.
+    await a.db.records.put(current);
+    await a.db.pendingConflicts.put(conflict);
+    expect(await amount()).toBe(200);
+    await decide(a.db, conflict.conflictId, "useBackup", registry);
+    expect(await amount()).toBe(100);
+    const archived = (await a.db.replacedVersions.toArray()).find((r) => r.type === GOAL_WEEK_ALLOCATIONS && r.id === allocationId)!;
+    expect(archived).toBeTruthy();
+
+    // With no live record here, an archived version is the only one known: restoring it under an ID
+    // its data does not derive is refused.
+    const live = (await a.db.records.get([GOAL_WEEK_ALLOCATIONS, allocationId]))!;
+    await a.db.records.delete([GOAL_WEEK_ALLOCATIONS, allocationId]);
+    await a.db.tombstones.put({ type: GOAL_WEEK_ALLOCATIONS, id: allocationId, deletedAt: new Date().toISOString(), version: live.version });
+    await a.db.replacedVersions.put({ ...archived, entry: otherWeek(archived.entry) });
+    const beforeRestore = await state();
+    expect(await codeOf(restoreReplacedVersion(a.db, registry, archived.replacedId))).toBe("ID_MISMATCH");
+    expect(await state()).toEqual(beforeRestore);
+
+    // The matching archived version is restored.
+    await a.db.replacedVersions.put(archived);
+    await restoreReplacedVersion(a.db, registry, archived.replacedId);
+    expect(await amount()).toBe(200);
+    expect(await a.db.replacedVersions.get(archived.replacedId)).toBeUndefined();
   });
 });
 

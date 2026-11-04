@@ -38,7 +38,9 @@ export class ResolutionError extends Error {
     /** The combined version would break a per-record limit of the backup format; nothing is written. */
     | "TOO_MANY_DEVICES"
     | "VERSION_COUNTER_EXHAUSTED"
-    | "RECORD_TOO_LARGE";
+    | "RECORD_TOO_LARGE"
+    /** A version to make current has an ID its data does not derive (left by a build before this check); nothing is written. */
+    | "ID_MISMATCH";
   /** HAS_LINKED_ITEMS: the records that still block the deletion; LINKED_ITEMS_MISMATCH: those that would no longer fit. */
   readonly linkedItems: LinkedItem[];
   constructor(code: ResolutionError["code"], message: string, linkedItems: LinkedItem[] = []) {
@@ -238,7 +240,18 @@ export async function assertLinksLive(db: LocalDb, registry: Registry, type: str
  * devices, each counter at most `MAX_VERSION_COUNTER`, 256 KiB), or the result could not be exported; otherwise nothing is written and the
  * decision stays pending.
  */
-async function writeRecord(db: LocalDb, type: string, id: string, data: Record<string, unknown>, createdAt: string, version: VersionVector) {
+/**
+ * A version can become current under `id` only if, for a type with a derived ID, its data derives
+ * that ID (DECISIONS "Derived IDs checked against their data"). A pending conflict or an archived
+ * version stored by an earlier build may not; choosing or restoring it is refused, unchanged.
+ */
+function assertDerivedId(registry: Registry, type: string, id: string, data: Record<string, unknown>): void {
+  const derive = registry.get(type)?.derivedId;
+  if (derive && derive(data) !== id) throw new ResolutionError("ID_MISMATCH", `${type}/${id}: this version's ID does not match its data`);
+}
+
+async function writeRecord(db: LocalDb, registry: Registry, type: string, id: string, data: Record<string, unknown>, createdAt: string, version: VersionVector) {
+  assertDerivedId(registry, type, id, data);
   const envelope = makeEnvelope(id, data, version, createdAt, nowIso());
   const problem = envelopeLimitProblem(envelope);
   if (problem === "devices") throw new ResolutionError("TOO_MANY_DEVICES", `${type}/${id}: the combined version would list more than 32 devices`);
@@ -328,6 +341,12 @@ async function checkResolution(
   if (!availableResolutions(conflict, current, registry).includes(resolution)) {
     throw new ResolutionError("NOT_ALLOWED", `${resolution} is not available for ${type}/${id} now`);
   }
+  // Every version written under this ID by the decision must carry the ID its data derives; checked
+  // before anything is written, so the conflict and the archive stay as they are.
+  if ((resolution === "useBackup" || resolution === "restore") && !incoming.deleted) assertDerivedId(registry, type, id, incoming.envelope.data);
+  if ((resolution === "keepDevice" || resolution === "keepHere" || resolution === "keepBoth") && current && !current.deleted) {
+    assertDerivedId(registry, type, id, current.envelope.data);
+  }
   if (resolution === "useBackup" || resolution === "restore" || resolution === "keepBoth") {
     if (incoming.deleted) throw new ResolutionError("NOT_ALLOWED", "backup version is a deletion");
     await assertLinksLive(db, registry, type, incoming.envelope.data);
@@ -366,7 +385,7 @@ async function resolveInTx(
     case "keepDevice":
     case "keepDeleted":
     case "keepHere": {
-      if (current && !current.deleted) await writeRecord(db, type, id, current.envelope.data, current.envelope.createdAt, merged);
+      if (current && !current.deleted) await writeRecord(db, registry, type, id, current.envelope.data, current.envelope.createdAt, merged);
       else await writeTombstone(db, type, id, merged); // keeps "nothing here", recording the decision
       await archive(db, type, id, incoming, "notChosen", conflict.incomingPausedFrom ?? conflict.source.exportedAt);
       break;
@@ -375,7 +394,7 @@ async function resolveInTx(
     case "restore": {
       if (incoming.deleted) throw new ResolutionError("NOT_ALLOWED", "backup version is a deletion");
       if (current) await archive(db, type, id, current, "replacedByBackup", mark);
-      await writeRecord(db, type, id, incoming.envelope.data, incoming.envelope.createdAt, merged);
+      await writeRecord(db, registry, type, id, incoming.envelope.data, incoming.envelope.createdAt, merged);
       await markImportedSessions(db, [{ type, id, data: incoming.envelope.data }], conflict.incomingPausedFrom ?? conflict.source.exportedAt);
       break;
     }
@@ -387,7 +406,7 @@ async function resolveInTx(
     }
     case "keepBoth": {
       if (incoming.deleted || !current || current.deleted) throw new ResolutionError("NOT_ALLOWED", "keep both needs two records");
-      await writeRecord(db, type, id, current.envelope.data, current.envelope.createdAt, merged);
+      await writeRecord(db, registry, type, id, current.envelope.data, current.envelope.createdAt, merged);
       const copy: Envelope = makeEnvelope(crypto.randomUUID(), incoming.envelope.data, { [device.id]: 1 }, nowIso());
       await db.records.put({ type, ...copy, copyOf: id });
       break;
@@ -625,11 +644,12 @@ export async function restoreReplacedVersion(db: LocalDb, registry: Registry, re
       if (current) await archive(db, row.type, row.id, current, "undo", mark);
       await writeTombstone(db, row.type, row.id, merged);
     } else {
+      assertDerivedId(registry, row.type, row.id, row.entry.envelope.data);
       await assertLinksLive(db, registry, row.type, row.entry.envelope.data);
       await assertImmutableKept(db, registry, row.type, row.id, current, row.entry.envelope.data);
       await assertOutputsFitGoal(db, row.type, row.id, row.entry.envelope.data);
       if (current) await archive(db, row.type, row.id, current, "undo", mark);
-      await writeRecord(db, row.type, row.id, row.entry.envelope.data, row.entry.envelope.createdAt, merged);
+      await writeRecord(db, registry, row.type, row.id, row.entry.envelope.data, row.entry.envelope.createdAt, merged);
       if (row.type === SESSIONS) await markRestoredSession(db, row.id, row.entry.envelope.data, row.pausedFrom);
     }
     await db.replacedVersions.delete(replacedId);

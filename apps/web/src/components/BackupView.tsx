@@ -57,6 +57,7 @@ function errorMessage(t: Translate, error: unknown): string {
     return t("backup.resolve.error", { reason: t("backup.resolve.invalidRelationship") });
   }
   if (error instanceof ResolutionError && error.code === "STALE") return t("backup.resolve.stale");
+  if (error instanceof ResolutionError && error.code === "ID_MISMATCH") return t("backup.resolve.error", { reason: t("backup.resolve.idMismatch") });
   if (error instanceof ResolutionError && (error.code === "TOO_MANY_DEVICES" || error.code === "VERSION_COUNTER_EXHAUSTED" || error.code === "RECORD_TOO_LARGE")) {
     return t("backup.resolve.error", { reason: t(`org.error.${error.code}`) });
   }
