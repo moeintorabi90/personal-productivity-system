@@ -122,7 +122,8 @@ export function workTotals(sessions: readonly Item<SessionData>[], range: DateRa
   for (const s of reportSessions(sessions)) {
     let m = 0;
     for (const [date, value] of minutesByLocalDay(s.data, zone)) if (inRange(date, range)) m += value;
-    if (m === 0 && !inRange(s.data.localDate, range)) continue;
+    // A session with no minutes in the range (e.g. under a minute) counts on its start date in `zone` (D-020).
+    if (m === 0 && !inRange(localDateOf(s.data.startedAt, zone), range)) continue;
     minutes += m;
     count += 1;
     if (s.data.taskId === null) {

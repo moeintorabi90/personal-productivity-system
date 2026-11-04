@@ -88,6 +88,26 @@ describe("9. honest reports (T-192, T-193)", () => {
     expect(totals.byProject.reduce((s, p) => s + p.minutes, 0)).toBe(totals.minutes);
     expect(workTotals(sessions, { from: "2026-11-05", to: "2026-11-05" }, "UTC", tasks, new Map())).toMatchObject({ minutes: 0, sessions: 0 }); // no data: zero samples
   });
+
+  it("a session under a minute counts on its start date in the report's zone, not its stored zone; sessions with minutes are unchanged (D-020; review, 2026-11-05)", () => {
+    const monday = { from: "2026-11-02", to: "2026-11-02" };
+    const tuesday = { from: "2026-11-03", to: "2026-11-03" };
+    const totals = (list: ReturnType<typeof session>[], range: typeof monday, zone: string) => workTotals(list, range, zone, tasks, new Map());
+    // 20 seconds from 21:00 UTC on Monday: 00:30 on Tuesday in Tehran, where it was recorded.
+    const short = session("2026-11-02T21:00:00Z", 1 / 3, { timeZone: "Asia/Tehran", localDate: "2026-11-03" });
+    expect(totals([short], monday, "UTC")).toMatchObject({ minutes: 0, sessions: 1 });
+    expect(totals([short], tuesday, "UTC")).toMatchObject({ minutes: 0, sessions: 0 });
+    expect(totals([short], tuesday, "Asia/Tehran")).toMatchObject({ minutes: 0, sessions: 1 });
+    expect(totals([short], monday, "Asia/Tehran")).toMatchObject({ minutes: 0, sessions: 0 });
+    // With minutes: counted where its minutes fall, the total unchanged; a session crossing midnight counts on both days.
+    const hour = session("2026-11-02T21:00:00Z", 60, { timeZone: "Asia/Tehran", localDate: "2026-11-03" });
+    expect(totals([hour], monday, "UTC")).toMatchObject({ minutes: 60, sessions: 1 });
+    expect(totals([hour], tuesday, "UTC")).toMatchObject({ minutes: 0, sessions: 0 });
+    const night = session("2026-11-02T23:00:00Z", 120);
+    expect(totals([night], monday, "UTC")).toMatchObject({ minutes: 60, sessions: 1 });
+    expect(totals([night], tuesday, "UTC")).toMatchObject({ minutes: 60, sessions: 1 });
+    expect(totals([short, hour, night], { from: "2026-11-02", to: "2026-11-03" }, "UTC")).toMatchObject({ minutes: 180, sessions: 3 });
+  });
 });
 
 describe("8. estimate accuracy (T-188 to T-191)", () => {
