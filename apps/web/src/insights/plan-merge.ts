@@ -103,15 +103,13 @@ function unionOptions(...lists: readonly SegmentData[][]): SegmentData[] {
 
 const sortEntries = (entries: PlanEntryData[]) => [...entries].sort((a, b) => (a.device < b.device ? -1 : a.device > b.device ? 1 : 0));
 
-/** Adds the candidates to `options` when more than one is left (they can be chosen again later). */
-function withConflictOptions(date: PlanDateData): PlanDateData {
-  const candidates = candidatesOf(date);
-  return { ...date, options: candidates.length > 1 ? unionOptions(date.options, candidates) : unionOptions(date.options) };
-}
-
 /**
- * Merges two versions of one date: per device, the entry with the higher `seq`; the same device
- * and `seq` with different content is an integrity issue (returned as null: nothing changes).
+ * Merges two versions of one date: per device, the entry with the higher `seq`, and the union of
+ * `options`. Both are commutative, associative, and idempotent, so the result depends only on the
+ * versions merged, never on their order or on repeats. A merge adds no option of its own: which
+ * candidates met in an intermediate merge depends on the order of imports, so options come only
+ * from the owner's decisions (`decideEntry`). The same device and `seq` with different content is
+ * an integrity issue (returned as null: nothing changes).
  */
 export function mergeDate(a: PlanDateData, b: PlanDateData): PlanDateData | null {
   const byDevice = new Map<string, PlanEntryData>();
@@ -120,7 +118,7 @@ export function mergeDate(a: PlanDateData, b: PlanDateData): PlanDateData | null
     if (!seen || entry.seq > seen.seq) byDevice.set(entry.device, entry);
     else if (entry.seq === seen.seq && key(entry) !== key(seen)) return null;
   }
-  return withConflictOptions({ from: a.from, entries: sortEntries([...byDevice.values()]), options: unionOptions(a.options, b.options) });
+  return { from: a.from, entries: sortEntries([...byDevice.values()]), options: unionOptions(a.options, b.options) };
 }
 
 /**
@@ -133,7 +131,7 @@ export function mergePlans(local: GoalWeekPlanData, incoming: GoalWeekPlanData):
   for (const d of local.dates) dates.set(d.from, d);
   for (const d of incoming.dates) {
     const here = dates.get(d.from);
-    if (!here) dates.set(d.from, withConflictOptions({ ...d, entries: sortEntries(d.entries), options: unionOptions(d.options) }));
+    if (!here) dates.set(d.from, { ...d, entries: sortEntries(d.entries), options: unionOptions(d.options) });
     else {
       const merged = mergeDate(here, d);
       if (!merged) return null;
@@ -176,8 +174,18 @@ export function writeEntry(date: PlanDateData | undefined, from: string, device:
   const seen: Record<string, number> = {};
   for (const e of entries) if (e.device !== device) seen[e.device] = e.seq;
   const entry: PlanEntryData = { device, seq: nextSeq(date, device), segment, seen };
-  const next: PlanDateData = { from, entries: sortEntries([...entries.filter((e) => e.device !== device), entry]), options: date?.options ?? [] };
-  return withConflictOptions(next);
+  return { from, entries: sortEntries([...entries.filter((e) => e.device !== device), entry]), options: unionOptions(date?.options ?? []) };
+}
+
+/**
+ * The owner's decision for a date (DECISIONS "Deciding a date"): this device's entry as
+ * `writeEntry` writes it, and `options` grown by the segments the owner chose between (the
+ * candidates, or the segment that applied before a change of choice) and the chosen one, so a later
+ * change of choice can return to any of them. Options are only ever added, never removed.
+ */
+export function decideEntry(date: PlanDateData, from: string, device: string, chosen: SegmentData): PlanDateData {
+  const next = writeEntry(date, from, device, chosen);
+  return { ...next, options: unionOptions(next.options, decisionChoices(date), [chosen]) };
 }
 
 /** The record's dates with one date replaced or added, in order. */
@@ -186,7 +194,7 @@ export function withDate(plan: GoalWeekPlanData, date: PlanDateData): GoalWeekPl
   return { ...plan, dates };
 }
 
-/** Whether "Change choice" is offered for a settled date: more than one segment has been a candidate. */
+/** Whether "Change choice" is offered for a settled date: the owner has chosen between more than one segment. */
 export const canChangeChoice = (date: PlanDateData) => date.options.length > 1 && candidatesOf(date).length === 1;
 
 /* ---------- which segment applies on a day ---------- */

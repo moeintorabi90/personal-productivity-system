@@ -944,6 +944,8 @@ export type SegmentData = z.infer<typeof segmentSchema>;
 
 /** The highest counter of a weekly plan entry, a counter it has seen, or a choice event. */
 export const PLAN_SEQ_MAX = 1_000_000_000;
+/** The most `options` one date of a weekly plan may hold (format contract of data version 8). */
+export const PLAN_OPTIONS_MAX = 64;
 
 /** Counters a device had seen of other devices' entries for one date (T-227 to T-229). */
 const seenSchema = z.record(z.uuid(), z.number().int().min(1).max(PLAN_SEQ_MAX));
@@ -970,7 +972,7 @@ export type GoalWeekAllocationData = z.infer<typeof goalWeekAllocationSchema>;
 
 /**
  * The recorded plan of one goal and calendar week (DECISIONS "Segment merge"): per effective date,
- * one entry per device and the `options` that have been conflict candidates. Kept in a fixed order
+ * one entry per device and the `options` the owner has chosen between. Kept in a fixed order
  * (dates, then devices; options by canonical JSON), so equal content always has the same hash.
  */
 export const goalWeekPlanSchema = z
@@ -987,7 +989,7 @@ export const goalWeekPlanSchema = z
               .min(1)
               .max(32)
               .refine((list) => list.every((e, i) => i === 0 || e.device > list[i - 1]!.device), { message: "entries must be sorted by distinct device" }),
-            options: z.array(segmentSchema).max(64),
+            options: z.array(segmentSchema).max(PLAN_OPTIONS_MAX),
           })
           .strict(),
       )

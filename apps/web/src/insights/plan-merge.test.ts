@@ -12,6 +12,7 @@ import {
   candidatesOf,
   canChangeChoice,
   conflictDates,
+  decideEntry,
   decisionChoices,
   eventStatus,
   hasCoverageCycle,
@@ -42,7 +43,7 @@ const dateOf = (p: GoalWeekPlanData, from = MON) => p.dates.find((d) => d.from =
 
 /** The owner decides `from` on `device` with the record as it is there. */
 function decide(p: GoalWeekPlanData, device: string, chosen: SegmentData, from = MON): GoalWeekPlanData {
-  return withDate(p, writeEntry(dateOf(p, from), from, device, chosen));
+  return withDate(p, decideEntry(dateOf(p, from), from, device, chosen));
 }
 
 describe("18. malformed entries that cover one another (data integrity, Codex review 2026-11-04)", () => {
@@ -125,7 +126,8 @@ describe("18. segment merge (T-227)", () => {
     expect(resolveDate(dateOf(merged), B)).toMatchObject({ kind: "conflict", segment: y });
     expect(resolveDate(dateOf(merged), C)).toMatchObject({ kind: "undecided" });
     expect(appliedSegment(resolveDate(dateOf(merged), C))).toBeNull();
-    expect(dateOf(merged).options).toEqual(candidatesOf(dateOf(merged))); // both kept for a later change of choice
+    expect(dateOf(merged).options).toEqual([]); // a merge adds no option; both are offered in the conflict list
+    expect(decisionChoices(dateOf(merged))).toEqual(candidatesOf(dateOf(merged)));
   });
 
   it("identical segments for the same date count once", () => {
@@ -169,6 +171,48 @@ describe("18. segment merge (T-227)", () => {
     const decided = decide(merged, A, y);
     expect(conflictDates(decided)).toEqual(["2026-11-03"]);
     expect(dateOf(decided, "2026-11-05")).toEqual(dateOf(merged, "2026-11-05"));
+  });
+});
+
+describe("18. options do not depend on the order of merges (Codex review 2026-11-04)", () => {
+  // A writes x and B writes y without seeing each other; C saw A's entry (not B's) and wrote z.
+  const z = seg(90);
+  const a = one(A, MON, x);
+  const b = one(B, MON, y);
+  const c = record(writeEntry(dateOf(a), MON, C, z));
+  const sorted = (...list: SegmentData[]) => [...list].sort((p, q) => (canonicalize(p) < canonicalize(q) ? -1 : 1));
+
+  it("A, B, and C merged in every order, grouping, and with repeated imports give the same record and the same choices", () => {
+    const orders = [[a, b, c], [a, c, b], [b, a, c], [b, c, a], [c, a, b], [c, b, a]];
+    const results = orders.map((o) => canonicalize(merge(...o)));
+    expect(new Set(results).size).toBe(1); // (A+B)+C and (A+C)+B included
+    const final = merge(a, b, c);
+    expect(canonicalize(mergePlans(a, mergePlans(b, c)!)!)).toBe(results[0]);
+    expect(canonicalize(merge(final, a, c, b, merge(c, a)))).toBe(results[0]); // importing any file again changes nothing
+    const date = dateOf(final);
+    expect(date.entries.map((e) => e.device)).toEqual([A, B, C]);
+    expect(candidatesOf(date)).toEqual(sorted(y, z)); // C covered A: x is not a candidate on any path
+    expect(decisionChoices(date)).toEqual(sorted(y, z));
+    expect(date.options).toEqual([]); // nothing added by merges alone
+    expect(canChangeChoice(date)).toBe(false);
+  });
+
+  it("deciding after either order records the same options, so the later change of choice offers the same segments", () => {
+    const viaAB = merge(merge(a, b), c);
+    const viaAC = merge(merge(a, c), b);
+    for (const device of [A, B, C]) {
+      const first = decide(viaAB, device, z);
+      const second = decide(viaAC, device, z);
+      expect(canonicalize(first)).toBe(canonicalize(second));
+      expect(dateOf(first).options).toEqual(sorted(y, z)); // the segments the owner chose between
+      expect(canChangeChoice(dateOf(first))).toBe(true);
+      expect(resolveDate(dateOf(first), device)).toEqual({ kind: "settled", segment: z });
+    }
+    // Two devices deciding differently without seeing each other: the union of their options, in either order.
+    const onA = decide(viaAB, A, y);
+    const onB = decide(viaAC, B, z);
+    expect(canonicalize(merge(onA, onB))).toBe(canonicalize(merge(onB, onA)));
+    expect(dateOf(merge(onA, onB)).options).toEqual(sorted(y, z));
   });
 });
 

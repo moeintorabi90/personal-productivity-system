@@ -29,9 +29,11 @@ import {
   GOALS,
   type GoalWeekPlanData,
   MAIN_DASHBOARD_ID,
+  PLAN_OPTIONS_MAX,
   PLAN_SEQ_MAX,
   type PlanEntryData,
   PRODUCT_REGISTRY,
+  type SegmentData,
   TASK_ESTIMATE_CAPTURES,
 } from "./registry.ts";
 import { weekPlanId } from "./derived-id.ts";
@@ -298,6 +300,41 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
     await updateGoal(a.db, goalId, { target: 700 }, registry, Date.now()); // refreshes the week plans itself
     await refreshWeekPlans(a.db, registry, "change");
     expect(await a.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(settled);
+  });
+
+  it("a decision that would give a date more options than the format allows is refused (OPTIONS_LIMIT) with nothing written or dropped; within the limit it is recorded (Codex review)", async () => {
+    const { a, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const original = (await planOf(a, goalId))!;
+    const own = original.dates[0]!.entries[0]!;
+    const theirs = { state: "allocated" as const, allocation: { num: 5, den: 1 }, source: "manual" as const };
+    const earlier = Array.from({ length: PLAN_OPTIONS_MAX }, (_, i) => ({ state: "allocated" as const, allocation: { num: 1000 + i, den: 1 }, source: "manual" as const }));
+    const sorted = <T>(list: T[]) => [...list].sort((p, q) => (canonicalize(p) < canonicalize(q) ? -1 : 1));
+    const conflictWith = (options: SegmentData[]) => ({
+      ...original,
+      dates: [{ ...original.dates[0]!, entries: [own, { device: crypto.randomUUID(), seq: 1, seen: {}, segment: theirs }].sort((p, q) => (p.device < q.device ? -1 : 1)), options: sorted(options) }],
+    });
+    // The date already keeps the most options a version-8 file may hold, none of them this conflict's candidates.
+    await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, conflictWith(earlier));
+    const full = (await planOf(a, goalId))!.dates[0]!;
+    expect(full.options).toHaveLength(PLAN_OPTIONS_MAX);
+    const before = await recordsOf(a);
+    expect(await codeOf(decidePlanDate(a.db, planId, "2026-11-02", theirs, canonicalize(full)))).toBe("OPTIONS_LIMIT");
+    expect(await recordsOf(a)).toEqual(before); // no entry, no event, and no option removed
+    expect(resolveDate((await planOf(a, goalId))!.dates[0]!, a.deviceId).kind).toBe("conflict"); // still the owner's to decide
+
+    // When the segments chosen between are already among the options, the choice is recorded and every option is kept.
+    const fits = sorted([...earlier.slice(2), own.segment, theirs]);
+    await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, conflictWith(fits));
+    const ready = (await planOf(a, goalId))!.dates[0]!;
+    await decidePlanDate(a.db, planId, "2026-11-02", theirs, canonicalize(ready));
+    const decided = (await planOf(a, goalId))!.dates[0]!;
+    expect(resolveDate(decided, a.deviceId)).toEqual({ kind: "settled", segment: theirs });
+    expect(decided.options).toEqual(fits);
+    // A backup round-trip keeps the same options.
+    const c = await device("C");
+    await importInto(c, await exportText(a), product);
+    expect((await planOf(c, goalId))!.dates[0]!.options).toEqual(fits);
   });
 
   it("a new plan record carrying an undecided date is imported as new with Apply updates off: a third device shows no data for it (D-015, T-228)", async () => {

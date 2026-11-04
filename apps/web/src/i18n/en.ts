@@ -878,6 +878,7 @@ export const en = {
   "pace.error.SAME_WEEK": "Choose another week.",
   "pace.error.NOT_A_CHOICE": "Choose one of the recorded versions.",
   "pace.error.CHANGED": "This date changed meanwhile. Review it again.",
+  "pace.error.OPTIONS_LIMIT": "This choice cannot be recorded: this date already keeps the most earlier versions a backup can hold. Nothing was changed or removed.",
   "pace.error.SEQ_LIMIT": "This device cannot record a choice for this date: its counter is at the maximum. Nothing was changed.",
   "pace.planNotUpdated": "Today's plan changed, but it could not be recorded on this device: its counter for today's date is at the maximum. The daily target shown still comes from the last recorded plan. Another device can record the update.",
   "pace.decisionBlocked": "This device cannot record a choice for this date: the recorded data puts its counter at the maximum. Nothing is changed here; choose on another device, or import a backup from before the issue.",
