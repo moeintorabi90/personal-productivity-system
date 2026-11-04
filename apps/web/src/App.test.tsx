@@ -998,11 +998,12 @@ describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-
     renderApp();
     await screen.findByRole("heading", { level: 1, name: "Welcome" });
     await goTo("Projects");
-    const colorSelect = (await screen.findByLabelText("Color")) as HTMLSelectElement;
-    expect([...colorSelect.options].map((o) => o.value)).toEqual(["", "blue", "teal", "green", "amber", "orange", "red", "pink", "purple"]);
-    expect([...colorSelect.options].slice(1).map((o) => o.textContent)).toEqual(["Blue", "Teal", "Green", "Amber", "Orange", "Red", "Pink", "Purple"]);
+    const colors = await screen.findByRole("group", { name: "Color" });
+    const radios = within(colors).getAllByRole("radio") as HTMLInputElement[];
+    expect(radios.map((r) => r.value)).toEqual(["", "blue", "teal", "green", "amber", "orange", "red", "pink", "purple"]);
+    expect(radios.slice(1).map((r) => r.closest("label")!.textContent)).toEqual(["Blue", "Teal", "Green", "Amber", "Orange", "Red", "Pink", "Purple"]);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Thesis" } });
-    fireEvent.change(colorSelect, { target: { value: "teal" } });
+    fireEvent.click(within(colors).getByRole("radio", { name: "Teal" }));
     fireEvent.click(screen.getByRole("button", { name: "Create project" }));
     expect((await screen.findByTestId("project-color")).textContent).toContain("Color: Teal");
     const project = (await loadOrganization(services.db)).projects[0]!;
@@ -1015,7 +1016,7 @@ describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-
     const blockBefore = (await services.db.records.where("type").equals("calendarBlocks").toArray())[0]!;
 
     fireEvent.click(screen.getByRole("button", { name: "Edit project: Thesis" }));
-    fireEvent.change(await screen.findByLabelText("Color"), { target: { value: "" } }); // back to the default
+    fireEvent.click(within(await screen.findByRole("group", { name: "Color" })).getByRole("radio", { name: /^Default/ })); // back to the default
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(async () => expect((await loadOrganization(services.db)).projects[0]!.data).not.toHaveProperty("color"));
     // The view follows the database through a live query: wait for it instead of reading once.
@@ -1056,6 +1057,65 @@ describe("Stage 3 follow-up: time grid, project colors, undo (TESTING.md follow-
     expect(block.textContent).toContain("13:00–14:45");
     expect(block.dataset.color).toBe("neutral"); // an inbox task has no project
     expect(block.textContent).toContain("Planned");
+  });
+
+  it("the color choices show a swatch beside each name, the selected one marked besides its color; stored IDs are unchanged (derived, 2026-11-05)", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await goTo("Projects");
+    const colors = await screen.findByRole("group", { name: "Color" });
+    expect(colors.getAttribute("aria-describedby")).toBeTruthy(); // the hint is read with the group
+    const rows = within(colors).getAllByRole("radio").map((r) => r.closest("label")!);
+    // Every choice has its own swatch; a new project's default is not known yet, so it shows neutral.
+    expect(rows.map((l) => l.querySelector(".color-swatch")!.getAttribute("data-color"))).toEqual(["neutral", "blue", "teal", "green", "amber", "orange", "red", "pink", "purple"]);
+    expect(rows.every((l) => l.querySelector(".color-swatch")!.getAttribute("aria-hidden") === "true")).toBe(true); // the name is the accessible name
+    const checked = () => (within(colors).getAllByRole("radio") as HTMLInputElement[]).filter((r) => r.checked).map((r) => r.value);
+    const marked = () => rows.filter((l) => l.dataset.checked === "true").map((l) => l.textContent);
+    expect(checked()).toEqual([""]);
+    expect(marked()).toEqual(["Default (…)"]);
+    // Keyboard: native radios of one group, each focusable and named by its color.
+    const red = within(colors).getByRole("radio", { name: "Red" }) as HTMLInputElement;
+    expect(red.type).toBe("radio");
+    expect(new Set((within(colors).getAllByRole("radio") as HTMLInputElement[]).map((r) => r.name)).size).toBe(1);
+    expect(red.tabIndex).not.toBe(-1);
+    red.focus();
+    expect(document.activeElement).toBe(red);
+    fireEvent.click(red); // what Space does on a focused radio
+    expect(checked()).toEqual(["red"]);
+    expect(marked()).toEqual(["Red"]);
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Thesis" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
+    await waitFor(async () => expect((await loadOrganization(services.db)).projects[0]?.data.color).toBe("red")); // the same stored ID
+    const project = (await loadOrganization(services.db)).projects[0]!;
+    fireEvent.click(await screen.findByRole("button", { name: "Edit project: Thesis" }));
+    await waitFor(() => expect(screen.getAllByRole("radio", { name: /^Default \(/ }).some((r) => !r.closest("label")!.textContent!.includes("…"))).toBe(true));
+    const editing = screen.getAllByRole("group", { name: "Color" }).at(-1)!; // the edit form's
+    const fallback = defaultColorOf(project.id);
+    const fallbackName = fallback.charAt(0).toUpperCase() + fallback.slice(1);
+    const defaultRow = within(editing).getByRole("radio", { name: `Default (${fallbackName})` }).closest("label")!;
+    expect(defaultRow.querySelector(".color-swatch")!.getAttribute("data-color")).toBe(fallback); // the default shows its derived color
+    expect((within(editing).getByRole("radio", { name: "Red" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(within(editing).getByRole("radio", { name: "Purple" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(async () => expect((await loadOrganization(services.db)).projects[0]!.data.color).toBe("purple"));
+  });
+
+  it("the color choices are in Persian, right to left, with the same swatches and stored IDs", async () => {
+    renderApp();
+    await goTo("Settings");
+    fireEvent.change(await screen.findByLabelText("Language"), { target: { value: "fa" } });
+    await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "اصلی" })).getByRole("button", { name: "پروژه‌ها" }));
+    const colors = await screen.findByRole("group", { name: "رنگ" });
+    const rows = within(colors).getAllByRole("radio").map((r) => r.closest("label")!);
+    expect(rows.map((l) => l.textContent)).toEqual(["پیش‌فرض (…)", "آبی", "فیروزه‌ای", "سبز", "کهربایی", "نارنجی", "قرمز", "صورتی", "بنفش"]);
+    expect(rows.map((l) => l.querySelector(".color-swatch")!.getAttribute("data-color"))).toEqual(["neutral", "blue", "teal", "green", "amber", "orange", "red", "pink", "purple"]);
+    fireEvent.click(within(colors).getByRole("radio", { name: "فیروزه‌ای" }));
+    expect(rows.filter((l) => l.dataset.checked === "true").map((l) => l.textContent)).toEqual(["فیروزه‌ای"]);
+    fireEvent.change(screen.getByLabelText("نام"), { target: { value: "پایان‌نامه" } });
+    fireEvent.click(screen.getByRole("button", { name: "ساختن پروژه" }));
+    await waitFor(async () => expect((await loadOrganization(services.db)).projects[0]?.data.color).toBe("teal"));
   });
 
   it("2, 4b. a drag-move snaps to 15 minutes, changes only that block, and offers Undo without a confirmation; Undo restores the times", async () => {

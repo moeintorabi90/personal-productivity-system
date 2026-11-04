@@ -438,7 +438,13 @@ test("Stage 3 follow-up offline: project color, tap to plan, drag-move and resiz
 
   await a.getByRole("button", { name: "Projects" }).click();
   await a.getByLabel("Name", { exact: true }).fill("Thesis");
-  await a.getByLabel("Color").selectOption("purple");
+  // The color choices are native radios with a swatch each: arrow keys move the choice (derived, 2026-11-05).
+  await a.getByRole("radio", { name: "Purple" }).check();
+  await a.getByRole("radio", { name: "Purple" }).press("ArrowLeft");
+  await expect(a.getByRole("radio", { name: "Pink" })).toBeChecked();
+  await expect(a.getByRole("radio", { name: "Pink" })).toBeFocused();
+  await a.getByRole("radio", { name: "Pink" }).press("ArrowRight");
+  await expect(a.getByRole("radio", { name: "Purple" })).toBeChecked();
   await a.getByRole("button", { name: "Create project" }).click();
   await expect(a.getByTestId("project-color")).toContainText("Color: Purple");
   await a.getByLabel("New task in Thesis").fill("Write");

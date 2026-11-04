@@ -107,28 +107,35 @@ function ProjectList({ org, onOpen }: { org: Organization; onOpen: (id: string) 
 /**
  * Project color (T-068, T-088): one of the 8 named palette entries, or "Default", which keeps the
  * color derived from the project ID (nothing is stored). `projectId` is null for a new project,
- * whose default is not known until it is created.
+ * whose default is not known until it is created. A native radio group (derived, 2026-11-05), so
+ * every choice shows its swatch beside its name: arrow keys move and select, each radio is named
+ * by its color name, and the checked radio and its outlined row mark the choice besides the color.
  */
 function ColorSelect({ value, projectId, onChange }: { value: PaletteId | ""; projectId: string | null; onChange: (value: PaletteId | "") => void }) {
   const t = useT();
-  const id = useId();
+  const name = useId();
+  const hintId = useId();
   const fallback = projectId ? defaultColorOf(projectId) : null;
+  const choices: { value: PaletteId | ""; swatch: string; label: string }[] = [
+    { value: "", swatch: fallback ?? "neutral", label: t("projects.colorDefault", { name: fallback ? t(`color.${fallback}` as MessageKey) : "…" }) },
+    ...PALETTE_IDS.map((c) => ({ value: c, swatch: c, label: t(`color.${c}` as MessageKey) })),
+  ];
   return (
-    <div className="field">
-      <label htmlFor={id}>{t("projects.color")}</label>
-      <span className="color-pick">
-        <span className="color-swatch" data-color={value || fallback || "neutral"} aria-hidden="true" />{" "}
-        <select id={id} value={value} onChange={(e) => onChange(e.target.value as PaletteId | "")}>
-          <option value="">{fallback ? t("projects.colorDefault", { name: t(`color.${fallback}` as MessageKey) }) : t("projects.colorDefault", { name: "…" })}</option>
-          {PALETTE_IDS.map((c) => (
-            <option key={c} value={c}>
-              {t(`color.${c}` as MessageKey)}
-            </option>
-          ))}
-        </select>
-      </span>
-      <p className="hint">{t("projects.colorHint")}</p>
-    </div>
+    <fieldset className="field color-choices" aria-describedby={hintId} data-testid="color-choices">
+      <legend>{t("projects.color")}</legend>
+      <div className="color-choice-list">
+        {choices.map((c) => (
+          <label key={c.value || "default"} className="color-choice" data-checked={c.value === value ? "true" : undefined}>
+            <input type="radio" name={name} value={c.value} checked={c.value === value} onChange={() => onChange(c.value)} />
+            <span className="color-swatch" data-color={c.swatch} aria-hidden="true" />
+            <span>{c.label}</span>
+          </label>
+        ))}
+      </div>
+      <p className="hint" id={hintId}>
+        {t("projects.colorHint")}
+      </p>
+    </fieldset>
   );
 }
 
