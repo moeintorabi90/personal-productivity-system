@@ -44,8 +44,8 @@ export interface PreviewItem {
   /**
    * For "planMerge": the merged data (null when it cannot be merged, so nothing changes: an
    * integrity issue, or a written envelope that would break a per-record limit, `limit`: more than
-   * 32 devices in its version vector, or more than 256 KiB) and how many dates would newly need the
-   * owner's decision.
+   * 32 devices in its version vector, this device's counter past its maximum, or more than 256 KiB)
+   * and how many dates would newly need the owner's decision.
    */
   planMerge?: { data: GoalWeekPlanData | null; decisions: number; limit?: EnvelopeLimit };
   /**
@@ -88,7 +88,7 @@ function mergeWeekPlan(here: GoalWeekPlanData, incoming: GoalWeekPlanData): Goal
  * records (T-204); `planDecisions` also counts undecided dates arriving in new plans (T-228).
  */
 export type PreviewCounts = Record<
-  ItemCategory | "carriedConflicts" | "carriedReplaced" | "planDecisions" | "planIntegrity" | "planTooLarge" | "planTooManyDevices" | "appUseDates",
+  ItemCategory | "carriedConflicts" | "carriedReplaced" | "planDecisions" | "planIntegrity" | "planTooLarge" | "planTooManyDevices" | "planVersionCounter" | "appUseDates",
   number
 >;
 
@@ -142,6 +142,7 @@ function emptyCounts(): PreviewCounts {
     planIntegrity: 0,
     planTooLarge: 0,
     planTooManyDevices: 0,
+    planVersionCounter: 0,
     appUseDates: 0,
   };
 }
@@ -474,6 +475,7 @@ function countItems(items: PreviewItem[], carried: { conflicts: unknown[]; repla
     if (item.category === "new" && item.type === APP_USE_DAYS) counts.appUseDates += 1;
     else if (item.category === "planMerge" && item.planMerge?.limit === "size") counts.planTooLarge += 1;
     else if (item.category === "planMerge" && item.planMerge?.limit === "devices") counts.planTooManyDevices += 1;
+    else if (item.category === "planMerge" && item.planMerge?.limit === "versionCounter") counts.planVersionCounter += 1;
     else if ((item.category === "planMerge" && item.planMerge?.data === null) || item.planIntegrity) counts.planIntegrity += 1;
     else counts[item.category] += 1;
     if (item.planMerge) counts.planDecisions += item.planMerge.decisions;

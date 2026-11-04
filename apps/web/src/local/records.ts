@@ -1,4 +1,4 @@
-import { contentHashOf, type Envelope, envelopeLimitProblem, makeEnvelope, nowIso, type Tombstone, tombstoneFits } from "../backup/envelope.ts";
+import { contentHashOf, type Envelope, envelopeLimitProblem, makeEnvelope, nowIso, type Tombstone, tombstoneLimitProblem } from "../backup/envelope.ts";
 import { linkTargets, type Registry } from "../backup/registry.ts";
 import { bumpVersion, type VersionVector } from "../backup/versions.ts";
 import { DEFAULT_DEVICE_SETTINGS, type DeviceIdentity, type DeviceSettings, type LocalDb, type MetaRow, type RecordRow } from "./db.ts";
@@ -36,10 +36,11 @@ export function plannedWriteEnvelope(
 
 export class RecordRuleError extends Error {
   /**
-   * RECORD_TOO_LARGE / TOO_MANY_DEVICES: the record or tombstone as written would break a per-record
-   * limit of the backup format (256 KiB; 32 devices in its version vector), so nothing is written.
+   * RECORD_TOO_LARGE / TOO_MANY_DEVICES / VERSION_COUNTER_EXHAUSTED: the record or tombstone as
+   * written would break a per-record limit of the backup format (256 KiB; 32 devices in its version
+   * vector; this device's edit counter past `MAX_VERSION_COUNTER`), so nothing is written.
    */
-  readonly code: "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "IMMUTABLE_FIELD" | "RECORD_TOO_LARGE" | "TOO_MANY_DEVICES";
+  readonly code: "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "IMMUTABLE_FIELD" | "RECORD_TOO_LARGE" | "TOO_MANY_DEVICES" | "VERSION_COUNTER_EXHAUSTED";
   constructor(code: RecordRuleError["code"], message: string) {
     super(message);
     this.name = "RecordRuleError";
@@ -91,6 +92,7 @@ export async function putRecord(
     // No write may break a per-record limit, or the data could no longer be exported (BACKUP_FORMAT "Input limits").
     const limit = envelopeLimitProblem(next);
     if (limit === "devices") throw new RecordRuleError("TOO_MANY_DEVICES", `${type}/${id}: the version vector would list more than 32 devices`);
+    if (limit === "versionCounter") throw new RecordRuleError("VERSION_COUNTER_EXHAUSTED", `${type}/${id}: this device's edit counter is at its maximum`);
     if (limit === "size") throw new RecordRuleError("RECORD_TOO_LARGE", `${type}/${id}: the record would pass the per-record size limit`);
     const row: RecordRow = { type, ...next };
     await db.records.put(row);
@@ -105,7 +107,9 @@ export async function deleteRecord(db: LocalDb, type: string, id: string): Promi
     const current = await db.records.get([type, id]);
     if (!current) return null;
     const tombstone: Tombstone = { type, id, deletedAt: nowIso(), version: bumpVersion(current.version, device.id) };
-    if (!tombstoneFits(tombstone)) throw new RecordRuleError("TOO_MANY_DEVICES", `${type}/${id}: the tombstone's version vector would list more than 32 devices`);
+    const limit = tombstoneLimitProblem(tombstone);
+    if (limit === "devices") throw new RecordRuleError("TOO_MANY_DEVICES", `${type}/${id}: the tombstone's version vector would list more than 32 devices`);
+    if (limit === "versionCounter") throw new RecordRuleError("VERSION_COUNTER_EXHAUSTED", `${type}/${id}: this device's edit counter is at its maximum`);
     await db.records.delete([type, id]);
     await db.tombstones.put(tombstone);
     return tombstone;

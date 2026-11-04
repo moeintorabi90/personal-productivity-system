@@ -16,6 +16,7 @@ import {
   MAX_DEVICE_NAME_CHARS,
   MAX_ENTRIES,
   MAX_ENVELOPE_BYTES,
+  MAX_VERSION_COUNTER,
   MAX_VERSION_VECTOR_ENTRIES,
   SALT_BYTES,
   WRAPPED_KEY_BYTES,
@@ -155,7 +156,7 @@ export interface CarriedReplaced {
 }
 
 const versionVectorSchema = z
-  .record(z.uuid(), z.number().int().min(1).max(Number.MAX_SAFE_INTEGER))
+  .record(z.uuid(), z.number().int().min(1).max(MAX_VERSION_COUNTER))
   .refine((v) => Object.keys(v).length <= MAX_VERSION_VECTOR_ENTRIES, {
     message: `at most ${MAX_VERSION_VECTOR_ENTRIES} devices`,
   });

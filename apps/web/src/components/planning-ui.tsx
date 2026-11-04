@@ -141,7 +141,9 @@ export function blockColor(ctx: PlanningContext, block: CalendarBlockData): Colo
 export function planningError(t: Translate, error: unknown): string {
   if (error instanceof PlanningError) return t(`plan.error.${error.code}` as MessageKey);
   if (error instanceof RecordRuleError && error.code === "BROKEN_LINK") return t("plan.error.NOT_FOUND");
-  if (error instanceof RecordRuleError && (error.code === "TOO_MANY_DEVICES" || error.code === "RECORD_TOO_LARGE")) return t(`org.error.${error.code}`);
+  if (error instanceof RecordRuleError && (error.code === "TOO_MANY_DEVICES" || error.code === "VERSION_COUNTER_EXHAUSTED" || error.code === "RECORD_TOO_LARGE")) {
+    return t(`org.error.${error.code}`);
+  }
   return t("org.error.generic");
 }
 

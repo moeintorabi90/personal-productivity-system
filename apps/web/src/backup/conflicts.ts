@@ -1,7 +1,7 @@
 import { getMeta, type LocalDb, type PendingConflictRow, setMeta, type VersionEntry } from "../local/db.ts";
 import { deviceIdentity, toEnvelope } from "../local/records.ts";
 import { importedMarkOf, markImportedSessions, markRestoredSession, pauseOfVersion } from "../local/work.ts";
-import { type Envelope, envelopeLimitProblem, makeEnvelope, nowIso, type Tombstone, tombstoneFits } from "./envelope.ts";
+import { type Envelope, envelopeLimitProblem, makeEnvelope, nowIso, type Tombstone, tombstoneLimitProblem } from "./envelope.ts";
 import { canonicalize } from "./jcs.ts";
 import { CALENDAR_BLOCKS, GOALS, linkTargets, OUTPUT_RECORDS, outputsMisfittingGoal, type Registry, SESSIONS } from "./registry.ts";
 import { mergeAndBump, type VersionVector } from "./versions.ts";
@@ -37,6 +37,7 @@ export class ResolutionError extends Error {
     | "STALE"
     /** The combined version would break a per-record limit of the backup format; nothing is written. */
     | "TOO_MANY_DEVICES"
+    | "VERSION_COUNTER_EXHAUSTED"
     | "RECORD_TOO_LARGE";
   /** HAS_LINKED_ITEMS: the records that still block the deletion; LINKED_ITEMS_MISMATCH: those that would no longer fit. */
   readonly linkedItems: LinkedItem[];
@@ -234,13 +235,14 @@ export async function assertLinksLive(db: LocalDb, registry: Registry, type: str
 
 /**
  * The combined version of a resolution must stay within the backup format's per-record limits (32
- * devices, 256 KiB), or the result could not be exported; otherwise nothing is written and the
+ * devices, each counter at most `MAX_VERSION_COUNTER`, 256 KiB), or the result could not be exported; otherwise nothing is written and the
  * decision stays pending.
  */
 async function writeRecord(db: LocalDb, type: string, id: string, data: Record<string, unknown>, createdAt: string, version: VersionVector) {
   const envelope = makeEnvelope(id, data, version, createdAt, nowIso());
   const problem = envelopeLimitProblem(envelope);
   if (problem === "devices") throw new ResolutionError("TOO_MANY_DEVICES", `${type}/${id}: the combined version would list more than 32 devices`);
+  if (problem === "versionCounter") throw new ResolutionError("VERSION_COUNTER_EXHAUSTED", `${type}/${id}: this device's edit counter is at its maximum`);
   if (problem === "size") throw new ResolutionError("RECORD_TOO_LARGE", `${type}/${id}: the record would pass the per-record size limit`);
   await db.tombstones.delete([type, id]);
   await db.records.put({ type, ...envelope });
@@ -248,7 +250,9 @@ async function writeRecord(db: LocalDb, type: string, id: string, data: Record<s
 
 async function writeTombstone(db: LocalDb, type: string, id: string, version: VersionVector) {
   const tombstone: Tombstone = { type, id, deletedAt: nowIso(), version };
-  if (!tombstoneFits(tombstone)) throw new ResolutionError("TOO_MANY_DEVICES", `${type}/${id}: the combined version would list more than 32 devices`);
+  const problem = tombstoneLimitProblem(tombstone);
+  if (problem === "devices") throw new ResolutionError("TOO_MANY_DEVICES", `${type}/${id}: the combined version would list more than 32 devices`);
+  if (problem === "versionCounter") throw new ResolutionError("VERSION_COUNTER_EXHAUSTED", `${type}/${id}: this device's edit counter is at its maximum`);
   await db.records.delete([type, id]);
   await db.tombstones.put(tombstone);
 }

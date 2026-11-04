@@ -559,6 +559,64 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
       expect(await c.db.pendingConflicts.get(conflict.conflictId)).toBeTruthy(); // still the owner's to decide
       expect(await codeOf(exportText(c))).toBe("OK");
     });
+    it("with this device's counter already at Number.MAX_SAFE_INTEGER, every write that would raise it is refused: edit, deletion, decision, plan write, merge, and conflict resolution; nothing changes and the records still export", async () => {
+      const { a, goalId } = await sharedGoal();
+      const planId = weekPlanId(goalId, "2026-11-02");
+      const original = (await planOf(a, goalId))!;
+      const own = original.dates[0]!.entries[0]!;
+      const theirs: SegmentData = { state: "allocated", allocation: { num: 5, den: 1 }, source: "manual" };
+      // Monday holds a conflict, so a decision can be tried.
+      await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, {
+        ...original,
+        dates: [{ ...original.dates[0]!, entries: [own, { device: crypto.randomUUID(), seq: 1, seen: {}, segment: theirs }].sort((p, q) => (p.device < q.device ? -1 : 1)) }],
+      });
+      const c = await device("C");
+      // A valid file in which C's own counter for the goal and the plan is already the maximum the format accepts.
+      const atMaximum = (text: string) =>
+        mutate(text, (doc) => {
+          for (const [type, id] of [[GOALS, goalId], [GOAL_WEEK_PLANS, planId]] as const) {
+            doc.payload.records[type].find((e: { id: string }) => e.id === id).version[c.deviceId] = Number.MAX_SAFE_INTEGER;
+          }
+        });
+      await importInto(c, atMaximum(await exportText(a)), product);
+      expect((await c.db.records.get([GOALS, goalId]))!.version[c.deviceId]).toBe(Number.MAX_SAFE_INTEGER);
+      const before = await recordsOf(c);
+      const tombstones = await c.db.tombstones.count();
+
+      expect(await codeOf(updateGoal(c.db, goalId, { name: "Renamed" }, registry, Date.now()))).toBe("VERSION_COUNTER_EXHAUSTED");
+      expect(await codeOf(deleteRecord(c.db, GOALS, goalId))).toBe("VERSION_COUNTER_EXHAUSTED");
+      const monday = (await planOf(c, goalId))!.dates[0]!;
+      expect(await codeOf(decidePlanDate(c.db, planId, "2026-11-02", theirs, canonicalize(monday)))).toBe("VERSION_LIMIT");
+      const plans = (await loadGoalPlanning(c.db)).plans;
+      expect(planWriteLimit(plans, c.deviceId, nowIso())(plans[0]!.data)).toBe("versionCounter"); // the plan write is reported, not written
+      at("2026-11-03T08:00:00Z");
+      await setWeekAllocation(c.db, goalId, "2026-11-09", 300, Date.now());
+      // The allocation itself is a new record of C's; the goal and the plan are unchanged.
+      expect((await recordsOf(c)).filter((r) => r.type !== GOAL_WEEK_ALLOCATIONS)).toEqual(before);
+      expect(await c.db.tombstones.count()).toBe(tombstones);
+
+      // A's later changes: the plan merge would raise C's counter (shown, nothing written); the goal's
+      // two versions are a conflict whose resolution would too (refused, still pending).
+      at("2026-11-02T08:00:00Z");
+      await decidePlanDate(a.db, planId, "2026-11-02", theirs, canonicalize((await planOf(a, goalId))!.dates[0]!));
+      await updateGoal(a.db, goalId, { name: "Pages, revised" }, registry, Date.now());
+      const later = await exportText(a);
+      for (const applyUpdates of [false, true]) {
+        const { preview } = await importInto(c, later, { ...product, applyUpdates });
+        expect(preview.counts.planVersionCounter).toBe(1);
+        expect(preview.counts.planMerge).toBe(0);
+      }
+      const conflict = (await c.db.pendingConflicts.toArray()).find((p) => p.type === GOALS && p.id === goalId)!;
+      const pending = await c.db.pendingConflicts.toArray();
+      for (const resolution of ["keepDevice", "useBackup"] as const) {
+        expect(await codeOf(decide(c.db, conflict.conflictId, resolution, registry))).toBe("VERSION_COUNTER_EXHAUSTED");
+      }
+      // The goal and the plan are unchanged (A's choice event arrived as a new history record).
+      const goalAndPlan = (rows: Awaited<ReturnType<typeof recordsOf>>) => rows.filter((r) => r.type === GOALS || r.type === GOAL_WEEK_PLANS);
+      expect(goalAndPlan(await recordsOf(c))).toEqual(goalAndPlan(before));
+      expect(await c.db.pendingConflicts.toArray()).toEqual(pending); // the conflict and its versions stay as they were
+      expect(await codeOf(exportText(c))).toBe("OK"); // the original records still export
+    });
   });
 
   it("a new plan record carrying an undecided date is imported as new with Apply updates off: a third device shows no data for it (D-015, T-228)", async () => {

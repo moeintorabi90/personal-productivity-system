@@ -63,7 +63,9 @@ export type GoalPlanErrorCode =
   /** The record would pass the per-record size limit; nothing is written or dropped. */
   | "RECORD_LIMIT"
   /** The record's version vector would list more than the 32 devices a backup record may; nothing is written. */
-  | "DEVICE_LIMIT";
+  | "DEVICE_LIMIT"
+  /** This device's edit counter of the record is at its maximum; nothing is written. */
+  | "VERSION_LIMIT";
 
 export class GoalPlanError extends Error {
   readonly code: GoalPlanErrorCode;
@@ -189,8 +191,8 @@ function plansToday(goal: GoalData, today: string): boolean {
  * `blocked`: the computed segment differs from the one in effect, but it cannot be written: this
  * device's counter for today is at its maximum (`canWriteEntry`, reason `counter`), or the record's
  * exact envelope would break a per-record limit of the backup format (`limit`, from
- * `planWriteLimit`: reason `devices` for more than 32 devices in its version vector, `size` for
- * more than 256 KiB). The recorded plan stays, and the goal view says so.
+ * `planWriteLimit`: reason `devices` for more than 32 devices in its version vector,
+ * `versionCounter` for this device's edit counter at its maximum, `size` for more than 256 KiB). The recorded plan stays, and the goal view says so.
  * `none`: the goal is not running, or has no deadline or workdays to start a record with.
  */
 export type PlanWriteStep =
@@ -406,6 +408,7 @@ export async function decidePlanDate(
     // Nothing is dropped to make room: if the exact envelope would break a per-record limit, the decision is refused.
     const problem = planWriteLimit([{ ...itemOf<GoalWeekPlanData>(row), version: row.version }], device.id, nowIso())(withDate(plan, next));
     if (problem === "devices") throw new GoalPlanError("DEVICE_LIMIT", "the weekly plan's version vector would list more than 32 devices; nothing was written");
+    if (problem === "versionCounter") throw new GoalPlanError("VERSION_LIMIT", "this device's edit counter of the weekly plan is at its maximum; nothing was written");
     if (problem === "size") throw new GoalPlanError("RECORD_LIMIT", "the weekly plan would pass the per-record size limit; nothing was written");
     const entry = next.entries.find((e) => e.device === device.id)!;
     await putRecord(db, registry, GOAL_WEEK_PLANS, planId, withDate(plan, next));

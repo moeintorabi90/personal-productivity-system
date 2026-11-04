@@ -23,6 +23,8 @@ export const MAX_PLAINTEXT_BYTES = 32 * MIB;
 export const MAX_ENTRIES = 200_000;
 export const MAX_ENVELOPE_BYTES = 256 * 1024;
 export const MAX_VERSION_VECTOR_ENTRIES = 32;
+/** The highest edit counter of one device in a version vector. */
+export const MAX_VERSION_COUNTER = Number.MAX_SAFE_INTEGER;
 export const MAX_JSON_DEPTH = 32;
 export const MAX_JSON_VALUES = 4_000_000;
 export const MAX_DEVICE_NAME_CHARS = 80;

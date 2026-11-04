@@ -63,7 +63,15 @@ export function GoalPacePanel({ ctx, goalId, goal, definitions }: { ctx: Insight
       ) : null}
       {step.kind === "blocked" ? (
         <p className="notice notice-warn" role="status" data-testid="plan-not-updated" data-reason={step.reason}>
-          {t(step.reason === "size" ? "pace.planNotUpdatedSize" : step.reason === "devices" ? "pace.planNotUpdatedDevices" : "pace.planNotUpdated")}
+          {t(
+            step.reason === "size"
+              ? "pace.planNotUpdatedSize"
+              : step.reason === "devices"
+                ? "pace.planNotUpdatedDevices"
+                : step.reason === "versionCounter"
+                  ? "pace.planNotUpdatedVersion"
+                  : "pace.planNotUpdated",
+          )}
         </p>
       ) : null}
       {g.cap?.unreachable ? (
