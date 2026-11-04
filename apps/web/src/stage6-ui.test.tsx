@@ -28,6 +28,7 @@ import { createGoal } from "./local/goals.ts";
 import { setWeekAllocation } from "./local/goal-plans.ts";
 import { loadInsightRecords } from "./local/insights.ts";
 import { createTask } from "./local/organization.ts";
+import { planRecordFits } from "./insights/plan-merge.ts";
 import { putRecord, updateDeviceSettings } from "./local/records.ts";
 import { updateSharedPreferences } from "./local/settings.ts";
 import { loadTimer } from "./local/timer.ts";
@@ -255,6 +256,46 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     expect(screen.getByTestId("today-target").textContent).toBe("30"); // still the recorded plan's target
     expect(screen.queryByTestId("plan-conflict")).toBeNull();
   });
+
+  it("a plan change that would make the week's record pass the size limit is not written, and the goal page says so (owner, 2026-11-04)", async () => {
+    // Written before the first render: Monday's settled entry with as many earlier options as still fit.
+    let goalId = "";
+    await renderApp(async (s) => {
+      at("2026-11-02T08:00:00Z");
+      goalId = await createGoal(s.db, { name: "Pages", startDate: "2026-11-02", deadline: "2026-11-29", kind: "taskCount", target: 600, workdays: [1, 2, 3, 4, 5] });
+      const id = weekPlanId(goalId, "2026-11-02");
+      const plan = (await s.db.records.get([GOAL_WEEK_PLANS, id]))!.data as GoalWeekPlanData;
+      const withOptions = (n: number): GoalWeekPlanData => ({
+        ...plan,
+        dates: [{ ...plan.dates[0]!, options: Array.from({ length: n }, (_, i) => ({ state: "allocated" as const, allocation: { num: 100_000 + i, den: 1 }, source: "manual" as const })) }],
+      });
+      let low = 0;
+      let high = 10_000;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        if (planRecordFits(withOptions(mid))) low = mid;
+        else high = mid - 1;
+      }
+      await putRecord(s.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, id, withOptions(low));
+      at("2026-11-03T08:00:00Z"); // Tuesday: a plan change would add a new date to the record
+    });
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const recorded = async () => (await services.db.records.get([GOAL_WEEK_PLANS, planId]))!;
+    const before = await recorded();
+    expect(planRecordFits(before.data as GoalWeekPlanData)).toBe(true);
+    await goTo("Goals");
+    fireEvent.click(await screen.findByRole("button", { name: "Open goal: Pages" }));
+    await screen.findByTestId("goal-pace");
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toMatch(/^\d/));
+    const target = screen.getByTestId("today-target").textContent;
+    expect(screen.queryByTestId("plan-not-updated")).toBeNull(); // nothing to update yet: no warning
+    await setWeekAllocation(services.db, goalId, "2026-11-09", 300);
+    const warning = await screen.findByTestId("plan-not-updated", undefined, { timeout: 15_000 }); // thousands of options render slowly in jsdom
+    expect(warning.dataset.reason).toBe("size");
+    expect(warning.textContent).toMatch(/^Today's plan changed, but it could not be recorded on this device: this week's plan would become larger than a backup record may be\./);
+    expect(await recorded()).toEqual(before); // not written, and no option removed
+    expect(screen.getByTestId("today-target").textContent).toBe(target); // still from the last recorded plan
+  }, 30_000);
 
   it("the same plan change with a counter below the maximum is recorded, with no warning", async () => {
     const goalId = await goal();

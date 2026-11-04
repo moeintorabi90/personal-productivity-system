@@ -5,11 +5,27 @@
  * segments of uncovered entries, compared by exact canonical JSON (JCS). Pure functions: the
  * import and the decide commands call them, and the goal views read them.
  */
-import { canonicalize } from "../backup/jcs.ts";
+import { canonicalBytes, canonicalize } from "../backup/jcs.ts";
+import { MAX_ENVELOPE_BYTES } from "../backup/limits.ts";
 import { type GoalWeekPlanChoiceData, type GoalWeekPlanData, PLAN_SEQ_MAX, type PlanDateData, type PlanEntryData, type SegmentData } from "../backup/registry.ts";
 import { addDays } from "../planning/time.ts";
 
 const key = (value: unknown) => canonicalize(value);
+
+/**
+ * Bytes kept free for a record's envelope fields besides its data: ID, two timestamps, content
+ * hash, and a version vector of at most 33 devices (32 accepted on import, plus this one), under
+ * 2 KiB in canonical JSON, so 4 KiB is a safe bound.
+ */
+export const PLAN_ENVELOPE_RESERVE = 4 * 1024;
+
+/**
+ * Whether a weekly plan record can be stored and exported: its canonical data plus the envelope
+ * reserve stays within the per-record limit (`MAX_ENVELOPE_BYTES`, 256 KiB). Checked before a
+ * decision, a merge on import, and the app's own plan write; a record that would not fit is never
+ * written, and nothing is dropped to make it fit (owner, 2026-11-04).
+ */
+export const planRecordFits = (plan: GoalWeekPlanData) => canonicalBytes(plan).length + PLAN_ENVELOPE_RESERVE <= MAX_ENVELOPE_BYTES;
 
 /** Whether `entry` is covered: another device's entry saw it (or a later one of the same device). */
 export function isCovered(entry: PlanEntryData, entries: readonly PlanEntryData[]): boolean {

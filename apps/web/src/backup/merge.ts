@@ -18,7 +18,7 @@ import {
   SESSIONS,
 } from "./registry.ts";
 import { compareVersions, isContainedIn, mergeVersions, bumpVersion } from "./versions.ts";
-import { conflictDates, hasCoverageCycle, mergePlans, planHasCoverageCycle } from "../insights/plan-merge.ts";
+import { conflictDates, hasCoverageCycle, mergePlans, planHasCoverageCycle, planRecordFits } from "../insights/plan-merge.ts";
 
 /** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
 export type ItemCategory =
@@ -42,10 +42,11 @@ export interface PreviewItem {
   incoming: VersionEntry;
   local: VersionEntry | null;
   /**
-   * For "planMerge": the merged data (null: the same device and counter with different content, an
-   * integrity issue, so nothing changes) and how many dates would newly need the owner's decision.
+   * For "planMerge": the merged data (null when it cannot be merged, so nothing changes: an
+   * integrity issue, or a merged record past the per-record size limit, `tooLarge`) and how many
+   * dates would newly need the owner's decision.
    */
-  planMerge?: { data: GoalWeekPlanData | null; decisions: number };
+  planMerge?: { data: GoalWeekPlanData | null; decisions: number; tooLarge?: true };
   /**
    * A new weekly plan whose entries cover one another in a cycle: malformed, a data-integrity issue.
    * It is counted with the plans that have one and is not imported.
@@ -73,7 +74,7 @@ function mergeWeekPlan(here: GoalWeekPlanData, incoming: GoalWeekPlanData): Goal
  * records (T-204); `planDecisions` also counts undecided dates arriving in new plans (T-228).
  */
 export type PreviewCounts = Record<
-  ItemCategory | "carriedConflicts" | "carriedReplaced" | "planDecisions" | "planIntegrity" | "appUseDates",
+  ItemCategory | "carriedConflicts" | "carriedReplaced" | "planDecisions" | "planIntegrity" | "planTooLarge" | "appUseDates",
   number
 >;
 
@@ -125,6 +126,7 @@ function emptyCounts(): PreviewCounts {
     carriedReplaced: 0,
     planDecisions: 0,
     planIntegrity: 0,
+    planTooLarge: 0,
     appUseDates: 0,
   };
 }
@@ -406,7 +408,12 @@ async function classifyAll(db: LocalDb, payload: BackupPayload, registry: Regist
         const here = state.record!.data as GoalWeekPlanData;
         const merged = mergeWeekPlan(here, envelope.data as GoalWeekPlanData);
         const before = new Set(conflictDates(here));
-        item.planMerge = { data: merged, decisions: merged ? conflictDates(merged).filter((d) => !before.has(d)).length : 0 };
+        if (merged && !planRecordFits(merged)) {
+          // Too large to keep as one record: shown on its own, and this device's version stays as it is.
+          item.planMerge = { data: null, decisions: 0, tooLarge: true };
+        } else {
+          item.planMerge = { data: merged, decisions: merged ? conflictDates(merged).filter((d) => !before.has(d)).length : 0 };
+        }
       }
       if (item.category === "new" && type === GOAL_WEEK_PLANS && planHasCoverageCycle(envelope.data as GoalWeekPlanData)) item.planIntegrity = true;
       items.push(item);
@@ -447,6 +454,7 @@ function countItems(items: PreviewItem[], carried: { conflicts: unknown[]; repla
   const counts = emptyCounts();
   for (const item of items) {
     if (item.category === "new" && item.type === APP_USE_DAYS) counts.appUseDates += 1;
+    else if (item.category === "planMerge" && item.planMerge?.tooLarge) counts.planTooLarge += 1;
     else if ((item.category === "planMerge" && item.planMerge?.data === null) || item.planIntegrity) counts.planIntegrity += 1;
     else counts[item.category] += 1;
     if (item.planMerge) counts.planDecisions += item.planMerge.decisions;
@@ -572,7 +580,7 @@ export async function applyImport(
             break;
           }
           const merged = item.planMerge?.data;
-          if (!merged) break; // integrity issue: shown, nothing changes
+          if (!merged) break; // integrity issue or too large: shown, nothing changes
           const local = item.local.envelope;
           const version = mergeVersions(local.version, incoming.envelope.version);
           const next = makeEnvelope(item.id, merged as unknown as Record<string, unknown>, version, local.createdAt, at);

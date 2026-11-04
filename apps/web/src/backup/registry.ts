@@ -944,8 +944,6 @@ export type SegmentData = z.infer<typeof segmentSchema>;
 
 /** The highest counter of a weekly plan entry, a counter it has seen, or a choice event. */
 export const PLAN_SEQ_MAX = 1_000_000_000;
-/** The most `options` one date of a weekly plan may hold (format contract of data version 8). */
-export const PLAN_OPTIONS_MAX = 64;
 
 /** Counters a device had seen of other devices' entries for one date (T-227 to T-229). */
 const seenSchema = z.record(z.uuid(), z.number().int().min(1).max(PLAN_SEQ_MAX));
@@ -989,7 +987,9 @@ export const goalWeekPlanSchema = z
               .min(1)
               .max(32)
               .refine((list) => list.every((e, i) => i === 0 || e.device > list[i - 1]!.device), { message: "entries must be sorted by distinct device" }),
-            options: z.array(segmentSchema).max(PLAN_OPTIONS_MAX),
+            // No count limit (owner, 2026-11-04): options only grow, and the record as a whole stays within
+            // MAX_ENVELOPE_BYTES, checked on reading a file and before every write and merge (`planRecordFits`).
+            options: z.array(segmentSchema),
           })
           .strict(),
       )

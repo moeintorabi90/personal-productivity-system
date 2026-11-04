@@ -16,7 +16,7 @@ import { createBlock, dragBlockTimes } from "../local/planning.ts";
 import { setMeta } from "../local/db.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
 import { loadTimer, saveCountdown, saveSelectedTimer, saveStopwatch, startCountdown, startStopwatch } from "../local/timer.ts";
-import { canWriteEntry, candidatesOf, eventStatus, hasCoverageCycle, mergePlans, nextSeq, planDateOn, planHasCoverageCycle, resolveDate } from "../insights/plan-merge.ts";
+import { canChangeChoice, canWriteEntry, candidatesOf, eventStatus, hasCoverageCycle, mergePlans, nextSeq, planDateOn, planHasCoverageCycle, planRecordFits, resolveDate } from "../insights/plan-merge.ts";
 import { SUGGESTED_MAIN_DASHBOARD } from "../insights/metrics.ts";
 import { DATA_SCHEMA_VERSION } from "./limits.ts";
 import {
@@ -29,7 +29,6 @@ import {
   GOALS,
   type GoalWeekPlanData,
   MAIN_DASHBOARD_ID,
-  PLAN_OPTIONS_MAX,
   PLAN_SEQ_MAX,
   type PlanEntryData,
   PRODUCT_REGISTRY,
@@ -302,39 +301,91 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
     expect(await a.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(settled);
   });
 
-  it("a decision that would give a date more options than the format allows is refused (OPTIONS_LIMIT) with nothing written or dropped; within the limit it is recorded (Codex review)", async () => {
-    const { a, goalId } = await sharedGoal();
-    const planId = weekPlanId(goalId, "2026-11-02");
-    const original = (await planOf(a, goalId))!;
-    const own = original.dates[0]!.entries[0]!;
-    const theirs = { state: "allocated" as const, allocation: { num: 5, den: 1 }, source: "manual" as const };
-    const earlier = Array.from({ length: PLAN_OPTIONS_MAX }, (_, i) => ({ state: "allocated" as const, allocation: { num: 1000 + i, den: 1 }, source: "manual" as const }));
+  describe("options past 64 and the per-record size limit (owner, 2026-11-04)", () => {
+    // Segments of equal canonical length (six-digit amounts), so record sizes grow evenly.
+    const manual = (num: number): SegmentData => ({ state: "allocated", allocation: { num, den: 1 }, source: "manual" });
     const sorted = <T>(list: T[]) => [...list].sort((p, q) => (canonicalize(p) < canonicalize(q) ? -1 : 1));
-    const conflictWith = (options: SegmentData[]) => ({
-      ...original,
-      dates: [{ ...original.dates[0]!, entries: [own, { device: crypto.randomUUID(), seq: 1, seen: {}, segment: theirs }].sort((p, q) => (p.device < q.device ? -1 : 1)), options: sorted(options) }],
-    });
-    // The date already keeps the most options a version-8 file may hold, none of them this conflict's candidates.
-    await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, conflictWith(earlier));
-    const full = (await planOf(a, goalId))!.dates[0]!;
-    expect(full.options).toHaveLength(PLAN_OPTIONS_MAX);
-    const before = await recordsOf(a);
-    expect(await codeOf(decidePlanDate(a.db, planId, "2026-11-02", theirs, canonicalize(full)))).toBe("OPTIONS_LIMIT");
-    expect(await recordsOf(a)).toEqual(before); // no entry, no event, and no option removed
-    expect(resolveDate((await planOf(a, goalId))!.dates[0]!, a.deviceId).kind).toBe("conflict"); // still the owner's to decide
+    const range = (from: number, count: number) => Array.from({ length: count }, (_, i) => manual(from + i));
+    /** The largest count of `range(from, n)` options for which `make(options)` still fits the per-record limit. */
+    function largestFitting(make: (options: SegmentData[]) => GoalWeekPlanData, from: number): number {
+      let low = 0;
+      let high = 10_000;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        if (planRecordFits(make(range(from, mid)))) low = mid;
+        else high = mid - 1;
+      }
+      return low;
+    }
 
-    // When the segments chosen between are already among the options, the choice is recorded and every option is kept.
-    const fits = sorted([...earlier.slice(2), own.segment, theirs]);
-    await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, conflictWith(fits));
-    const ready = (await planOf(a, goalId))!.dates[0]!;
-    await decidePlanDate(a.db, planId, "2026-11-02", theirs, canonicalize(ready));
-    const decided = (await planOf(a, goalId))!.dates[0]!;
-    expect(resolveDate(decided, a.deviceId)).toEqual({ kind: "settled", segment: theirs });
-    expect(decided.options).toEqual(fits);
-    // A backup round-trip keeps the same options.
-    const c = await device("C");
-    await importInto(c, await exportText(a), product);
-    expect((await planOf(c, goalId))!.dates[0]!.options).toEqual(fits);
+    async function conflictSetup() {
+      const s = await sharedGoal();
+      const planId = weekPlanId(s.goalId, "2026-11-02");
+      const original = (await planOf(s.a, s.goalId))!;
+      const own = original.dates[0]!.entries[0]!;
+      const theirs = manual(5);
+      const other = crypto.randomUUID();
+      const conflictWith = (options: SegmentData[]): GoalWeekPlanData => ({
+        ...original,
+        dates: [{ ...original.dates[0]!, entries: [own, { device: other, seq: 1, seen: {}, segment: theirs }].sort((p, q) => (p.device < q.device ? -1 : 1)), options: sorted(options) }],
+      });
+      return { ...s, planId, original, own, theirs, conflictWith };
+    }
+
+    it("a date keeps more than 64 options: a decision and an import merge succeed, none is dropped, and a backup round-trip keeps them", async () => {
+      const { a, b, goalId, planId, own, theirs, conflictWith } = await conflictSetup();
+      const earlier = range(100_000, 100);
+      await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, conflictWith(earlier));
+      const full = (await planOf(a, goalId))!.dates[0]!;
+      await decidePlanDate(a.db, planId, "2026-11-02", theirs, canonicalize(full));
+      const expected = sorted([...earlier, own.segment, theirs]);
+      const decided = (await planOf(a, goalId))!.dates[0]!;
+      expect(decided.options).toEqual(expected); // 102 options, every earlier one kept
+      expect(resolveDate(decided, a.deviceId)).toEqual({ kind: "settled", segment: theirs });
+      expect(canChangeChoice(decided)).toBe(true);
+      // B still holds the original record: the merge brings all of them, in either "Apply updates" run.
+      const fromA = await exportText(a);
+      const merging = await importInto(b, fromA, { ...product, applyUpdates: true });
+      expect(merging.preview.counts.planMerge).toBe(1);
+      expect(merging.preview.counts.planTooLarge).toBe(0);
+      expect((await planOf(b, goalId))!.dates[0]!.options).toEqual(expected);
+      const again = await recordsOf(b);
+      await importInto(b, fromA, { ...product, applyUpdates: true });
+      expect(await recordsOf(b)).toEqual(again); // importing again changes nothing
+      const c = await device("C");
+      await importInto(c, await exportText(b), product);
+      expect((await planOf(c, goalId))!.dates[0]!.options).toEqual(expected);
+    });
+
+    it("at the per-record size limit a decision is refused (RECORD_LIMIT) and an import merge is shown as too large; nothing is written or dropped", async () => {
+      const { a, b, goalId, planId, original, conflictWith } = await conflictSetup();
+      // The most options with which A's conflicting record still fits; the decision would add two more.
+      const n = largestFitting(conflictWith, 100_000);
+      expect(n).toBeGreaterThan(64);
+      await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, conflictWith(range(100_000, n)));
+      const stored = (await planOf(a, goalId))!;
+      expect(planRecordFits(stored)).toBe(true);
+      const before = await recordsOf(a);
+      expect(await codeOf(decidePlanDate(a.db, planId, "2026-11-02", manual(5), canonicalize(stored.dates[0]!)))).toBe("RECORD_LIMIT");
+      expect(await recordsOf(a)).toEqual(before); // no entry, no event, no option removed
+      expect(resolveDate((await planOf(a, goalId))!.dates[0]!, a.deviceId).kind).toBe("conflict"); // still the owner's to decide
+      // A record that fits the rule always exports: the envelope reserve covers its other fields.
+      const fromA = await exportText(a);
+
+      // B keeps other options that fit on their own; merged with A's, the record would not.
+      const onB = (options: SegmentData[]): GoalWeekPlanData => ({ ...original, dates: [{ ...original.dates[0]!, options: sorted(options) }] });
+      const m = largestFitting(onB, 200_000);
+      await putRecord(b.db, registry, GOAL_WEEK_PLANS, planId, onB(range(200_000, m)));
+      const bBefore = await b.db.records.get([GOAL_WEEK_PLANS, planId]);
+      for (const applyUpdates of [false, true]) {
+        const { preview } = await importInto(b, fromA, { ...product, applyUpdates });
+        expect(preview.counts.planTooLarge).toBe(1);
+        expect(preview.counts.planMerge).toBe(0);
+        expect(preview.counts.planIntegrity).toBe(0);
+        expect(await b.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(bBefore); // byte-identical, nothing dropped
+      }
+      expect(await codeOf(exportText(b))).toBe("OK"); // B's own data still exports
+    });
   });
 
   it("a new plan record carrying an undecided date is imported as new with Apply updates off: a third device shows no data for it (D-015, T-228)", async () => {

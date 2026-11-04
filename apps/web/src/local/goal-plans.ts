@@ -20,7 +20,6 @@ import {
   OUTPUT_RECORDS,
   OUTPUT_VALUE_MAX,
   type OutputRecordData,
-  PLAN_OPTIONS_MAX,
   PRODUCT_REGISTRY,
   type Registry,
   type SegmentData,
@@ -36,7 +35,7 @@ import { localDateOf } from "../planning/time.ts";
 import { computeAllocations, segmentFor, type AllocationResult } from "../insights/allocation.ts";
 import { amountBetween, goalDays } from "../insights/actuals.ts";
 import { currentPlan, goalWeekStarts, isClosedWeek, planOn, weekStartOf, workdaysIn, type GoalPlan } from "../insights/goal-plan.ts";
-import { appliedSegment, canWriteEntry, decideEntry, decisionChoices, needsDecision, planDateOn, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
+import { appliedSegment, canWriteEntry, decideEntry, decisionChoices, needsDecision, planDateOn, planRecordFits, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
 import type { LocalDb, RecordRow } from "./db.ts";
 import type { Item } from "./organization.ts";
 import { deviceIdentity, putRecord } from "./records.ts";
@@ -60,8 +59,8 @@ export type GoalPlanErrorCode =
   | "CHANGED"
   /** This device's counter for the date, or a malformed claim about it, is at its maximum: no entry can be written. */
   | "SEQ_LIMIT"
-  /** The decision would give the date more options than the format allows; nothing is written or dropped. */
-  | "OPTIONS_LIMIT";
+  /** The record would pass the per-record size limit; nothing is written or dropped. */
+  | "RECORD_LIMIT";
 
 export class GoalPlanError extends Error {
   readonly code: GoalPlanErrorCode;
@@ -163,14 +162,16 @@ function plansToday(goal: GoalData, today: string): boolean {
  * and the goal view reads it, so the two never disagree). `start`: no record yet, a first segment
  * from today. `owner`: today's date waits for the owner's decision (T-223). `same`: the computed
  * segment is already in effect. `write`: this device's entry for today is to be written.
- * `blocked`: the computed segment differs from the one in effect, but this device's counter for
- * today is at its maximum (`canWriteEntry`), so the recorded plan stays; the goal view says so.
+ * `blocked`: the computed segment differs from the one in effect, but it cannot be written: this
+ * device's counter for today is at its maximum (`canWriteEntry`, reason `counter`), or the record
+ * would pass the per-record size limit (`planRecordFits`, reason `size`). The recorded plan stays,
+ * and the goal view says so.
  * `none`: the goal is not running, or has no deadline or workdays to start a record with.
  */
 export type PlanWriteStep =
   | { kind: "none" | "owner" | "same" }
   | { kind: "start" | "write"; segment: SegmentData }
-  | { kind: "blocked"; segment: SegmentData; inEffect: SegmentData | null };
+  | { kind: "blocked"; reason: "counter" | "size"; segment: SegmentData; inEffect: SegmentData | null };
 
 export function planWriteStep(
   goal: GoalData,
@@ -192,7 +193,8 @@ export function planWriteStep(
   const applied = planDateOn(goalPlans, today, thisDevice);
   const inEffect = applied ? appliedSegment(applied.resolution) : null;
   if (inEffect && canonicalize(inEffect) === canonicalize(segment)) return { kind: "same" };
-  if (!canWriteEntry(todayDate, thisDevice)) return { kind: "blocked", segment, inEffect }; // counter at its maximum
+  if (!canWriteEntry(todayDate, thisDevice)) return { kind: "blocked", reason: "counter", segment, inEffect };
+  if (!planRecordFits(withDate(existing, writeEntry(todayDate, today, thisDevice, segment)))) return { kind: "blocked", reason: "size", segment, inEffect };
   return { kind: "write", segment };
 }
 
@@ -373,8 +375,8 @@ export async function decidePlanDate(
     if (!canWriteEntry(date, device.id)) throw new GoalPlanError("SEQ_LIMIT", "this device's counter for the date is at its maximum; nothing was written");
     const previous = appliedSegment(resolveDate(date, device.id));
     const next = decideEntry(date, from, device.id, chosen);
-    // Options are never dropped to make room: past the format's limit the decision is refused (DECISIONS "Segment merge").
-    if (next.options.length > PLAN_OPTIONS_MAX) throw new GoalPlanError("OPTIONS_LIMIT", "the date would hold more options than the format allows; nothing was written");
+    // Nothing is dropped to make room: past the per-record limit the decision is refused (DECISIONS "Segment merge").
+    if (!planRecordFits(withDate(plan, next))) throw new GoalPlanError("RECORD_LIMIT", "the weekly plan would pass the per-record size limit; nothing was written");
     const entry = next.entries.find((e) => e.device === device.id)!;
     await putRecord(db, registry, GOAL_WEEK_PLANS, planId, withDate(plan, next));
     const event: GoalWeekPlanChoiceData = {

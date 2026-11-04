@@ -471,6 +471,7 @@ function PreviewCounts({ preview }: { preview: ImportPreview }) {
     ["backup.import.count.planMerge", c.planMerge],
     ["backup.import.count.planDecisions", c.planDecisions],
     ["backup.import.count.planIntegrity", c.planIntegrity],
+    ["backup.import.count.planTooLarge", c.planTooLarge],
     ["backup.import.count.appUseDates", c.appUseDates],
   ];
   return (

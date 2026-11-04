@@ -61,8 +61,8 @@ export function GoalPacePanel({ ctx, goalId, goal, definitions }: { ctx: Insight
         </div>
       ) : null}
       {step.kind === "blocked" ? (
-        <p className="notice notice-warn" role="status" data-testid="plan-not-updated">
-          {t("pace.planNotUpdated")}
+        <p className="notice notice-warn" role="status" data-testid="plan-not-updated" data-reason={step.reason}>
+          {t(step.reason === "size" ? "pace.planNotUpdatedSize" : "pace.planNotUpdated")}
         </p>
       ) : null}
       {g.cap?.unreachable ? (
