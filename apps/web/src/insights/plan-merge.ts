@@ -23,17 +23,64 @@ export function candidatesOf(date: Pick<PlanDateData, "entries">): SegmentData[]
   return [...out.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, s]) => s);
 }
 
+/**
+ * Whether the entries of a date cover one another in a cycle (A covered by B, B covered by A, or a
+ * longer loop). An entry can only cover one written before it, so a cycle never arises from the
+ * app's own writes and merges: it is malformed data, a data-integrity issue.
+ */
+export function hasCoverageCycle(date: Pick<PlanDateData, "entries">): boolean {
+  const entries = date.entries;
+  // Edge i -> j: entry i is covered by entry j.
+  const next = entries.map((e) => entries.flatMap((o, j) => (o.device !== e.device && (o.seen[e.device] ?? 0) >= e.seq ? [j] : [])));
+  const state = entries.map(() => 0); // 0 unvisited, 1 on the path, 2 done
+  const visit = (i: number): boolean => {
+    if (state[i] === 1) return true;
+    if (state[i] === 2) return false;
+    state[i] = 1;
+    if (next[i]!.some(visit)) return true;
+    state[i] = 2;
+    return false;
+  };
+  return entries.some((_, i) => visit(i));
+}
+
+/** Whether any date of a weekly plan record has a coverage cycle (refused on import as an integrity issue). */
+export const planHasCoverageCycle = (plan: GoalWeekPlanData) => plan.dates.some(hasCoverageCycle);
+
+/**
+ * Entries that leave no candidate: every entry is covered, which only a coverage cycle can cause.
+ * Shown as a data-integrity issue for the owner to settle, never as a silent "no data".
+ */
+export const isInconsistentDate = (date: Pick<PlanDateData, "entries">) => date.entries.length > 0 && candidatesOf(date).length === 0;
+
+/** Distinct segments of all entries of a date, sorted by canonical JSON (the choices for an inconsistent date). */
+function entrySegments(date: Pick<PlanDateData, "entries">): SegmentData[] {
+  const out = new Map<string, SegmentData>();
+  for (const entry of date.entries) out.set(key(entry.segment), entry.segment);
+  return [...out.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, s]) => s);
+}
+
 export type DateResolution =
   /** One candidate: the same on every device. */
   | { kind: "settled"; segment: SegmentData }
   /** Several candidates: this device's own entry applies while it is a candidate (T-227). */
   | { kind: "conflict"; segment: SegmentData; candidates: SegmentData[] }
   /** Several candidates and none of this device's own: no data until decided (T-228). */
-  | { kind: "undecided"; candidates: SegmentData[] };
+  | { kind: "undecided"; candidates: SegmentData[] }
+  /**
+   * Malformed entries that cover one another so none is a candidate: a data-integrity issue. This
+   * device's own entry still applies if it has one (null otherwise), shown with a warning, and the
+   * owner chooses among the segments of all entries.
+   */
+  | { kind: "inconsistent"; segment: SegmentData | null; candidates: SegmentData[] };
 
 export function resolveDate(date: PlanDateData, thisDevice: string): DateResolution {
   const candidates = candidatesOf(date);
   if (candidates.length === 1) return { kind: "settled", segment: candidates[0]! };
+  if (isInconsistentDate(date)) {
+    const own = date.entries.find((e) => e.device === thisDevice);
+    return { kind: "inconsistent", segment: own?.segment ?? null, candidates: entrySegments(date) };
+  }
   const own = date.entries.find((e) => e.device === thisDevice);
   if (own && candidates.length > 1 && !isCovered(own, date.entries)) return { kind: "conflict", segment: own.segment, candidates };
   return { kind: "undecided", candidates };
@@ -41,6 +88,12 @@ export function resolveDate(date: PlanDateData, thisDevice: string): DateResolut
 
 /** The segment that applies from a date on this device, or null ("no data", T-228). */
 export const appliedSegment = (r: DateResolution): SegmentData | null => (r.kind === "undecided" ? null : r.segment);
+
+/** Whether a date waits for the owner: several candidates (T-223, T-227), or an inconsistent date. */
+export const needsDecision = (date: Pick<PlanDateData, "entries">) => candidatesOf(date).length > 1 || isInconsistentDate(date);
+
+/** The segments the owner can choose for a date that needs a decision. */
+export const decisionChoices = (date: Pick<PlanDateData, "entries">) => (isInconsistentDate(date) ? entrySegments(date) : candidatesOf(date));
 
 function unionOptions(...lists: readonly SegmentData[][]): SegmentData[] {
   const out = new Map<string, SegmentData>();
@@ -90,22 +143,25 @@ export function mergePlans(local: GoalWeekPlanData, incoming: GoalWeekPlanData):
   return { goalId: local.goalId, weekStart: local.weekStart, dates: [...dates.values()].sort((x, y) => (x.from < y.from ? -1 : 1)) };
 }
 
-/** Dates of a record that are undecided or in conflict (more than one candidate). */
+/** Dates of a record that need the owner's decision: undecided or in conflict, or inconsistent. */
 export function conflictDates(plan: GoalWeekPlanData): string[] {
-  return plan.dates.filter((d) => candidatesOf(d).length > 1).map((d) => d.from);
+  return plan.dates.filter(needsDecision).map((d) => d.from);
 }
 
 /**
  * Writes this device's entry for a date (a plan write or an owner decision): `seq` one more than
  * its previous entry for the date, `seen` = every other device's entry now on this device, so the
- * entries the owner saw are covered (DECISIONS "Deciding a date").
+ * entries the owner saw are covered (DECISIONS "Deciding a date"). In well-formed data no other
+ * entry has seen a higher `seq` of this device than its own; if malformed data claims one, the new
+ * `seq` goes past it, so the decision is never covered at once.
  */
 export function writeEntry(date: PlanDateData | undefined, from: string, device: string, segment: SegmentData): PlanDateData {
   const entries = date?.entries ?? [];
   const own = entries.find((e) => e.device === device);
   const seen: Record<string, number> = {};
   for (const e of entries) if (e.device !== device) seen[e.device] = e.seq;
-  const entry: PlanEntryData = { device, seq: (own?.seq ?? 0) + 1, segment, seen };
+  const claimed = Math.max(own?.seq ?? 0, ...entries.filter((e) => e.device !== device).map((e) => e.seen[device] ?? 0));
+  const entry: PlanEntryData = { device, seq: claimed + 1, segment, seen };
   const next: PlanDateData = { from, entries: sortEntries([...entries.filter((e) => e.device !== device), entry]), options: date?.options ?? [] };
   return withConflictOptions(next);
 }

@@ -11,12 +11,23 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AppServices, createServices, ServicesProvider } from "./app-context.tsx";
 import { App } from "./App.tsx";
-import { CORRECTIONS, GOAL_WEEK_ALLOCATIONS, type GoalWeekAllocationData, MAIN_DASHBOARD_ID, SESSIONS, type SessionData } from "./backup/registry.ts";
+import { weekPlanId } from "./backup/derived-id.ts";
+import {
+  CORRECTIONS,
+  GOAL_WEEK_ALLOCATIONS,
+  GOAL_WEEK_PLANS,
+  type GoalWeekAllocationData,
+  type GoalWeekPlanData,
+  MAIN_DASHBOARD_ID,
+  PRODUCT_REGISTRY,
+  SESSIONS,
+  type SessionData,
+} from "./backup/registry.ts";
 import { createGoal } from "./local/goals.ts";
 import { setWeekAllocation } from "./local/goal-plans.ts";
 import { loadInsightRecords } from "./local/insights.ts";
 import { createTask } from "./local/organization.ts";
-import { updateDeviceSettings } from "./local/records.ts";
+import { putRecord, updateDeviceSettings } from "./local/records.ts";
 import { updateSharedPreferences } from "./local/settings.ts";
 import { loadTimer } from "./local/timer.ts";
 import { endSession, pauseSession, recordPastSession, resumeSession, startSession } from "./local/work.ts";
@@ -165,6 +176,32 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     await screen.findByTestId("goal-pace");
     return goalId;
   }
+
+  it("a stored plan date whose entries cover one another shows a data-integrity warning, keeps this device's plan, and can be settled (Codex review)", async () => {
+    const goalId = await goal();
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30"));
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const plan = (await services.db.records.get([GOAL_WEEK_PLANS, planId]))!.data as GoalWeekPlanData;
+    const own = plan.dates[0]!.entries[0]!;
+    const other = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const theirs = { state: "allocated" as const, allocation: { num: 100, den: 1 }, source: "manual" as const };
+    // Written as malformed data may have arrived before this check existed.
+    await putRecord(services.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, planId, {
+      ...plan,
+      dates: [{ ...plan.dates[0]!, entries: [{ ...own, seen: { [other]: 1 } }, { device: other, seq: 1, seen: { [own.device]: own.seq }, segment: theirs }].sort((p, q) => (p.device < q.device ? -1 : 1)) }],
+    });
+    const warning = await screen.findByTestId("plan-conflict");
+    expect(warning.dataset.kind).toBe("inconsistent");
+    expect(warning.textContent).toMatch(/^Data integrity issue: .*This device's version applies until you choose\.$/);
+    expect(screen.getByTestId("today-target").textContent).toBe("30"); // the plan is not hidden
+    const decide = screen.getByTestId("decide");
+    expect(within(decide).getAllByRole("button", { name: "Choose" })).toHaveLength(2);
+    const row = within(decide).getAllByRole("listitem").find((li) => li.textContent!.startsWith("100"))!;
+    fireEvent.click(within(row).getByRole("button", { name: "Choose" }));
+    fireEvent.click(within(await screen.findByTestId("confirm-choice")).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(screen.queryByTestId("plan-conflict")).toBeNull());
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("20")); // 100 over 5 workdays
+  });
 
   it("shows today's target from the recorded plan, the week's and month's targets, and both streaks by default", async () => {
     await goal();

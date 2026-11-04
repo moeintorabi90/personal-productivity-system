@@ -178,6 +178,54 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
     expect(await recordsOf(a)).toEqual(snapshotAfter);
   });
 
+  it("a plan whose entries cover one another is a data-integrity issue: neither imported as new nor merged, and this device's plan stays in effect (Codex review)", async () => {
+    const { a, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const before = await a.db.records.get([GOAL_WEEK_PLANS, planId]);
+    const own = (await planOf(a, goalId))!.dates[0]!.entries[0]!;
+    const [d1, d2] = [crypto.randomUUID(), crypto.randomUUID()];
+    const segment = (num: number) => ({ state: "allocated" as const, allocation: { num, den: 1 }, source: "manual" as const });
+    const withCycle = (text: string, change: (plan: GoalWeekPlanData) => void) =>
+      mutate(text, (doc) => {
+        const env = doc.payload.records[GOAL_WEEK_PLANS].find((e: { id: string }) => e.id === planId);
+        change(env.data);
+        env.contentHash = contentHashOf(env.data);
+        env.version = { ...env.version, [d1]: 1 }; // newer than this device's, so it would be merged
+      });
+    const text = await exportText(a);
+    // Two other devices' entries for Wednesday that each claim to have seen the other.
+    const wednesday = withCycle(text, (plan) => {
+      plan.dates.push({
+        from: "2026-11-04",
+        entries: [
+          { device: d1, seq: 1, seen: { [d2]: 1 }, segment: segment(100) },
+          { device: d2, seq: 1, seen: { [d1]: 1 }, segment: segment(90) },
+        ].sort((p, q) => (p.device < q.device ? -1 : 1)) as GoalWeekPlanData["dates"][number]["entries"],
+        options: [],
+      });
+    });
+    const merging = await importInto(a, wednesday, { ...product, applyUpdates: true });
+    expect(merging.preview.counts.planIntegrity).toBe(1);
+    expect(merging.preview.counts.planMerge).toBe(0);
+    expect(merging.preview.counts.planDecisions).toBe(0);
+    expect(await a.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(before); // left unchanged
+    expect(resolveDate((await planOf(a, goalId))!.dates[0]!, a.deviceId)).toEqual({ kind: "settled", segment: own.segment });
+
+    // The reported shape, Monday's own entry and another device's covering each other, arriving as a new record.
+    const monday = withCycle(text, (plan) => {
+      plan.dates[0]!.entries = [
+        { ...own, seen: { [d1]: 1 } },
+        { device: d1, seq: 1, seen: { [own.device]: own.seq }, segment: segment(90) },
+      ].sort((p, q) => (p.device < q.device ? -1 : 1));
+    });
+    const c = await device("C");
+    const fresh = await importInto(c, monday, product);
+    expect(fresh.preview.counts.planIntegrity).toBe(1);
+    expect(fresh.preview.counts.planDecisions).toBe(0);
+    expect(await planOf(c, goalId)).toBeUndefined(); // not imported as a silent "no data" week
+    expect(await c.db.records.get([GOALS, goalId])).toBeTruthy(); // the rest of the file is imported
+  });
+
   it("a new plan record carrying an undecided date is imported as new with Apply updates off: a third device shows no data for it (D-015, T-228)", async () => {
     const { a, b, goalId } = await conflictOnWednesday();
     await importInto(a, await exportText(b), { ...product, applyUpdates: true });

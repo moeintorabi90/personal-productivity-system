@@ -12,8 +12,12 @@ import {
   candidatesOf,
   canChangeChoice,
   conflictDates,
+  decisionChoices,
   eventStatus,
+  hasCoverageCycle,
+  isInconsistentDate,
   mergePlans,
+  needsDecision,
   orderEvents,
   planDateOn,
   resolveDate,
@@ -40,6 +44,68 @@ const dateOf = (p: GoalWeekPlanData, from = MON) => p.dates.find((d) => d.from =
 function decide(p: GoalWeekPlanData, device: string, chosen: SegmentData, from = MON): GoalWeekPlanData {
   return withDate(p, writeEntry(dateOf(p, from), from, device, chosen));
 }
+
+describe("18. malformed entries that cover one another (data integrity, Codex review 2026-11-04)", () => {
+  // The reported case: each entry claims to have seen the other, so both are covered.
+  const cyclic: PlanDateData = {
+    from: MON,
+    entries: [
+      { device: A, seq: 1, seen: { [B]: 1 }, segment: x },
+      { device: B, seq: 1, seen: { [A]: 1 }, segment: y },
+    ],
+    options: [],
+  };
+
+  it("is detected, needs the owner's decision, and does not hide this device's own plan", () => {
+    expect(candidatesOf(cyclic)).toEqual([]);
+    expect(hasCoverageCycle(cyclic)).toBe(true);
+    expect(isInconsistentDate(cyclic)).toBe(true);
+    expect(needsDecision(cyclic)).toBe(true);
+    expect(conflictDates(record(cyclic))).toEqual([MON]); // counted, not silently "no data"
+    const choices = [x, y].sort((a, b) => (canonicalize(a) < canonicalize(b) ? -1 : 1));
+    expect(decisionChoices(cyclic)).toEqual(choices);
+    expect(resolveDate(cyclic, A)).toEqual({ kind: "inconsistent", segment: x, candidates: choices });
+    expect(appliedSegment(resolveDate(cyclic, A))).toEqual(x); // A's own plan still applies, with the warning
+    expect(resolveDate(cyclic, C)).toEqual({ kind: "inconsistent", segment: null, candidates: choices });
+    expect(canChangeChoice(cyclic)).toBe(false);
+  });
+
+  it("a decision settles it on a device in the cycle and on another device", () => {
+    for (const [device, chosen] of [[A, y], [B, x], [C, x]] as const) {
+      const decided = writeEntry(cyclic, MON, device, chosen);
+      expect(candidatesOf(decided)).toEqual([chosen]);
+      expect(resolveDate(decided, device)).toEqual({ kind: "settled", segment: chosen });
+      expect(needsDecision(decided)).toBe(false);
+    }
+    // A malformed `seen` that claims a higher counter of the deciding device is passed, so the decision is never covered at once.
+    const claimsMore: PlanDateData = { ...cyclic, entries: [cyclic.entries[0]!, { device: B, seq: 1, seen: { [A]: 1, [C]: 5 }, segment: y }] };
+    const byC = writeEntry(claimsMore, MON, C, x);
+    expect(byC.entries.find((e) => e.device === C)!.seq).toBe(6);
+    expect(candidatesOf(byC)).toEqual([x]);
+  });
+
+  it("a longer loop is a cycle too; ordinary coverage, conflicts, and decisions are unchanged (T-223, T-227)", () => {
+    const loop: PlanDateData = {
+      from: MON,
+      entries: [
+        { device: A, seq: 1, seen: { [C]: 1 }, segment: x },
+        { device: B, seq: 1, seen: { [A]: 1 }, segment: y },
+        { device: C, seq: 1, seen: { [B]: 1 }, segment: x },
+      ],
+      options: [],
+    };
+    expect(hasCoverageCycle(loop)).toBe(true);
+    const conflict = dateOf(merge(one(A, MON, x), one(B, MON, y)));
+    expect(hasCoverageCycle(conflict)).toBe(false);
+    expect(isInconsistentDate(conflict)).toBe(false);
+    expect(resolveDate(conflict, A)).toMatchObject({ kind: "conflict", segment: x });
+    expect(decisionChoices(conflict)).toEqual(candidatesOf(conflict));
+    const decided = writeEntry(conflict, MON, A, y);
+    expect(decided.entries.find((e) => e.device === A)).toMatchObject({ seq: 2, seen: { [B]: 1 } }); // as before: own seq + 1
+    expect(hasCoverageCycle(decided)).toBe(false);
+    expect(resolveDate(decided, B)).toEqual({ kind: "settled", segment: y });
+  });
+});
 
 describe("18. segment merge (T-227)", () => {
   it("segments with different dates merge: Monday and Tuesday use the phone's, Wednesday on the laptop's, with no conflict", () => {

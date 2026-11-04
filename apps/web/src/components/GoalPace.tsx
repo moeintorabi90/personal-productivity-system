@@ -12,7 +12,7 @@ import { type GoalData, type GoalWeekPlanData, type OutputDefinitionData, type P
 import { formatLocalDate, type MessageKey, type Translate } from "../i18n/index.ts";
 import { type Fraction, roundForDisplay, toNumber } from "../insights/fraction.ts";
 import { goalWeekStarts, workdaysIn } from "../insights/goal-plan.ts";
-import { appliedSegment, canChangeChoice, candidatesOf, eventStatus, orderEvents, resolveDate } from "../insights/plan-merge.ts";
+import { appliedSegment, canChangeChoice, decisionChoices, eventStatus, needsDecision, orderEvents, resolveDate } from "../insights/plan-merge.ts";
 import { decidePlanDate, GoalPlanError, manualAmountOn, moveWeekAllocation, setWeekAllocation, weekTakesManual } from "../local/goal-plans.ts";
 import { addDays } from "../planning/time.ts";
 import { goalUnit } from "../local/work.ts";
@@ -342,7 +342,7 @@ function WeeklyPlans({ ctx, goalId, goal, definitions, plans }: { ctx: InsightsC
   const sorted = [...plans].sort((a, b) => b.weekStart.localeCompare(a.weekStart));
   if (sorted.length === 0) return <p className="hint" data-testid="weekly-plans-empty">{t("pace.noRecordedPlans")}</p>;
   return (
-    <details open={sorted.some((p) => p.dates.some((d) => candidatesOf(d).length > 1))} data-testid="weekly-plans">
+    <details open={sorted.some((p) => p.dates.some(needsDecision))} data-testid="weekly-plans">
       <summary>{t("pace.recordedPlans")}</summary>
       {sorted.map((plan) => (
         <div key={plan.weekStart} className="day-panel">
@@ -366,10 +366,9 @@ function PlanDateRow({ ctx, goalId, goal, plan, date, definitions }: { ctx: Insi
   const [choosing, setChoosing] = useState<SegmentData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const resolution = resolveDate(date, ctx.deviceId);
-  const candidates = candidatesOf(date);
-  const conflict = candidates.length > 1;
+  const conflict = needsDecision(date);
   const changeable = canChangeChoice(date);
-  const offered = conflict ? candidates : changeable ? date.options : [];
+  const offered = conflict ? decisionChoices(date) : changeable ? date.options : [];
   const applied = appliedSegment(resolution);
   const events = ctx.planning.choices.filter((c) => c.data.goalId === goalId && c.data.weekStart === plan.weekStart && c.data.from === date.from);
   const planId = ctx.planning.plans.find((p) => p.data.goalId === goalId && p.data.weekStart === plan.weekStart)!.id;
@@ -378,8 +377,12 @@ function PlanDateRow({ ctx, goalId, goal, plan, date, definitions }: { ctx: Insi
       <div className="item-main">
         <span className="item-title">{t("pace.fromDate", { date: formatLocalDate(date.from, prefs, "medium") })}</span> {segmentText(t, goal, applied, definitions)}
         {conflict ? (
-          <p className="notice notice-warn" data-testid="plan-conflict">
-            {resolution.kind === "undecided" ? t("pace.conflictNoData") : t("pace.conflictOwn")}
+          <p className="notice notice-warn" data-testid="plan-conflict" data-kind={resolution.kind}>
+            {resolution.kind === "inconsistent"
+              ? t(resolution.segment ? "pace.inconsistentOwn" : "pace.inconsistentNoData")
+              : resolution.kind === "undecided"
+                ? t("pace.conflictNoData")
+                : t("pace.conflictOwn")}
           </p>
         ) : null}
         {offered.length > 0 && goal.archivedAt === null ? (

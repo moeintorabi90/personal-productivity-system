@@ -35,7 +35,7 @@ import { localDateOf } from "../planning/time.ts";
 import { computeAllocations, segmentFor, type AllocationResult } from "../insights/allocation.ts";
 import { amountBetween, goalDays } from "../insights/actuals.ts";
 import { currentPlan, goalWeekStarts, isClosedWeek, planOn, weekStartOf, workdaysIn, type GoalPlan } from "../insights/goal-plan.ts";
-import { appliedSegment, candidatesOf, planDateOn, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
+import { appliedSegment, decisionChoices, needsDecision, planDateOn, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
 import type { LocalDb, RecordRow } from "./db.ts";
 import type { Item } from "./organization.ts";
 import { deviceIdentity, putRecord } from "./records.ts";
@@ -185,7 +185,7 @@ export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "o
     const goalPlans = plans.filter((p) => p.data.goalId === goal.id).map((p) => p.data);
     const applied = planDateOn(goalPlans, today, device.id);
     const todayDate = existing.dates.find((d) => d.from === today);
-    if (todayDate && candidatesOf(todayDate).length > 1) continue; // undecided or in conflict: the owner decides
+    if (todayDate && needsDecision(todayDate)) continue; // undecided, in conflict, or inconsistent: the owner decides
     const inEffect = applied ? appliedSegment(applied.resolution) : null;
     if (inEffect && canonicalize(inEffect) === canonicalize(segment)) continue;
     await putRecord(db, registry, GOAL_WEEK_PLANS, id, withDate(existing, writeEntry(todayDate, today, device.id, segment)));
@@ -331,8 +331,7 @@ export async function decidePlanDate(
     const date = plan.dates.find((d) => d.from === from);
     if (!date) throw new GoalPlanError("NOT_FOUND", "no such date");
     if (canonicalize(date) !== shown) throw new GoalPlanError("CHANGED", "the date changed; review it again");
-    const candidates = candidatesOf(date);
-    const offered = candidates.length > 1 ? candidates : date.options;
+    const offered = needsDecision(date) ? decisionChoices(date) : date.options;
     if (!offered.some((s) => canonicalize(s) === canonicalize(chosen))) throw new GoalPlanError("NOT_A_CHOICE", "choose one of the recorded versions");
     const device = await deviceIdentity(db);
     const previous = appliedSegment(resolveDate(date, device.id));

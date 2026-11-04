@@ -18,7 +18,7 @@ import {
   SESSIONS,
 } from "./registry.ts";
 import { compareVersions, isContainedIn, mergeVersions, bumpVersion } from "./versions.ts";
-import { conflictDates, mergePlans } from "../insights/plan-merge.ts";
+import { conflictDates, hasCoverageCycle, mergePlans, planHasCoverageCycle } from "../insights/plan-merge.ts";
 
 /** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
 export type ItemCategory =
@@ -46,6 +46,25 @@ export interface PreviewItem {
    * integrity issue, so nothing changes) and how many dates would newly need the owner's decision.
    */
   planMerge?: { data: GoalWeekPlanData | null; decisions: number };
+  /**
+   * A new weekly plan whose entries cover one another in a cycle: malformed, a data-integrity issue.
+   * It is counted with the plans that have one and is not imported.
+   */
+  planIntegrity?: true;
+}
+
+/**
+ * The merge of a weekly plan, or null when it has a data-integrity issue: the same device and
+ * counter with different content, entries in the backup that cover one another in a cycle, or a
+ * cycle that only the merge creates. A date that already had a cycle here (written before this
+ * check existed) does not block the merge; it is shown for the owner to settle.
+ */
+function mergeWeekPlan(here: GoalWeekPlanData, incoming: GoalWeekPlanData): GoalWeekPlanData | null {
+  if (planHasCoverageCycle(incoming)) return null;
+  const merged = mergePlans(here, incoming);
+  if (!merged) return null;
+  const cycleHere = new Set(here.dates.filter(hasCoverageCycle).map((d) => d.from));
+  return merged.dates.some((d) => !cycleHere.has(d.from) && hasCoverageCycle(d)) ? null : merged;
 }
 
 /**
@@ -385,10 +404,11 @@ async function classifyAll(db: LocalDb, payload: BackupPayload, registry: Regist
       };
       if (item.category === "planMerge") {
         const here = state.record!.data as GoalWeekPlanData;
-        const merged = mergePlans(here, envelope.data as GoalWeekPlanData);
+        const merged = mergeWeekPlan(here, envelope.data as GoalWeekPlanData);
         const before = new Set(conflictDates(here));
         item.planMerge = { data: merged, decisions: merged ? conflictDates(merged).filter((d) => !before.has(d)).length : 0 };
       }
+      if (item.category === "new" && type === GOAL_WEEK_PLANS && planHasCoverageCycle(envelope.data as GoalWeekPlanData)) item.planIntegrity = true;
       items.push(item);
     }
   }
@@ -427,10 +447,10 @@ function countItems(items: PreviewItem[], carried: { conflicts: unknown[]; repla
   const counts = emptyCounts();
   for (const item of items) {
     if (item.category === "new" && item.type === APP_USE_DAYS) counts.appUseDates += 1;
-    else if (item.category === "planMerge" && item.planMerge?.data === null) counts.planIntegrity += 1;
+    else if ((item.category === "planMerge" && item.planMerge?.data === null) || item.planIntegrity) counts.planIntegrity += 1;
     else counts[item.category] += 1;
     if (item.planMerge) counts.planDecisions += item.planMerge.decisions;
-    if (item.category === "new" && item.type === GOAL_WEEK_PLANS && !item.incoming.deleted) {
+    if (item.category === "new" && item.type === GOAL_WEEK_PLANS && !item.incoming.deleted && !item.planIntegrity) {
       counts.planDecisions += conflictDates(item.incoming.envelope.data as GoalWeekPlanData).length;
     }
   }
@@ -516,7 +536,7 @@ export async function applyImport(
       const incoming = item.incoming;
       switch (item.category) {
         case "new":
-          if (!incoming.deleted) {
+          if (!incoming.deleted && !item.planIntegrity) {
             await db.records.put({ type: item.type, ...incoming.envelope });
             written.push({ type: item.type, id: item.id, data: incoming.envelope.data });
           }
