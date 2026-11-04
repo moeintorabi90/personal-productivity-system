@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { AddressInfo } from "node:net";
 import type { SessionResponse } from "@pps/shared";
 import { createApp } from "../src/app.ts";
 import type { Config } from "../src/config.ts";
@@ -7,6 +6,7 @@ import { migrate } from "../src/db/migrate.ts";
 import { createPgliteDb } from "../src/db/pglite.ts";
 import { createPostgresDb } from "../src/db/postgres.ts";
 import type { Db } from "../src/db/types.ts";
+import { listenForFetch } from "./listen.ts";
 
 /**
  * In-memory PGlite by default. When TEST_DATABASE_URL is set, uses that real PostgreSQL
@@ -53,9 +53,8 @@ export interface TestServer {
 export async function startTestServer(options: { config?: Partial<Config>; db?: Db } = {}): Promise<TestServer> {
   const db = options.db ?? (await createTestDb());
   await migrate(db);
-  const server = createApp(db, testConfig(options.config)).listen(0, "127.0.0.1");
-  await new Promise<void>((resolve) => server.once("listening", () => resolve()));
-  const { port } = server.address() as AddressInfo;
+  const app = createApp(db, testConfig(options.config));
+  const { server, port } = await listenForFetch(() => app.listen(0, "127.0.0.1"));
   return {
     db,
     baseUrl: `http://127.0.0.1:${port}`,

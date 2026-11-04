@@ -7,7 +7,7 @@
  */
 import "fake-indexeddb/auto";
 import { webcrypto } from "node:crypto";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AppServices, createServices, ServicesProvider } from "./app-context.tsx";
 import { App } from "./App.tsx";
@@ -37,6 +37,12 @@ import { loadTimer } from "./local/timer.ts";
 import { endSession, pauseSession, recordPastSession, resumeSession, startSession } from "./local/work.ts";
 
 if (!globalThis.crypto?.subtle) Object.defineProperty(globalThis, "crypto", { value: webcrypto, configurable: true });
+
+// Views here load from IndexedDB through live queries. Measured alone, opening a goal page takes about
+// 70–210 ms, but under machine load (other processes, little free memory) such loads passed the
+// default 1 s wait in a different test each run (`goal-pace`, `timer-bar`); the wait is for data to
+// arrive, not a speed check, so `findBy*` and `waitFor` wait up to 5 s here (2026-11-05).
+configure({ asyncUtilTimeout: 5_000 });
 
 let services: AppServices;
 let dbCounter = 0;

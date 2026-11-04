@@ -1,4 +1,3 @@
-import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { createApp, createPgliteDb, type Db, migrate } from "@pps/api";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
@@ -16,6 +15,7 @@ import {
 import { createOwnerAccount, signIn } from "./account.ts";
 import { ApiClient, type FetchLike, NetworkError } from "./api-client.ts";
 import { SyncEngine } from "./sync-engine.ts";
+import { listenForFetch } from "../../../api/test/listen.ts";
 
 /**
  * End-to-end sync between two simulated devices: the real client sync engine and local
@@ -40,9 +40,9 @@ beforeEach(async () => {
     setupToken: null,
     sessionTtlDays: 365,
   });
-  http = app.listen(0, "127.0.0.1");
-  await new Promise<void>((resolve) => http.once("listening", () => resolve()));
-  baseUrl = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
+  const { server, port } = await listenForFetch(() => app.listen(0, "127.0.0.1"));
+  http = server;
+  baseUrl = `http://127.0.0.1:${port}`;
 });
 
 afterEach(async () => {
