@@ -966,3 +966,70 @@ describe("13. the version-8 sample", () => {
     expect(await codeOf(importInto(c, text, product))).toBe("OK");
   });
 });
+
+describe("weekly plan options are distinct and in canonical order (independent review, 2026-11-05)", () => {
+  const manual = (num: number): SegmentData => ({ state: "allocated", allocation: { num, den: 1 }, source: "manual" });
+  const byKey = (list: SegmentData[]) => [...list].sort((p, q) => (canonicalize(p) < canonicalize(q) ? -1 : 1));
+  /** `text` with the week plan's first date given `options`, content hashes and the integrity hash computed again. */
+  const withOptions = (text: string, planId: string, options: SegmentData[]) =>
+    mutate(text, (doc) => {
+      const env = doc.payload.records[GOAL_WEEK_PLANS].find((e: { id: string }) => e.id === planId);
+      env.data.dates[0].options = options;
+      env.contentHash = contentHashOf(env.data);
+    });
+
+  it("a backup whose settled date repeats an option, or lists options out of order, is refused before anything is written", async () => {
+    const { a, b, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const text = await exportText(a);
+    const settled = (await planOf(a, goalId))!.dates[0]!;
+    const x = settled.entries[0]!.segment;
+    // [x, x] on a settled date would otherwise offer "Change choice" between two equal options.
+    expect(canChangeChoice({ ...settled, options: [x, x] })).toBe(true);
+    const [low, high] = byKey([x, manual(7)]);
+    const malformed = [withOptions(text, planId, [x, x]), withOptions(text, planId, [high!, low!])];
+    const c = await device("C"); // C has no plan yet (a new record); B already holds it (a merge)
+    for (const file of malformed) {
+      await expect(openBackupFile(blobOf(file), registry)).rejects.toThrow(/^INVALID_PAYLOAD: .*options must be distinct and sorted by canonical JSON/);
+      for (const d of [b, c]) {
+        const before = await snapshot(d.db);
+        const imports = await d.db.importLog.count();
+        for (const applyUpdates of [false, true]) expect(await codeOf(importInto(d, file, { ...product, applyUpdates }))).toBe("INVALID_PAYLOAD");
+        expect(await snapshot(d.db)).toEqual(before);
+        expect(await d.db.importLog.count()).toBe(imports);
+      }
+    }
+    // The same options, distinct and in order, are accepted.
+    expect(await codeOf(importInto(c, withOptions(text, planId, [low!, high!]), product))).toBe("OK");
+    expect((await planOf(c, goalId))!.dates[0]!.options).toEqual([low, high]);
+  });
+
+  it("a local write with repeated or out-of-order options is refused and changes nothing", async () => {
+    const { a, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const plan = (await planOf(a, goalId))!;
+    const x = plan.dates[0]!.entries[0]!.segment;
+    const [low, high] = byKey([x, manual(7)]);
+    const before = await snapshot(a.db);
+    for (const options of [[x, x], [high!, low!]]) {
+      const data = { ...plan, dates: [{ ...plan.dates[0]!, options }] };
+      await expect(putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, data)).rejects.toThrow(/options must be distinct and sorted by canonical JSON/);
+    }
+    expect(await snapshot(a.db)).toEqual(before);
+  });
+
+  it("more than 64 distinct options in canonical order are accepted on import, as a new record and in a merge, while the record fits", async () => {
+    const { a, b, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const x = (await planOf(a, goalId))!.dates[0]!.entries[0]!.segment;
+    const options = byKey([x, ...Array.from({ length: 80 }, (_, i) => manual(100_000 + i))]);
+    const file = withOptions(await exportText(a), planId, options);
+    await expect(openBackupFile(blobOf(file), registry)).resolves.toBeDefined();
+    const c = await device("C");
+    expect(await codeOf(importInto(c, file, product))).toBe("OK"); // a new record
+    expect((await planOf(c, goalId))!.dates[0]!.options).toEqual(options);
+    const { preview } = await importInto(b, file, { ...product, applyUpdates: true }); // a merge into B's record
+    expect(preview.counts.planMerge).toBe(1);
+    expect((await planOf(b, goalId))!.dates[0]!.options).toEqual(options);
+  });
+});

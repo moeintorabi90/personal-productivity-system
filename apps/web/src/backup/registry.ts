@@ -3,6 +3,7 @@ import { z } from "zod";
 import { isLocalDate, localDateOf } from "../planning/time.ts";
 import { sessionTimesProblem } from "../work/session-time.ts";
 import { appUseDayId, estimateCaptureId, planChoiceId, weekAllocationId, weekPlanId } from "./derived-id.ts";
+import { canonicalize } from "./jcs.ts";
 import { SHARED_PREFERENCES_ID } from "./limits.ts";
 
 /**
@@ -997,7 +998,12 @@ export const goalWeekPlanSchema = z
               .refine((list) => list.every((e, i) => i === 0 || e.device > list[i - 1]!.device), { message: "entries must be sorted by distinct device" }),
             // No count limit (owner, 2026-11-04): options only grow, and the record as a whole stays within
             // MAX_ENVELOPE_BYTES: checked on reading a file, and on the exact envelope before every write and merge.
-            options: z.array(segmentSchema),
+            // Distinct and in canonical-JSON order, as the app writes them: a file with duplicates or another
+            // order is refused, never normalized, so equal content keeps one hash (review, 2026-11-05).
+            options: z.array(segmentSchema).refine(
+              (list) => list.map((s) => canonicalize(s)).every((k, i, keys) => i === 0 || k > keys[i - 1]!),
+              { message: "options must be distinct and sorted by canonical JSON" },
+            ),
           })
           .strict(),
       )
