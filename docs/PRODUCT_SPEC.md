@@ -312,6 +312,7 @@ Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-241 (DECIS
 - [ ] Recurring tasks are evaluated per occurrence; a session can optionally be assigned to a specific occurrence without a planned block (T-190).
 - [ ] Elapsed time shows while work is ongoing; accuracy is calculated only after explicit completion, shown in minutes and percentage (T-191).
 - [ ] Sessions without a task or project stay in a separate "No task" / "No project" category, so totals are not silently reduced (T-192).
+- [ ] Work time by project follows the project in each session's snapshot, so moving a task to another project does not move its earlier sessions; a session recorded with no project stays under "No project" (T-242).
 - [ ] Statistics show sample counts and distinguish "no data for this period" from a real zero (T-193).
 
 **Output units and output rate**

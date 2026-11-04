@@ -60,9 +60,9 @@ export function MetricBody({ ctx, metric, window, size, goalId }: { ctx: Insight
       );
     }
     case "workTime": {
-      const totals = workTotals(ctx.work.sessions, range, ctx.zone, ctx.tasks, ctx.projectNames);
+      const totals = workTotals(ctx.work.sessions, range, ctx.zone, ctx.projectNames);
       if (totals.sessions === 0) return <NoData />;
-      const points = buckets.map((b) => ({ label: label(b), value: workTotals(ctx.work.sessions, b, ctx.zone, ctx.tasks, ctx.projectNames).minutes }));
+      const points = buckets.map((b) => ({ label: label(b), value: workTotals(ctx.work.sessions, b, ctx.zone, ctx.projectNames).minutes }));
       return (
         <div data-testid="metric-workTime">
           <p className="metric-number">{formatMinutes(t, totals.minutes)}</p>

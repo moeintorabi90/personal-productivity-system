@@ -82,17 +82,40 @@ describe("9. honest reports (T-192, T-193)", () => {
       session("2026-11-02T12:00:00Z", 30, {}, [{ start: "2026-11-02T12:10:00.000Z", end: "2026-11-02T12:30:00.000Z" }]),
       session("2026-11-02T14:00:00Z", 30, { deletedAt: "2026-11-02T15:00:00.000Z" }),
     ];
-    const totals = workTotals(sessions, { from: "2026-11-02", to: "2026-11-02" }, "UTC", tasks, new Map());
+    const totals = workTotals(sessions, { from: "2026-11-02", to: "2026-11-02" }, "UTC", new Map());
     expect(totals).toMatchObject({ minutes: 85, sessions: 3, noTaskMinutes: 15, noTaskSessions: 1 });
     expect(totals.byProject).toEqual([{ projectId: null, name: null, minutes: 85, sessions: 3 }]);
     expect(totals.byProject.reduce((s, p) => s + p.minutes, 0)).toBe(totals.minutes);
-    expect(workTotals(sessions, { from: "2026-11-05", to: "2026-11-05" }, "UTC", tasks, new Map())).toMatchObject({ minutes: 0, sessions: 0 }); // no data: zero samples
+    expect(workTotals(sessions, { from: "2026-11-05", to: "2026-11-05" }, "UTC", new Map())).toMatchObject({ minutes: 0, sessions: 0 }); // no data: zero samples
+  });
+
+  it("a session counts under the project in its snapshot (T-242): no project there is \"No project\", a session without a task is also \"No task\"", () => {
+    const PA = "aaaaaaaa-0000-4000-8000-00000000000a";
+    const inA = { taskTitle: "Draft", projectId: PA, projectName: "Alpha (then)", workstreamId: null, workstreamName: null };
+    const list = [
+      session("2026-11-02T08:00:00Z", 40, { snapshot: inA }), // recorded under A
+      session("2026-11-02T10:00:00Z", 20), // recorded with no project
+      session("2026-11-02T12:00:00Z", 15, { taskId: null, snapshot: null }), // no task
+    ];
+    const day = { from: "2026-11-02", to: "2026-11-02" };
+    expect(workTotals(list, day, "UTC", new Map([[PA, "Alpha"]]))).toEqual({
+      minutes: 75,
+      sessions: 3,
+      noTaskMinutes: 15,
+      noTaskSessions: 1,
+      byProject: [
+        { projectId: PA, name: "Alpha", minutes: 40, sessions: 1 }, // the project's current name
+        { projectId: null, name: null, minutes: 35, sessions: 2 }, // the session with no project and the one with no task
+      ],
+    });
+    // Without a current name for A (e.g. the project is not on this device), the name kept in the snapshot.
+    expect(workTotals(list, day, "UTC", new Map()).byProject[0]).toEqual({ projectId: PA, name: "Alpha (then)", minutes: 40, sessions: 1 });
   });
 
   it("a session under a minute counts on its start date in the report's zone, not its stored zone; sessions with minutes are unchanged (D-020; review, 2026-11-05)", () => {
     const monday = { from: "2026-11-02", to: "2026-11-02" };
     const tuesday = { from: "2026-11-03", to: "2026-11-03" };
-    const totals = (list: ReturnType<typeof session>[], range: typeof monday, zone: string) => workTotals(list, range, zone, tasks, new Map());
+    const totals = (list: ReturnType<typeof session>[], range: typeof monday, zone: string) => workTotals(list, range, zone, new Map());
     // 20 seconds from 21:00 UTC on Monday: 00:30 on Tuesday in Tehran, where it was recorded.
     const short = session("2026-11-02T21:00:00Z", 1 / 3, { timeZone: "Asia/Tehran", localDate: "2026-11-03" });
     expect(totals([short], monday, "UTC")).toMatchObject({ minutes: 0, sessions: 1 });

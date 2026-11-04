@@ -106,14 +106,19 @@ export function plannedVersusActual(
 export interface WorkTotals {
   minutes: number;
   sessions: number;
-  /** Per project (`null`: "No project"), with "No task" counted separately (T-192). */
+  /** Per project of each session's snapshot (`null`: "No project"; T-242), with "No task" counted separately (T-192). */
   byProject: { projectId: string | null; name: string | null; minutes: number; sessions: number }[];
   noTaskMinutes: number;
   noTaskSessions: number;
 }
 
-/** Work time in a range, with nothing silently left out: totals equal the sum of the categories. */
-export function workTotals(sessions: readonly Item<SessionData>[], range: DateRange, zone: string, tasks: ReadonlyMap<string, TaskDefinitionData>, projectNames: ReadonlyMap<string, string>): WorkTotals {
+/**
+ * Work time in a range, with nothing silently left out: totals equal the sum of the categories. A
+ * session counts under the project recorded in its snapshot, not its task's current project, so
+ * moving a task never moves earlier sessions; no project there (or no task) is "No project" (T-242).
+ * The label is the project's current name, else the name kept in the snapshot.
+ */
+export function workTotals(sessions: readonly Item<SessionData>[], range: DateRange, zone: string, projectNames: ReadonlyMap<string, string>): WorkTotals {
   const byProject = new Map<string, WorkTotals["byProject"][number]>();
   let minutes = 0;
   let count = 0;
@@ -130,7 +135,7 @@ export function workTotals(sessions: readonly Item<SessionData>[], range: DateRa
       noTaskMinutes += m;
       noTaskSessions += 1;
     }
-    const projectId = s.data.taskId ? (tasks.get(s.data.taskId)?.projectId ?? s.data.snapshot?.projectId ?? null) : null;
+    const projectId = s.data.snapshot?.projectId ?? null;
     const k = projectId ?? "";
     const entry = byProject.get(k) ?? { projectId, name: projectId ? (projectNames.get(projectId) ?? s.data.snapshot?.projectName ?? null) : null, minutes: 0, sessions: 0 };
     entry.minutes += m;

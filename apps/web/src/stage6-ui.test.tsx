@@ -29,7 +29,7 @@ import {
 import { createGoal } from "./local/goals.ts";
 import { setWeekAllocation } from "./local/goal-plans.ts";
 import { loadInsightRecords } from "./local/insights.ts";
-import { createTask } from "./local/organization.ts";
+import { createProject, createTask, updateTask } from "./local/organization.ts";
 import { envelopeFits, nowIso } from "./backup/envelope.ts";
 import { deviceIdentity, plannedWriteEnvelope, putRecord, toEnvelope, updateDeviceSettings } from "./local/records.ts";
 import { updateSharedPreferences } from "./local/settings.ts";
@@ -438,6 +438,31 @@ describe("9–10. reports and units (T-192 to T-196)", () => {
     expect(work.textContent).toMatch(/No task: 15 min/);
     expect(screen.getAllByTestId("no-data").length).toBeGreaterThan(0); // e.g. output rate with no outputs
     expect(screen.getByTestId("metric-dictionary").textContent).toMatch(/a recorded 0 counts/);
+  });
+
+  it("moving a task to another project leaves its earlier sessions under the project they were recorded in, and an unfiled one under \"No project\" (T-242)", async () => {
+    await renderApp(async (s) => {
+      const alpha = await createProject(s.db, { name: "Alpha" });
+      const beta = await createProject(s.db, { name: "Beta" });
+      const draft = await createTask(s.db, { title: "Draft", projectId: alpha });
+      const notes = await createTask(s.db, { title: "Notes" });
+      at("2026-11-03T12:00:00Z");
+      await recordPastSession(s.db, { date: "2026-11-03", startTime: "08:00", durationMinutes: 40, taskId: draft });
+      await recordPastSession(s.db, { date: "2026-11-03", startTime: "09:00", durationMinutes: 20, taskId: notes });
+      await recordPastSession(s.db, { date: "2026-11-03", startTime: "10:00", durationMinutes: 15 });
+      at("2026-11-04T12:00:00Z");
+      // Both tasks are moved to Beta after their sessions; the session and task records are not otherwise touched.
+      await updateTask(s.db, draft, { projectId: beta });
+      await updateTask(s.db, notes, { projectId: beta });
+    });
+    await goTo("Reports");
+    const work = (await screen.findAllByTestId("metric-workTime"))[0]!;
+    expect(work.textContent).toMatch(/1 h 15 min/); // total and session count unchanged by the moves
+    expect(work.textContent).toMatch(/sample: 3/);
+    expect(work.textContent).toMatch(/Alpha: 40 min/);
+    expect(work.textContent).toMatch(/No project: 35 min/);
+    expect(work.textContent).toMatch(/No task: 15 min/);
+    expect(work.textContent).not.toMatch(/Beta/);
   });
 
   it("unit suggestions fill the definition form and a custom unit is still accepted", async () => {
