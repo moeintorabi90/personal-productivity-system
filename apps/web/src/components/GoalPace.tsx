@@ -13,7 +13,7 @@ import { formatLocalDate, type MessageKey, type Translate } from "../i18n/index.
 import { type Fraction, roundForDisplay, toNumber } from "../insights/fraction.ts";
 import { goalWeekStarts, workdaysIn } from "../insights/goal-plan.ts";
 import { appliedSegment, canChangeChoice, canWriteEntry, decisionChoices, eventStatus, needsDecision, orderEvents, resolveDate } from "../insights/plan-merge.ts";
-import { decidePlanDate, GoalPlanError, manualAmountOn, manualAmounts, moveWeekAllocation, planWriteStep, setWeekAllocation, weekTakesManual } from "../local/goal-plans.ts";
+import { decidePlanDate, GoalPlanError, manualAmountOn, manualAmounts, moveWeekAllocation, planWriteFits, planWriteStep, setWeekAllocation, weekTakesManual } from "../local/goal-plans.ts";
 import { addDays } from "../planning/time.ts";
 import { goalUnit } from "../local/work.ts";
 import { goalInsight, type InsightsCtx } from "./insights-hooks.ts";
@@ -40,7 +40,8 @@ export function GoalPacePanel({ ctx, goalId, goal, definitions }: { ctx: Insight
   const result = g.allocation.result;
   const ratio = goal.target > 0 ? g.progress / goal.target : null;
   // Today's plan differs from the recorded one but this device's counter cannot go higher (refreshWeekPlans leaves it).
-  const step = planWriteStep(goal, g.allocation, manualAmounts(ctx.planning.allocations, goalId), g.plans, ctx.today, ctx.deviceId);
+  const fits = planWriteFits(ctx.planning.plans, ctx.deviceId, new Date(ctx.now).toISOString());
+  const step = planWriteStep(goal, g.allocation, manualAmounts(ctx.planning.allocations, goalId), g.plans, ctx.today, ctx.deviceId, fits);
   return (
     <section className="card" aria-labelledby="pace-title" data-testid="goal-pace">
       <h2 id="pace-title">{t("pace.title")}</h2>

@@ -9,14 +9,17 @@ import { canonicalize } from "./jcs.ts";
 import { contentHashOf } from "./envelope.ts";
 import { createGoal, updateGoal } from "../local/goals.ts";
 import { decidePlanDate, loadGoalPlanning, refreshWeekPlans, setWeekAllocation } from "../local/goal-plans.ts";
-import { putRecord } from "../local/records.ts";
+import { plannedWriteEnvelope, putRecord, toEnvelope } from "../local/records.ts";
+import { envelopeFits, nowIso } from "./envelope.ts";
+import { canonicalBytes } from "./jcs.ts";
+import { MAX_ENVELOPE_BYTES } from "./limits.ts";
 import { loadInsightRecords, recordAppUse, saveDashboard } from "../local/insights.ts";
 import { createTask } from "../local/organization.ts";
 import { createBlock, dragBlockTimes } from "../local/planning.ts";
 import { setMeta } from "../local/db.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
 import { loadTimer, saveCountdown, saveSelectedTimer, saveStopwatch, startCountdown, startStopwatch } from "../local/timer.ts";
-import { canChangeChoice, canWriteEntry, candidatesOf, eventStatus, hasCoverageCycle, mergePlans, nextSeq, planDateOn, planHasCoverageCycle, planRecordFits, resolveDate } from "../insights/plan-merge.ts";
+import { canChangeChoice, canWriteEntry, candidatesOf, eventStatus, hasCoverageCycle, mergePlans, nextSeq, planDateOn, planHasCoverageCycle, resolveDate } from "../insights/plan-merge.ts";
 import { SUGGESTED_MAIN_DASHBOARD } from "../insights/metrics.ts";
 import { DATA_SCHEMA_VERSION } from "./limits.ts";
 import {
@@ -37,7 +40,9 @@ import {
 } from "./registry.ts";
 import { weekPlanId } from "./derived-id.ts";
 import { createTestDevice, type TestDevice } from "./test-fixtures.ts";
-import { exportFrom, importInto, mutate } from "./test-helpers.ts";
+import { applyImport, previewImport } from "./merge.ts";
+import { openBackupFile } from "./read.ts";
+import { blobOf, exportFrom, importInto, mutate } from "./test-helpers.ts";
 
 const registry = PRODUCT_REGISTRY;
 const product = { registry };
@@ -306,13 +311,18 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
     const manual = (num: number): SegmentData => ({ state: "allocated", allocation: { num, den: 1 }, source: "manual" });
     const sorted = <T>(list: T[]) => [...list].sort((p, q) => (canonicalize(p) < canonicalize(q) ? -1 : 1));
     const range = (from: number, count: number) => Array.from({ length: count }, (_, i) => manual(from + i));
-    /** The largest count of `range(from, n)` options for which `make(options)` still fits the per-record limit. */
-    function largestFitting(make: (options: SegmentData[]) => GoalWeekPlanData, from: number): number {
+    /** Whether `data` written over `planId` on device `d` stays within the limit, on the exact envelope `putRecord` stores. */
+    async function fitsOn(d: TestDevice, planId: string) {
+      const row = await d.db.records.get([GOAL_WEEK_PLANS, planId]);
+      return (data: GoalWeekPlanData) => envelopeFits(plannedWriteEnvelope(row, planId, data as unknown as Record<string, unknown>, d.deviceId, nowIso()));
+    }
+    /** The largest count of `range(from, n)` options for which `make(options)` still fits. */
+    function largestFitting(make: (options: SegmentData[]) => GoalWeekPlanData, from: number, fits: (data: GoalWeekPlanData) => boolean): number {
       let low = 0;
       let high = 10_000;
       while (low < high) {
         const mid = Math.ceil((low + high) / 2);
-        if (planRecordFits(make(range(from, mid)))) low = mid;
+        if (fits(make(range(from, mid)))) low = mid;
         else high = mid - 1;
       }
       return low;
@@ -360,21 +370,20 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
     it("at the per-record size limit a decision is refused (RECORD_LIMIT) and an import merge is shown as too large; nothing is written or dropped", async () => {
       const { a, b, goalId, planId, original, conflictWith } = await conflictSetup();
       // The most options with which A's conflicting record still fits; the decision would add two more.
-      const n = largestFitting(conflictWith, 100_000);
+      const n = largestFitting(conflictWith, 100_000, await fitsOn(a, planId));
       expect(n).toBeGreaterThan(64);
       await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, conflictWith(range(100_000, n)));
       const stored = (await planOf(a, goalId))!;
-      expect(planRecordFits(stored)).toBe(true);
+      expect(envelopeFits(toEnvelope((await a.db.records.get([GOAL_WEEK_PLANS, planId]))!))).toBe(true);
       const before = await recordsOf(a);
       expect(await codeOf(decidePlanDate(a.db, planId, "2026-11-02", manual(5), canonicalize(stored.dates[0]!)))).toBe("RECORD_LIMIT");
       expect(await recordsOf(a)).toEqual(before); // no entry, no event, no option removed
       expect(resolveDate((await planOf(a, goalId))!.dates[0]!, a.deviceId).kind).toBe("conflict"); // still the owner's to decide
-      // A record that fits the rule always exports: the envelope reserve covers its other fields.
-      const fromA = await exportText(a);
+      const fromA = await exportText(a); // the stored record is within the limit, so it exports
 
       // B keeps other options that fit on their own; merged with A's, the record would not.
       const onB = (options: SegmentData[]): GoalWeekPlanData => ({ ...original, dates: [{ ...original.dates[0]!, options: sorted(options) }] });
-      const m = largestFitting(onB, 200_000);
+      const m = largestFitting(onB, 200_000, await fitsOn(b, planId));
       await putRecord(b.db, registry, GOAL_WEEK_PLANS, planId, onB(range(200_000, m)));
       const bBefore = await b.db.records.get([GOAL_WEEK_PLANS, planId]);
       for (const applyUpdates of [false, true]) {
@@ -386,6 +395,82 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
       }
       expect(await codeOf(exportText(b))).toBe("OK"); // B's own data still exports
     });
+
+    it("when this device's record grows between the preview and the import, the write is measured again and a merge past the limit is not written", async () => {
+      const { a, b, goalId, planId, original, own, theirs, conflictWith } = await conflictSetup();
+      await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, conflictWith([]));
+      await decidePlanDate(a.db, planId, "2026-11-02", theirs, canonicalize((await planOf(a, goalId))!.dates[0]!));
+      const opened = await openBackupFile(blobOf(await exportText(a)), registry);
+      const preview = await previewImport(b.db, opened, registry);
+      expect(preview.counts.planMerge).toBe(1); // fits when previewed
+      expect(preview.counts.planTooLarge).toBe(0);
+      // Then B's record grows to as many options as still fit, so the merge no longer would.
+      const onB = (options: SegmentData[]): GoalWeekPlanData => ({ ...original, dates: [{ ...original.dates[0]!, options: sorted([own.segment, ...options]) }] });
+      await putRecord(b.db, registry, GOAL_WEEK_PLANS, planId, onB(range(300_000, largestFitting(onB, 300_000, await fitsOn(b, planId)))));
+      const grown = await b.db.records.get([GOAL_WEEK_PLANS, planId]);
+      const result = await applyImport(b.db, opened, registry, { applyUpdates: true, applyDisplaySettings: false });
+      expect(result.counts.planTooLarge).toBe(1);
+      expect(await b.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(grown); // nothing written past the limit, nothing dropped
+      expect(await codeOf(exportText(b))).toBe("OK");
+    });
+  });
+
+  it("an imported plan envelope near 256 KiB because of a long ISO time: a decision, the app's plan write, and import merges that would pass the limit change nothing; the data still exports (Codex review)", async () => {
+    const { a, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const original = (await planOf(a, goalId))!;
+    const own = original.dates[0]!.entries[0]!;
+    const theirs: SegmentData = { state: "allocated", allocation: { num: 5, den: 1 }, source: "manual" };
+    // Monday holds a conflict on A, so a decision can be tried on the importing device.
+    await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, {
+      ...original,
+      dates: [{ ...original.dates[0]!, entries: [own, { device: crypto.randomUUID(), seq: 1, seen: {}, segment: theirs }].sort((p, q) => (p.device < q.device ? -1 : 1)) }],
+    });
+    // The plan's createdAt gets a long fractional second (valid ISO), leaving 16 bytes under the limit.
+    const room = 16;
+    const plain = await exportText(a);
+    const padded = mutate(plain, (doc) => {
+      const env = doc.payload.records[GOAL_WEEK_PLANS].find((e: { id: string }) => e.id === planId);
+      const missing = MAX_ENVELOPE_BYTES - room - canonicalBytes(env).length;
+      env.createdAt = env.createdAt.replace("Z", `${"0".repeat(missing)}Z`);
+    });
+    const c = await device("C");
+    await importInto(c, padded, product);
+    const stored = (await c.db.records.get([GOAL_WEEK_PLANS, planId]))!;
+    expect(canonicalBytes(toEnvelope(stored)).length).toBe(MAX_ENVELOPE_BYTES - room); // accepted, near the limit
+    const before = await recordsOf(c);
+
+    // A decision would raise C's version counter and add options: refused, nothing written.
+    const monday = (stored.data as GoalWeekPlanData).dates[0]!;
+    expect(await codeOf(decidePlanDate(c.db, planId, "2026-11-02", theirs, canonicalize(monday)))).toBe("RECORD_LIMIT");
+    expect(await recordsOf(c)).toEqual(before);
+
+    // On Tuesday, a plan change would add a date to the record: the write is skipped.
+    at("2026-11-03T08:00:00Z");
+    await setWeekAllocation(c.db, goalId, "2026-11-09", 300);
+    expect(await c.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(stored);
+
+    // An import merge whose written envelope would pass the limit: a content change from A, and a
+    // file holding only part of C's entries with another device in its version vector, whose merge
+    // gives C's own content and would combine the versions only. Neither file is large itself; the
+    // written envelope keeps C's long createdAt.
+    await decidePlanDate(a.db, planId, "2026-11-02", theirs, canonicalize((await planOf(a, goalId))!.dates[0]!));
+    const versionOnly = mutate(plain, (doc) => {
+      const env = doc.payload.records[GOAL_WEEK_PLANS].find((e: { id: string }) => e.id === planId);
+      env.data.dates[0].entries = env.data.dates[0].entries.filter((e: { device: string }) => e.device === own.device);
+      env.contentHash = contentHashOf(env.data);
+      env.version = { ...env.version, [crypto.randomUUID()]: 1 };
+    });
+    expect(canonicalize(mergePlans(stored.data as GoalWeekPlanData, JSON.parse(versionOnly).payload.records[GOAL_WEEK_PLANS][0].data))).toBe(canonicalize(stored.data));
+    for (const file of [await exportText(a), versionOnly]) {
+      for (const applyUpdates of [false, true]) {
+        const { preview } = await importInto(c, file, { ...product, applyUpdates });
+        expect(preview.counts.planTooLarge).toBe(1);
+        expect(preview.counts.planMerge).toBe(0);
+        expect(await c.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(stored); // kept as it is, no raw error
+      }
+    }
+    expect(await codeOf(exportText(c))).toBe("OK"); // the accepted records still export
   });
 
   it("a new plan record carrying an undecided date is imported as new with Apply updates off: a third device shows no data for it (D-015, T-228)", async () => {

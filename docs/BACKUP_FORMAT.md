@@ -177,7 +177,7 @@ A backup file may come from anywhere, so it is untrusted input. Limits for forma
 | File size (`File.size`) | ≤ **32 MiB**, checked before reading any bytes |
 | Decrypted payload (encrypted files) | ≤ **32 MiB** of plaintext bytes; the ciphertext length is also checked against this before decrypting |
 | Records + tombstones + pending conflicts + replaced versions, all types together | ≤ **200,000** entries |
-| One record envelope (canonical size) | ≤ **256 KiB** (a weekly plan's `options` has no count limit of its own; the app keeps each plan record's data within 256 KiB less 4 KiB before writing or merging it) |
+| One record envelope (canonical size) | ≤ **256 KiB** (a weekly plan's `options` has no count limit of its own; the app measures the exact envelope of every local write and of every weekly plan merge against this limit before writing it) |
 | Text fields | per record-type schema (e.g. names ≤ 200 characters, notes ≤ 20,000 characters) |
 | Version vector | ≤ **32** device entries per record |
 | Text encoding | valid UTF-8 (decoded with a fatal decoder; any invalid byte sequence rejects the file) |

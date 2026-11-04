@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { putRecord } from "../local/records.ts";
 import * as cryptoModule from "./crypto.ts";
+import { makeEnvelope } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
 import { validatePayload } from "./format.ts";
 import { canonicalBytes } from "./jcs.ts";
@@ -140,7 +141,10 @@ describe("9a. input limits", () => {
       { ...fixtureNote, schema: z.object({ text: z.string() }).strict() as unknown as typeof fixtureNote.schema },
     ]);
     const a = await device("A");
-    await putRecord(a.db, big, "fixtureNote", crypto.randomUUID(), { text: "x".repeat(300 * 1024) });
+    // A local write past the limit is refused, so it cannot be stored this way (no write passes the limit)...
+    await expect(putRecord(a.db, big, "fixtureNote", crypto.randomUUID(), { text: "x".repeat(300 * 1024) })).rejects.toMatchObject({ code: "RECORD_TOO_LARGE" });
+    // ...and a row stored past it some other way still makes the export refuse.
+    await a.db.records.put({ type: "fixtureNote", ...makeEnvelope(crypto.randomUUID(), { text: "x".repeat(300 * 1024) }, { [a.deviceId]: 1 }, new Date().toISOString()) });
     await expect(exportFrom(a, {}, big)).rejects.toMatchObject({ code: "EXPORT_TOO_LARGE" });
 
     const { text } = await plainBackup();

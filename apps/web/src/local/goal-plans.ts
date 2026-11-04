@@ -29,16 +29,17 @@ import {
   type TaskCompletionData,
 } from "../backup/registry.ts";
 import { canonicalize } from "../backup/jcs.ts";
-import { nowIso } from "../backup/envelope.ts";
+import { envelopeFits, nowIso } from "../backup/envelope.ts";
 import { planChoiceId, weekAllocationId, weekPlanId } from "../backup/derived-id.ts";
 import { localDateOf } from "../planning/time.ts";
 import { computeAllocations, segmentFor, type AllocationResult } from "../insights/allocation.ts";
 import { amountBetween, goalDays } from "../insights/actuals.ts";
 import { currentPlan, goalWeekStarts, isClosedWeek, planOn, weekStartOf, workdaysIn, type GoalPlan } from "../insights/goal-plan.ts";
-import { appliedSegment, canWriteEntry, decideEntry, decisionChoices, needsDecision, planDateOn, planRecordFits, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
+import { appliedSegment, canWriteEntry, decideEntry, decisionChoices, needsDecision, planDateOn, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
+import type { VersionVector } from "../backup/versions.ts";
 import type { LocalDb, RecordRow } from "./db.ts";
 import type { Item } from "./organization.ts";
-import { deviceIdentity, putRecord } from "./records.ts";
+import { deviceIdentity, plannedWriteEnvelope, putRecord } from "./records.ts";
 import { getSharedPreferences } from "./settings.ts";
 
 export type GoalPlanErrorCode =
@@ -71,9 +72,12 @@ export class GoalPlanError extends Error {
   }
 }
 
+/** A weekly plan with its version vector, so the exact envelope of its next write can be measured. */
+export type PlanItem = Item<GoalWeekPlanData> & { version: VersionVector };
+
 export interface GoalPlanning {
   allocations: Item<GoalWeekAllocationData>[];
-  plans: Item<GoalWeekPlanData>[];
+  plans: PlanItem[];
   choices: Item<GoalWeekPlanChoiceData>[];
 }
 
@@ -83,11 +87,28 @@ async function rowsOf<T>(db: LocalDb, type: string): Promise<Item<T>[]> {
   return (await db.records.where("type").equals(type).toArray()).map((row) => itemOf<T>(row));
 }
 
+async function planRows(db: LocalDb): Promise<PlanItem[]> {
+  return (await db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).map((row) => ({ ...itemOf<GoalWeekPlanData>(row), version: row.version }));
+}
+
+/**
+ * Whether this device's write of a weekly plan would stay within the per-record limit, measured on
+ * the exact envelope `putRecord` would store at `at` (the record's ID, `createdAt` as stored, the
+ * new `updatedAt`, raised version vector, content hash, and data). Nothing is dropped to fit.
+ */
+export function planWriteFits(rows: readonly PlanItem[], deviceId: string, at: string): (data: GoalWeekPlanData) => boolean {
+  return (data) => {
+    const row = rows.find((r) => r.data.goalId === data.goalId && r.data.weekStart === data.weekStart);
+    const id = row?.id ?? weekPlanId(data.goalId, data.weekStart);
+    return envelopeFits(plannedWriteEnvelope(row, id, data as unknown as Record<string, unknown>, deviceId, at));
+  };
+}
+
 /** Allocations, weekly plans, and choice history on this device (live records). */
 export async function loadGoalPlanning(db: LocalDb): Promise<GoalPlanning> {
   return db.transaction("r", db.records, async () => ({
     allocations: await rowsOf<GoalWeekAllocationData>(db, GOAL_WEEK_ALLOCATIONS),
-    plans: await rowsOf<GoalWeekPlanData>(db, GOAL_WEEK_PLANS),
+    plans: await planRows(db),
     choices: await rowsOf<GoalWeekPlanChoiceData>(db, GOAL_WEEK_PLAN_CHOICES),
   }));
 }
@@ -163,9 +184,9 @@ function plansToday(goal: GoalData, today: string): boolean {
  * from today. `owner`: today's date waits for the owner's decision (T-223). `same`: the computed
  * segment is already in effect. `write`: this device's entry for today is to be written.
  * `blocked`: the computed segment differs from the one in effect, but it cannot be written: this
- * device's counter for today is at its maximum (`canWriteEntry`, reason `counter`), or the record
- * would pass the per-record size limit (`planRecordFits`, reason `size`). The recorded plan stays,
- * and the goal view says so.
+ * device's counter for today is at its maximum (`canWriteEntry`, reason `counter`), or the record's
+ * exact envelope would pass the per-record size limit (`fits`, from `planWriteFits`, reason `size`).
+ * The recorded plan stays, and the goal view says so.
  * `none`: the goal is not running, or has no deadline or workdays to start a record with.
  */
 export type PlanWriteStep =
@@ -180,6 +201,7 @@ export function planWriteStep(
   goalPlans: readonly GoalWeekPlanData[],
   today: string,
   thisDevice: string,
+  fits: (data: GoalWeekPlanData) => boolean,
 ): PlanWriteStep {
   if (!plansToday(goal, today)) return { kind: "none" };
   const segment = segmentFor(state.result, state.currentWeek, manual.get(state.currentWeek) ?? null);
@@ -194,7 +216,7 @@ export function planWriteStep(
   const inEffect = applied ? appliedSegment(applied.resolution) : null;
   if (inEffect && canonicalize(inEffect) === canonicalize(segment)) return { kind: "same" };
   if (!canWriteEntry(todayDate, thisDevice)) return { kind: "blocked", reason: "counter", segment, inEffect };
-  if (!planRecordFits(withDate(existing, writeEntry(todayDate, today, thisDevice, segment)))) return { kind: "blocked", reason: "size", segment, inEffect };
+  if (!fits(withDate(existing, writeEntry(todayDate, today, thisDevice, segment)))) return { kind: "blocked", reason: "size", segment, inEffect };
   return { kind: "write", segment };
 }
 
@@ -212,13 +234,14 @@ export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "o
   if (running.length === 0) return;
   const device = await deviceIdentity(db);
   const allocations = await rowsOf<GoalWeekAllocationData>(db, GOAL_WEEK_ALLOCATIONS);
-  const plans = await rowsOf<GoalWeekPlanData>(db, GOAL_WEEK_PLANS);
+  const plans = await planRows(db);
+  const fits = planWriteFits(plans, device.id, new Date(now).toISOString());
   const records = await progressRecords(db);
   for (const goal of running) {
     const state = allocationState(goal.id, goal.data, goalDays(goal.id, goal.data, records, zone).amounts, allocations, today, weekStart);
     const id = weekPlanId(goal.id, state.currentWeek);
     const goalPlans = plans.filter((p) => p.data.goalId === goal.id).map((p) => p.data);
-    const step = planWriteStep(goal.data, state, manualAmounts(allocations, goal.id), goalPlans, today, device.id);
+    const step = planWriteStep(goal.data, state, manualAmounts(allocations, goal.id), goalPlans, today, device.id, fits);
     if (step.kind === "start") {
       const data: GoalWeekPlanData = { goalId: goal.id, weekStart: state.currentWeek, dates: [writeEntry(undefined, today, device.id, step.segment)] };
       await putRecord(db, registry, GOAL_WEEK_PLANS, id, data);
@@ -375,8 +398,9 @@ export async function decidePlanDate(
     if (!canWriteEntry(date, device.id)) throw new GoalPlanError("SEQ_LIMIT", "this device's counter for the date is at its maximum; nothing was written");
     const previous = appliedSegment(resolveDate(date, device.id));
     const next = decideEntry(date, from, device.id, chosen);
-    // Nothing is dropped to make room: past the per-record limit the decision is refused (DECISIONS "Segment merge").
-    if (!planRecordFits(withDate(plan, next))) throw new GoalPlanError("RECORD_LIMIT", "the weekly plan would pass the per-record size limit; nothing was written");
+    // Nothing is dropped to make room: if the exact envelope would pass the per-record limit, the decision is refused.
+    const fits = planWriteFits([{ ...itemOf<GoalWeekPlanData>(row), version: row.version }], device.id, nowIso());
+    if (!fits(withDate(plan, next))) throw new GoalPlanError("RECORD_LIMIT", "the weekly plan would pass the per-record size limit; nothing was written");
     const entry = next.entries.find((e) => e.device === device.id)!;
     await putRecord(db, registry, GOAL_WEEK_PLANS, planId, withDate(plan, next));
     const event: GoalWeekPlanChoiceData = {

@@ -1,6 +1,6 @@
-import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "../backup/envelope.ts";
+import { contentHashOf, type Envelope, envelopeFits, makeEnvelope, nowIso, type Tombstone } from "../backup/envelope.ts";
 import { linkTargets, type Registry } from "../backup/registry.ts";
-import { bumpVersion } from "../backup/versions.ts";
+import { bumpVersion, type VersionVector } from "../backup/versions.ts";
 import { DEFAULT_DEVICE_SETTINGS, type DeviceIdentity, type DeviceSettings, type LocalDb, type MetaRow, type RecordRow } from "./db.ts";
 
 /** Reads (or creates) this device's identity. Safe inside a transaction that includes `meta`. */
@@ -18,6 +18,31 @@ export function toEnvelope(row: RecordRow): Envelope {
 }
 
 /** A local write that would break a relationship rule (DATA_MODEL "Ownership and relationships"). */
+/** The written envelope would pass the per-record limit (`MAX_ENVELOPE_BYTES`); nothing is written. */
+export class RecordTooLargeError extends Error {
+  readonly code = "RECORD_TOO_LARGE";
+  constructor(message: string) {
+    super(message);
+    this.name = "RecordTooLargeError";
+  }
+}
+
+/**
+ * The envelope `putRecord` stores for `data` (already validated), exactly: an edit keeps the
+ * record's `createdAt`, takes `at` as `updatedAt`, and raises this device's version counter; a new
+ * record starts at 1. Callers that must know in advance whether a write fits measure this.
+ */
+export function plannedWriteEnvelope(
+  current: { version: VersionVector; createdAt: string } | undefined,
+  id: string,
+  data: Record<string, unknown>,
+  deviceId: string,
+  at: string,
+): Envelope {
+  if (!current) return makeEnvelope(id, data, { [deviceId]: 1 }, at);
+  return { ...makeEnvelope(id, data, current.version, current.createdAt, at), version: bumpVersion(current.version, deviceId) };
+}
+
 export class RecordRuleError extends Error {
   readonly code: "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "IMMUTABLE_FIELD";
   constructor(code: RecordRuleError["code"], message: string) {
@@ -65,13 +90,12 @@ export async function putRecord(
     }
     if (current) {
       if (def.appendOnly) throw new Error("Append-only records cannot be edited");
-      const next = makeEnvelope(id, parsed, current.version, current.createdAt, nowIso());
-      if (next.contentHash === current.contentHash) return current;
-      const row: RecordRow = { type, ...next, version: bumpVersion(current.version, device.id) };
-      await db.records.put(row);
-      return row;
+      if (contentHashOf(parsed) === current.contentHash) return current;
     }
-    const row: RecordRow = { type, ...makeEnvelope(id, parsed, { [device.id]: 1 }, nowIso()) };
+    const next = plannedWriteEnvelope(current, id, parsed, device.id, nowIso());
+    // No write may pass the per-record limit, or the data could no longer be exported (BACKUP_FORMAT "Input limits").
+    if (!envelopeFits(next)) throw new RecordTooLargeError(`${type}/${id}: the record would pass the per-record size limit`);
+    const row: RecordRow = { type, ...next };
     await db.records.put(row);
     return row;
   });

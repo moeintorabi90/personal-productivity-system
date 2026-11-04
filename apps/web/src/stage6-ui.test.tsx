@@ -28,8 +28,8 @@ import { createGoal } from "./local/goals.ts";
 import { setWeekAllocation } from "./local/goal-plans.ts";
 import { loadInsightRecords } from "./local/insights.ts";
 import { createTask } from "./local/organization.ts";
-import { planRecordFits } from "./insights/plan-merge.ts";
-import { putRecord, updateDeviceSettings } from "./local/records.ts";
+import { envelopeFits, nowIso } from "./backup/envelope.ts";
+import { deviceIdentity, plannedWriteEnvelope, putRecord, toEnvelope, updateDeviceSettings } from "./local/records.ts";
 import { updateSharedPreferences } from "./local/settings.ts";
 import { loadTimer } from "./local/timer.ts";
 import { endSession, pauseSession, recordPastSession, resumeSession, startSession } from "./local/work.ts";
@@ -264,7 +264,10 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
       at("2026-11-02T08:00:00Z");
       goalId = await createGoal(s.db, { name: "Pages", startDate: "2026-11-02", deadline: "2026-11-29", kind: "taskCount", target: 600, workdays: [1, 2, 3, 4, 5] });
       const id = weekPlanId(goalId, "2026-11-02");
-      const plan = (await s.db.records.get([GOAL_WEEK_PLANS, id]))!.data as GoalWeekPlanData;
+      const row = (await s.db.records.get([GOAL_WEEK_PLANS, id]))!;
+      const plan = row.data as GoalWeekPlanData;
+      const device = (await deviceIdentity(s.db)).id;
+      const fits = (data: GoalWeekPlanData) => envelopeFits(plannedWriteEnvelope(row, id, data as unknown as Record<string, unknown>, device, nowIso()));
       const withOptions = (n: number): GoalWeekPlanData => ({
         ...plan,
         dates: [{ ...plan.dates[0]!, options: Array.from({ length: n }, (_, i) => ({ state: "allocated" as const, allocation: { num: 100_000 + i, den: 1 }, source: "manual" as const })) }],
@@ -273,7 +276,7 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
       let high = 10_000;
       while (low < high) {
         const mid = Math.ceil((low + high) / 2);
-        if (planRecordFits(withOptions(mid))) low = mid;
+        if (fits(withOptions(mid))) low = mid;
         else high = mid - 1;
       }
       await putRecord(s.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, id, withOptions(low));
@@ -282,7 +285,7 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     const planId = weekPlanId(goalId, "2026-11-02");
     const recorded = async () => (await services.db.records.get([GOAL_WEEK_PLANS, planId]))!;
     const before = await recorded();
-    expect(planRecordFits(before.data as GoalWeekPlanData)).toBe(true);
+    expect(envelopeFits(toEnvelope(before))).toBe(true);
     await goTo("Goals");
     fireEvent.click(await screen.findByRole("button", { name: "Open goal: Pages" }));
     await screen.findByTestId("goal-pace");

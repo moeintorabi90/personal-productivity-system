@@ -988,7 +988,7 @@ export const goalWeekPlanSchema = z
               .max(32)
               .refine((list) => list.every((e, i) => i === 0 || e.device > list[i - 1]!.device), { message: "entries must be sorted by distinct device" }),
             // No count limit (owner, 2026-11-04): options only grow, and the record as a whole stays within
-            // MAX_ENVELOPE_BYTES, checked on reading a file and before every write and merge (`planRecordFits`).
+            // MAX_ENVELOPE_BYTES: checked on reading a file, and on the exact envelope before every write and merge.
             options: z.array(segmentSchema),
           })
           .strict(),

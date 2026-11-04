@@ -2,7 +2,7 @@ import type { DeviceSettings, ImportLogRow, LocalDb, PendingConflictRow, Replace
 import { deviceIdentity, getDeviceSettings, toEnvelope } from "../local/records.ts";
 import { ensureSharedPreferences } from "../local/settings.ts";
 import { importedMarkOf, markImportedSessions, pauseOfVersion } from "../local/work.ts";
-import { type Envelope, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
+import { type Envelope, envelopeFits, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
 import type { BackupHeader, BackupPayload } from "./format.ts";
 import {
@@ -18,7 +18,7 @@ import {
   SESSIONS,
 } from "./registry.ts";
 import { compareVersions, isContainedIn, mergeVersions, bumpVersion } from "./versions.ts";
-import { conflictDates, hasCoverageCycle, mergePlans, planHasCoverageCycle, planRecordFits } from "../insights/plan-merge.ts";
+import { conflictDates, hasCoverageCycle, mergePlans, planHasCoverageCycle } from "../insights/plan-merge.ts";
 
 /** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
 export type ItemCategory =
@@ -60,6 +60,19 @@ export interface PreviewItem {
  * cycle that only the merge creates. A date that already had a cycle here (written before this
  * check existed) does not block the merge; it is shown for the owner to settle.
  */
+/**
+ * The envelope a weekly plan merge writes, exactly: the merged data with this record's ID and
+ * `createdAt`, `at` as `updatedAt`, the combined version vector raised for this device, and the
+ * content hash; when the content does not change, only the versions are combined. The preview and
+ * the write both measure this against the per-record limit (owner, 2026-11-04).
+ */
+function planMergeEnvelope(local: Envelope, incoming: Envelope, merged: GoalWeekPlanData, thisDevice: string, at: string): Envelope {
+  const version = mergeVersions(local.version, incoming.version);
+  const next = makeEnvelope(local.id, merged as unknown as Record<string, unknown>, version, local.createdAt, at);
+  // Nothing new for this device: only the versions are combined, its counter is not raised.
+  return next.contentHash === local.contentHash ? { ...local, version } : { ...next, version: bumpVersion(version, thisDevice) };
+}
+
 function mergeWeekPlan(here: GoalWeekPlanData, incoming: GoalWeekPlanData): GoalWeekPlanData | null {
   if (planHasCoverageCycle(incoming)) return null;
   const merged = mergePlans(here, incoming);
@@ -392,6 +405,8 @@ async function classifyAll(db: LocalDb, payload: BackupPayload, registry: Regist
     }
   }
 
+  const thisDevice = (await deviceIdentity(db)).id;
+  const at = nowIso();
   const items: PreviewItem[] = [];
   for (const [type, list] of Object.entries(payload.records)) {
     const appendOnly = !!registry.get(type)!.appendOnly;
@@ -408,7 +423,7 @@ async function classifyAll(db: LocalDb, payload: BackupPayload, registry: Regist
         const here = state.record!.data as GoalWeekPlanData;
         const merged = mergeWeekPlan(here, envelope.data as GoalWeekPlanData);
         const before = new Set(conflictDates(here));
-        if (merged && !planRecordFits(merged)) {
+        if (merged && !envelopeFits(planMergeEnvelope(state.record!, envelope, merged, thisDevice, at))) {
           // Too large to keep as one record: shown on its own, and this device's version stays as it is.
           item.planMerge = { data: null, decisions: 0, tooLarge: true };
         } else {
@@ -582,14 +597,14 @@ export async function applyImport(
           const merged = item.planMerge?.data;
           if (!merged) break; // integrity issue or too large: shown, nothing changes
           const local = item.local.envelope;
-          const version = mergeVersions(local.version, incoming.envelope.version);
-          const next = makeEnvelope(item.id, merged as unknown as Record<string, unknown>, version, local.createdAt, at);
+          const next = planMergeEnvelope(local, incoming.envelope, merged, thisDevice.id, at);
+          // Measured again on exactly what is written now, with this device's current version: nothing passes the limit.
+          if (!envelopeFits(next)) break;
           if (next.contentHash === local.contentHash) {
-            // Nothing new for this device: only the versions are combined, its counter is not raised.
-            await db.records.put({ type: item.type, ...local, version });
+            await db.records.put({ type: item.type, ...next });
           } else {
             registry.get(item.type)!.schema.parse(merged);
-            await db.records.put({ type: item.type, ...next, version: bumpVersion(version, thisDevice.id) });
+            await db.records.put({ type: item.type, ...next });
             written.push({ type: item.type, id: item.id, data: next.data });
             appliedUpdates++;
           }
