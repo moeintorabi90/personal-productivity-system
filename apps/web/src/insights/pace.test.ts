@@ -313,4 +313,42 @@ describe("3 and 6. targets and streaks (T-181, T-184 to T-186, T-225, T-226)", (
     expect(isOpportunity(g, addDays(MON, -1))).toBe(false);
     expect(isOpportunity(g, "2026-11-30")).toBe(false);
   });
+
+  // Completed on Thursday 11-05, reopened on Monday 11-09 (T-060): three met opportunities before
+  // completion (Mon to Wed) and two after reopening (Mon, Tue); today is Wednesday 11-11.
+  const completedThenReopened = (extra: Partial<GoalData> = {}) =>
+    goal({
+      statusHistory: [
+        { from: MON, status: "active", archived: false },
+        { from: "2026-11-05", status: "completed", archived: false },
+        { from: "2026-11-09", status: "active", archived: false },
+      ],
+      ...extra,
+    });
+  const metDays = [MON, "2026-11-03", "2026-11-04", "2026-11-09", "2026-11-10"];
+  const stillCompleted = goal({
+    status: "completed",
+    statusHistory: [
+      { from: MON, status: "active", archived: false },
+      { from: "2026-11-05", status: "completed", archived: false },
+    ],
+  });
+
+  it("completion breaks the consistency streak: after reopening only new opportunities count, and the longest never joins the two periods (T-185, T-060)", () => {
+    const attributed = new Set(metDays);
+    expect(consistencyStreak(completedThenReopened(), attributed, "2026-11-11")).toEqual({ current: 2, longest: 3, counted: 5 });
+    // A longer run after reopening is the longest, still not joined with the earlier one.
+    const more = new Set([...metDays, "2026-11-11", "2026-11-12"]);
+    expect(consistencyStreak(completedThenReopened(), more, "2026-11-13")).toMatchObject({ current: 4, longest: 4 });
+    // While the goal stays completed: no current streak, the longest before completion is kept.
+    expect(consistencyStreak(stillCompleted, attributed, "2026-11-11")).toEqual({ current: 0, longest: 3, counted: 3 });
+  });
+
+  it("completion breaks the daily pace streak the same way (derived from T-185 and T-184)", () => {
+    // A cap of 10 keeps every daily target at 10.
+    const plans = [plan(MON, [[MON, allocated(500)]]), plan("2026-11-09", [["2026-11-09", allocated(500)]])];
+    const amounts = Object.fromEntries(metDays.map((d) => [d, 10]));
+    expect(paceStreak(pace(completedThenReopened({ dailyCap: 10 }), plans, amounts, "2026-11-11"))).toEqual({ current: 2, longest: 3, counted: 5 });
+    expect(paceStreak(pace({ ...stillCompleted, dailyCap: 10 }, plans, amounts, "2026-11-11"))).toMatchObject({ current: 0, longest: 3 });
+  });
 });

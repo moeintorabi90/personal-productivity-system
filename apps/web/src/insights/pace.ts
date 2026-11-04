@@ -68,11 +68,12 @@ export interface Streak {
 }
 
 /**
- * A run over the days from `first` to `today`: `judge` returns met, missed, or skip (neither adds
- * nor breaks). A missed opportunity breaks the run only after its local day ends; today counts
- * once it is met.
+ * A run over the days from `first` to `today`: `judge` returns met, missed, skip (neither adds
+ * nor breaks), or stop (ends the run without being an opportunity: a day of a completed period,
+ * T-185). A missed opportunity breaks the run only after its local day ends; today counts once it
+ * is met. The longest is the longest run between two breaks or stops.
  */
-function streakOver(first: string, today: string, judge: (day: string) => "met" | "missed" | "skip"): Streak {
+function streakOver(first: string, today: string, judge: (day: string) => "met" | "missed" | "skip" | "stop"): Streak {
   let current = 0;
   let longest = 0;
   let counted = 0;
@@ -80,6 +81,10 @@ function streakOver(first: string, today: string, judge: (day: string) => "met" 
   for (const day of datesBetween(first, today)) {
     const result = judge(day);
     if (result === "skip") continue;
+    if (result === "stop") {
+      current = 0;
+      continue;
+    }
     if (result === "met") {
       current += 1;
       counted += 1;
@@ -102,12 +107,15 @@ export function firstPlanDay(plans: readonly GoalWeekPlanData[]): string | null 
 /**
  * Daily pace streak (T-184, T-210, T-216, T-226): consecutive opportunities on which the displayed
  * daily target is met; days without a target (no plan, an undecided date, a mismatch, inactive)
- * neither add nor break. The longest is recalculated from the current history.
+ * neither add nor break. Completion stops it as it stops the consistency streak (T-185, derived):
+ * a completed period ends the run, and after the goal is reopened (T-060) it starts again from
+ * zero. The longest is recalculated from the current history.
  */
 export function paceStreak(input: PaceInput): Streak {
   const first = firstPlanDay(input.plans);
   if (first === null) return { current: 0, longest: 0, counted: 0 };
   const streak = streakOver(first, input.today, (day) => {
+    if (statusOn(input.goal, day).status === "completed") return "stop";
     const t = dailyTargetOn(input, day);
     if (t.kind !== "target") return "skip";
     return isMet(t.target, input.amounts.get(day) ?? 0) ? "met" : "missed";
@@ -118,14 +126,18 @@ export function paceStreak(input: PaceInput): Streak {
 /**
  * Goal-consistency streak (T-073, T-185, T-216): consecutive opportunities with at least one
  * attributed record, whatever its amount; unscheduled, paused, archived, pre-start, and
- * post-deadline days are not opportunities; a planned block alone never counts.
+ * post-deadline days are not opportunities; a planned block alone never counts. Completion stops
+ * the streak (T-185): a completed period ends the run, and after the goal is reopened (T-060) new
+ * opportunities count from zero, so runs before and after completion are never joined.
  */
 export function consistencyStreak(goal: GoalData, attributed: ReadonlySet<string>, today: string): Streak {
-  const streak = streakOver(goal.startDate, today, (day) => (!isOpportunity(goal, day) ? "skip" : attributed.has(day) ? "met" : "missed"));
+  const streak = streakOver(goal.startDate, today, (day) =>
+    statusOn(goal, day).status === "completed" ? "stop" : !isOpportunity(goal, day) ? "skip" : attributed.has(day) ? "met" : "missed",
+  );
   return stoppedByCompletion(goal, today, streak);
 }
 
-/** Completion stops a streak (T-185): no current streak, the longest is kept. */
+/** Completion stops a streak (T-185): while the goal is completed there is no current streak; the longest is kept. */
 function stoppedByCompletion(goal: GoalData, today: string, streak: Streak): Streak {
   return statusOn(goal, today).status === "completed" ? { ...streak, current: 0 } : streak;
 }
