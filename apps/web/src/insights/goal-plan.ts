@@ -79,7 +79,7 @@ export const isClosedWeek = (weekStartDate: string, today: string) => addDays(we
 /**
  * Whether `date` is a work opportunity of the goal (derived "Workdays", T-185): a selected weekday
  * of the plan in effect that day, within the goal's dates, while the goal was active and not
- * archived. Completion, pause, and archive periods are not opportunities.
+ * archived. Completion, abandonment (T-244), pause, and archive periods are not opportunities.
  */
 export function isOpportunity(goal: GoalData, date: string): boolean {
   const plan = planOn(goal, date);

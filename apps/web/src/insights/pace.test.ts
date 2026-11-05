@@ -416,4 +416,51 @@ describe("3 and 6. targets and streaks (T-181, T-184 to T-186, T-225, T-226)", (
     expect(paceStreak(pace(abandonedThenReopened({ dailyCap: 10 }), plans, amounts, "2026-11-11"))).toEqual({ current: 2, longest: 3, counted: 5 });
     expect(paceStreak(pace({ ...stillAbandoned, dailyCap: 10 }, plans, amounts, "2026-11-11"))).toMatchObject({ current: 0, longest: 3 });
   });
+
+  // 600 from Monday 11-02 to Sunday 11-29: week 1 recorded at 150 (30 a workday) from Monday, with 30
+  // done on each of Monday to Wednesday; the later weeks share the remaining 510 at 170 each.
+  const week1 = plan(MON, [[MON, allocated(150)]]);
+  const firstDays = { [MON]: 30, "2026-11-03": 30, "2026-11-04": 30 };
+  const november = datesBetween("2026-11-01", "2026-11-30");
+
+  it("the monthly target adds no share for paused days (T-185, T-246): a goal paused Thursday and resumed the next Monday", () => {
+    const g = goal({
+      statusHistory: [
+        { from: MON, status: "active", archived: false },
+        { from: "2026-11-05", status: "paused", archived: false },
+        { from: "2026-11-09", status: "active", archived: false },
+      ],
+    });
+    const today = "2026-11-10";
+    const r = computeAllocations({ goal: g, plan: planOn(g, today), weekStart: 1, today, progressBeforeCurrentWeek: 90, manual: new Map() });
+    if (r.kind !== "allocated") throw new Error(r.kind);
+    const input = pace(g, [week1, plan("2026-11-09", [["2026-11-09", segmentFor(r, "2026-11-09", null)]])], firstDays, today);
+    // The paused Thursday and Friday have no daily target, and the month adds no share for them either.
+    expect(target(input, "2026-11-05")).toBe("notOpportunity");
+    expect(target(input, "2026-11-06")).toBe("notOpportunity");
+    const month = monthTarget(input, r, november, 1)!;
+    expect(roundForDisplay(month.target)).toBe(90 + 3 * 170); // 3 of week 1's days at 30, then 170 a week; not 660
+    expect(month.partial).toBe(false);
+  });
+
+  it("the monthly target adds no share for abandoned days, also without a recorded plan for them (T-244, T-246): abandoned Thursday, reopened the next Wednesday", () => {
+    const g = goal({
+      statusHistory: [
+        { from: MON, status: "active", archived: false },
+        { from: "2026-11-05", status: "abandoned", archived: false },
+        { from: "2026-11-11", status: "active", archived: false },
+      ],
+    });
+    const today = "2026-11-11";
+    const r = computeAllocations({ goal: g, plan: planOn(g, today), weekStart: 1, today, progressBeforeCurrentWeek: 90, manual: new Map() });
+    if (r.kind !== "allocated") throw new Error(r.kind);
+    // No plan was written while abandoned, so the week of 11-09 is recorded only from the reopening.
+    const input = pace(g, [week1, plan("2026-11-09", [["2026-11-11", segmentFor(r, "2026-11-09", null)]])], firstDays, today);
+    expect(target(input, "2026-11-10")).toBe("notOpportunity");
+    const month = monthTarget(input, r, november, 1)!;
+    // Week 1: Monday to Wednesday at 30; week of 11-09: Wednesday to Friday at 170 ÷ 5; then 170 a week.
+    expect(roundForDisplay(month.target)).toBe(90 + 3 * 34 + 2 * 170);
+    // Monday and Tuesday 11-09 and 11-10 were abandoned, not unplanned: the target is not partial.
+    expect(month.partial).toBe(false);
+  });
 });

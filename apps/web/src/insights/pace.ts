@@ -9,7 +9,7 @@ import { addDays, datesBetween } from "../planning/time.ts";
 import { type AllocationResult, dailyShare } from "./allocation.ts";
 import { amountBetween } from "./actuals.ts";
 import { add, cmp, div, frac, type Fraction, max, min, sub, ZERO } from "./fraction.ts";
-import { daysOfWeek, isOpportunity, isPlannedWorkday, planOn, statusOn, weekStartOf, workdaysIn } from "./goal-plan.ts";
+import { daysOfWeek, isOpportunity, planOn, statusOn, weekStartOf, workdaysIn } from "./goal-plan.ts";
 import { appliedSegment, planDateOn } from "./plan-merge.ts";
 
 export interface PaceInput {
@@ -172,6 +172,10 @@ export function weekTarget(input: PaceInput, weekStart: number): PeriodTarget | 
  * Monthly target (derived): each week's allocation split by its workdays, adding the shares of the
  * month's workdays: recorded plans for days until today, the current allocation for later weeks.
  * None during a mismatch (T-209); `partial` when some days of the month had no recorded plan.
+ * Only work opportunities add a share (T-185, `isOpportunity`): days of a paused, archived,
+ * completed, or abandoned period (T-244) add nothing, are never planned afterwards (T-246), and so
+ * never make the target partial; a week's share per day stays its allocation split by its selected
+ * workdays, as recorded. Days after today take the goal's current status.
  */
 export function monthTarget(input: PaceInput, allocation: AllocationResult, monthDays: readonly string[], weekStart: number): (PeriodTarget & { partial: boolean }) | null {
   if (allocation.kind !== "allocated") return null;
@@ -179,8 +183,8 @@ export function monthTarget(input: PaceInput, allocation: AllocationResult, mont
   let partial = false;
   const currentWeek = weekStartOf(input.today, weekStart);
   for (const day of monthDays) {
+    if (!isOpportunity(input.goal, day)) continue;
     const plan = planOn(input.goal, day);
-    if (!isPlannedWorkday(input.goal, plan, day)) continue;
     const week = weekStartOf(day, weekStart);
     if (week > currentWeek) {
       const w = allocation.weeks.find((x) => x.weekStart === week);
