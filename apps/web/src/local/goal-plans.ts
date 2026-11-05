@@ -283,6 +283,17 @@ export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "o
   }
 }
 
+/**
+ * After a write that may have changed the shared week start without `updateSharedPreferences` (an
+ * import with "Apply updates", a conflict decision for the preferences, an undo): when the week
+ * start now differs from `before`, the plans are refreshed as for a local change, so the week under
+ * the new start applies from today (T-247). Runs inside the caller's transaction, so the
+ * preferences and the plans are written together or not at all.
+ */
+export async function refreshAfterWeekStart(db: LocalDb, registry: Registry, before: number, now: number = Date.now()): Promise<void> {
+  if ((await getSharedPreferences(db)).weekStart !== before) await refreshWeekPlans(db, registry, "change", now);
+}
+
 /* ---------- plan and status history (T-182, T-185) ---------- */
 
 /** Appends today's plan to the goal's history (same-day changes replace that day's entry). */

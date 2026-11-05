@@ -55,7 +55,7 @@ import {
 } from "./registry.ts";
 import { planChoiceId, weekAllocationId, weekPlanId } from "./derived-id.ts";
 import { createTestDevice, type TestDevice } from "./test-fixtures.ts";
-import { restoreReplacedVersion } from "./conflicts.ts";
+import { loadConflictViews, resolveConflict, restoreReplacedVersion } from "./conflicts.ts";
 import { applyImport, previewImport } from "./merge.ts";
 import { openBackupFile } from "./read.ts";
 import { blobOf, decide, exportFrom, importInto, mutate, snapshot } from "./test-helpers.ts";
@@ -1190,6 +1190,91 @@ describe("changes of week start on one day travel in backups (T-247; derived \"W
       expect([await weekOn(a), await weekOn(b)]).toEqual(["2026-11-01", "2026-11-01"]);
       expect(canonicalize(await plansOf(a))).toBe(canonicalize(await plansOf(b)));
     }
+  });
+
+  /**
+   * B: a goal from Monday 11-02 under a Monday week start, its target changed on Thursday 11-05
+   * (its week record has dates from 11-02 and 11-05). `weekStartFrom` is B's own export with only
+   * the shared week start changed by another device (a newer version), as a backup that changes it.
+   */
+  const OTHER = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  async function goalOnB() {
+    const b = await device("B");
+    const goalId = await createGoal(b.db, goalInput);
+    at("2026-11-05T08:00:00Z");
+    await updateGoal(b.db, goalId, { target: 700 }, registry, Date.now());
+    return { b, goalId, own: await exportText(b) };
+  }
+  const weekStartFrom = (text: string, weekStart: number, updatedAt = "2026-11-05T08:30:00.000Z") =>
+    mutate(text, (doc) => {
+      const env = doc.payload.records.preferences[0];
+      env.data.weekStart = weekStart;
+      env.version = { ...env.version, [OTHER]: (env.version[OTHER] ?? 0) + 1 };
+      env.updatedAt = updatedAt;
+      env.contentHash = contentHashOf(env.data);
+    });
+  const prefsAndPlans = async (d: TestDevice) => (await recordsOf(d)).filter((r) => r.type === "preferences" || r.type === GOAL_WEEK_PLANS);
+  const weekStartOn = async (d: TestDevice) => (await d.db.records.get(["preferences", "00000000-0000-4000-8000-000000000001"]))!.data.weekStart;
+
+  it("a backup that changes the week start, imported with \"Apply updates\": the new week applies from today, earlier days keep their plan, and again changes nothing", async () => {
+    const { b, goalId, own } = await goalOnB();
+    const monday = (await planOf(b, goalId, "2026-11-02"))!;
+    at("2026-11-05T09:00:00Z");
+    const text = weekStartFrom(own, 0);
+    expect(await codeOf(importInto(b, text, apply))).toBe("OK");
+    expect(await weekStartOn(b)).toBe(0);
+    expect(await weekOn(b)).toBe("2026-11-01"); // the Sunday week, from today
+    expect(await weekOn(b, "2026-11-06")).toBe("2026-11-01");
+    for (const day of ["2026-11-02", "2026-11-03", "2026-11-04"]) expect(await weekOn(b, day)).toBe("2026-11-02");
+    expect((await planOf(b, goalId, "2026-11-02"))!.dates[0]).toEqual(monday.dates[0]); // the earlier date is unchanged
+    // Written by this import on this device: a takeover over the Monday week, which has a date from today.
+    expect((await planOf(b, goalId, "2026-11-01"))!.dates).toMatchObject([{ from: "2026-11-05", takeovers: [{ device: b.deviceId, over: ["2026-11-02"] }] }]);
+    const after = await prefsAndPlans(b);
+    expect(await codeOf(importInto(b, text, apply))).toBe("OK"); // the same backup again
+    expect(await prefsAndPlans(b)).toEqual(after);
+  });
+
+  it("without \"Apply updates\" neither the week start nor any plan changes", async () => {
+    const { b, own } = await goalOnB();
+    const before = await prefsAndPlans(b);
+    at("2026-11-05T09:00:00Z");
+    expect(await codeOf(importInto(b, weekStartFrom(own, 0), product))).toBe("OK");
+    expect(await weekStartOn(b)).toBe(1);
+    expect(await prefsAndPlans(b)).toEqual(before);
+    expect(await weekOn(b)).toBe("2026-11-02");
+  });
+
+  it("a week start changed here and in the backup is a conflict, whatever the backup's clock: nothing changes until the owner chooses; choosing the backup's applies its week from today", async () => {
+    const { b, goalId, own } = await goalOnB();
+    at("2026-11-05T09:00:00Z");
+    await updateSharedPreferences(b.db, { weekStart: 6 }); // changed here too, without seeing the backup's change
+    expect(await weekOn(b)).toBe("2026-10-31");
+    const before = await prefsAndPlans(b);
+    // The backup's version claims a later time than this device's change: it does not matter.
+    expect(await codeOf(importInto(b, weekStartFrom(own, 0, "2026-11-05T23:00:00.000Z"), apply))).toBe("OK");
+    expect(await weekStartOn(b)).toBe(6);
+    expect(await prefsAndPlans(b)).toEqual(before);
+    const view = (await loadConflictViews(b.db, registry)).find((v) => v.conflict.type === "preferences")!;
+    expect(view.options).toContain("useBackup");
+    at("2026-11-05T10:00:00Z");
+    await resolveConflict(b.db, registry, view.conflict.conflictId, "useBackup", view.token);
+    expect(await weekStartOn(b)).toBe(0);
+    expect(await weekOn(b)).toBe("2026-11-01");
+    expect(await weekOn(b, "2026-11-04")).toBe("2026-11-02");
+    expect((await planOf(b, goalId, "2026-11-02"))!.dates.map((x) => x.from)).toEqual(["2026-11-02", "2026-11-05"]);
+  });
+
+  it("undoing the imported week start puts the earlier week back from today", async () => {
+    const { b, own } = await goalOnB();
+    at("2026-11-05T09:00:00Z");
+    await importInto(b, weekStartFrom(own, 0), apply);
+    expect(await weekOn(b)).toBe("2026-11-01");
+    const replaced = (await b.db.replacedVersions.toArray()).find((r) => r.type === "preferences")!;
+    at("2026-11-05T10:00:00Z");
+    await restoreReplacedVersion(b.db, registry, replaced.replacedId);
+    expect(await weekStartOn(b)).toBe(1);
+    expect(await weekOn(b)).toBe("2026-11-02"); // back to an existing record, by a takeover mark
+    expect(await weekOn(b, "2026-11-04")).toBe("2026-11-02");
   });
 
   it("once a device has seen the other's change, its own later change applies on both, carried by its counters, not its clock", async () => {

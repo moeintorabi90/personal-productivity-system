@@ -1,6 +1,7 @@
 import type { DeviceSettings, ImportLogRow, LocalDb, PendingConflictRow, ReplacedVersionRow, VersionEntry } from "../local/db.ts";
 import { deviceIdentity, getDeviceSettings, toEnvelope } from "../local/records.ts";
-import { ensureSharedPreferences } from "../local/settings.ts";
+import { refreshAfterWeekStart } from "../local/goal-plans.ts";
+import { ensureSharedPreferences, getSharedPreferences } from "../local/settings.ts";
 import { importedMarkOf, markImportedSessions, pauseOfVersion } from "../local/work.ts";
 import { type Envelope, envelopeFits, type EnvelopeLimit, envelopeLimitProblem, makeEnvelope, nowIso, type Tombstone } from "./envelope.ts";
 import { BackupError } from "./errors.ts";
@@ -548,6 +549,7 @@ export async function applyImport(
   return db.transaction("rw", tables, async () => {
     // Inside the import transaction: written only if the whole import succeeds.
     await ensureSharedPreferences(db);
+    const weekStartBefore = (await getSharedPreferences(db)).weekStart;
     await checkFileReferences(db, opened.payload, registry);
     const items = await classifyAll(db, opened.payload, registry);
     await checkActiveLinks(db, items, registry, choices.applyUpdates);
@@ -651,6 +653,9 @@ export async function applyImport(
     if (choices.applyDisplaySettings) {
       await db.meta.put({ key: "deviceSettings", value: { ...opened.payload.sourceDeviceSettings } });
     }
+    // A week start changed by the backup ("Apply updates") applies from today, as a local change does
+    // (T-247): the plans are refreshed in this same transaction, so both are written or neither.
+    await refreshAfterWeekStart(db, registry, weekStartBefore);
     const counts = countItems(items, carried);
     const importId = crypto.randomUUID();
     const log: ImportLogRow = {

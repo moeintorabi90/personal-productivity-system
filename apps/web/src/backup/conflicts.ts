@@ -1,5 +1,7 @@
 import { getMeta, type LocalDb, type PendingConflictRow, setMeta, type VersionEntry } from "../local/db.ts";
 import { deviceIdentity, toEnvelope } from "../local/records.ts";
+import { refreshAfterWeekStart } from "../local/goal-plans.ts";
+import { getSharedPreferences } from "../local/settings.ts";
 import { importedMarkOf, markImportedSessions, markRestoredSession, pauseOfVersion } from "../local/work.ts";
 import { type Envelope, envelopeLimitProblem, makeEnvelope, nowIso, type Tombstone, tombstoneLimitProblem } from "./envelope.ts";
 import { canonicalize } from "./jcs.ts";
@@ -429,7 +431,9 @@ export async function resolveConflict(
   await db.transaction("rw", conflictTables(db), async () => {
     const conflict = await db.pendingConflicts.get(conflictId);
     if (!conflict) throw new ResolutionError("NOT_FOUND", "conflict no longer exists");
+    const weekStart = (await getSharedPreferences(db)).weekStart;
     await resolveInTx(db, registry, conflict, resolution, expected);
+    await refreshAfterWeekStart(db, registry, weekStart); // the backup's week start chosen: T-247 from today
   });
 }
 
@@ -452,6 +456,7 @@ export async function resolveConflicts(
   resolution: Resolution,
 ): Promise<BulkResult> {
   return db.transaction("rw", conflictTables(db), async () => {
+    const weekStart = (await getSharedPreferences(db)).weekStart;
     const result: BulkResult = { resolved: 0, skipped: [] };
     for (const { conflictId, expected } of shown) {
       const conflict = await db.pendingConflicts.get(conflictId);
@@ -466,6 +471,7 @@ export async function resolveConflicts(
       await resolveInTx(db, registry, conflict, resolution, expected);
       result.resolved++;
     }
+    await refreshAfterWeekStart(db, registry, weekStart);
     return result;
   });
 }
@@ -635,6 +641,7 @@ export async function restoreReplacedVersion(db: LocalDb, registry: Registry, re
   await db.transaction("rw", conflictTables(db), async () => {
     const row = await db.replacedVersions.get(replacedId);
     if (!row) throw new ResolutionError("NOT_FOUND", "version no longer exists");
+    const weekStart = (await getSharedPreferences(db)).weekStart;
     const device = await deviceIdentity(db);
     const current = await currentEntry(db, row.type, row.id);
     const merged = mergeAndBump(current ? versionOf(current) : {}, versionOf(row.entry), device.id);
@@ -653,5 +660,6 @@ export async function restoreReplacedVersion(db: LocalDb, registry: Registry, re
       if (row.type === SESSIONS) await markRestoredSession(db, row.id, row.entry.envelope.data, row.pausedFrom);
     }
     await db.replacedVersions.delete(replacedId);
+    await refreshAfterWeekStart(db, registry, weekStart); // an earlier week start put back: T-247 from today
   });
 }
