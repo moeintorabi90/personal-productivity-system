@@ -1342,6 +1342,57 @@ describe("changes of week start on one day travel in backups (T-247; derived \"W
     expect(await weekStartOn(b)).toBe(0);
   });
 
+  /** `week`'s record lists 32 other devices (from imports): this device's next write would add a 33rd. */
+  async function fillDevices(d: TestDevice, goalId: string, week: string) {
+    const row = (await d.db.records.get([GOAL_WEEK_PLANS, weekPlanId(goalId, week)]))!;
+    await d.db.records.put({ ...row, version: Object.fromEntries(Array.from({ length: 32 }, () => [crypto.randomUUID(), 1])) });
+  }
+  /** B has already had week records under Sunday and Saturday starts on 11-05, so going to Sunday writes to an existing one. */
+  async function goalOnBWithWeeks() {
+    const { b, goalId, own } = await goalOnB();
+    at("2026-11-05T08:10:00Z");
+    await updateSharedPreferences(b.db, { weekStart: 0 });
+    await updateSharedPreferences(b.db, { weekStart: 6 });
+    return { b, goalId, own };
+  }
+
+  it("a record limit (32 devices) refuses an import that changes the week start: no preference, plan, or import record is written", async () => {
+    const { b, goalId } = await goalOnBWithWeeks();
+    await updateSharedPreferences(b.db, { weekStart: 1 }); // back to Monday here; the backup brings Sunday
+    await fillDevices(b, goalId, "2026-11-01");
+    const text = weekStartFrom(await exportText(b), 0);
+    const before = await stateOf(b);
+    at("2026-11-05T09:00:00Z");
+    const error = await importInto(b, text, apply).catch((e: unknown) => e);
+    expect(error).toMatchObject({ name: "GoalPlanError", code: "DEVICE_LIMIT", weekStartChange: true });
+    expect(await stateOf(b)).toEqual(before);
+    expect(await weekStartOn(b)).toBe(1);
+  });
+
+  it("a record limit refuses choosing the backup's week start in a conflict, and undoing an imported one: the conflict and the earlier version stay", async () => {
+    // A conflict: the week start changed here (Saturday) and in the backup (Sunday).
+    const { b, goalId, own } = await goalOnBWithWeeks();
+    await fillDevices(b, goalId, "2026-11-01");
+    at("2026-11-05T09:00:00Z");
+    await importInto(b, weekStartFrom(own, 0), apply);
+    const view = (await loadConflictViews(b.db, registry)).find((v) => v.conflict.type === "preferences")!;
+    let before = await stateOf(b);
+    expect(await codeOf(resolveConflict(b.db, registry, view.conflict.conflictId, "useBackup", view.token))).toBe("DEVICE_LIMIT");
+    expect(await stateOf(b)).toEqual(before);
+    expect(await weekStartOn(b)).toBe(6);
+    // An undo: an imported Sunday start, back to Monday, whose week record lists 32 other devices.
+    at("2026-11-02T08:00:00Z");
+    const c = await goalOnB();
+    at("2026-11-05T09:00:00Z");
+    await importInto(c.b, weekStartFrom(c.own, 0), apply);
+    await fillDevices(c.b, c.goalId, "2026-11-02");
+    const replaced = (await c.b.db.replacedVersions.toArray()).find((r) => r.type === "preferences")!;
+    before = await stateOf(c.b);
+    expect(await codeOf(restoreReplacedVersion(c.b.db, registry, replaced.replacedId))).toBe("DEVICE_LIMIT");
+    expect(await stateOf(c.b)).toEqual(before);
+    expect(await weekStartOn(c.b)).toBe(0);
+  });
+
   it("once a device has seen the other's change, its own later change applies on both, carried by its counters, not its clock", async () => {
     const { a, b, goalId } = await independentChanges("10:00", "09:00");
     await importInto(b, await exportText(a), apply); // B has now seen A's change to Sunday

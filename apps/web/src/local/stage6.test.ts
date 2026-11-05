@@ -271,6 +271,24 @@ describe("a change of week start applies the new week's plan from that day, also
     }
   });
 
+  /** `week`'s record lists 32 other devices (from imports): this device's next write would add a 33rd. */
+  async function fillDevices(d: TestDevice, goalId: string, week: string) {
+    const row = (await d.db.records.get([GOAL_WEEK_PLANS, weekPlanId(goalId, week)]))!;
+    await d.db.records.put({ ...row, version: Object.fromEntries(Array.from({ length: 32 }, () => [crypto.randomUUID(), 1])) });
+  }
+
+  it("a record limit (32 devices on the week's plan) refuses the week start change the same way, with its own reason and nothing written", async () => {
+    const { d, goalId } = await sundayGoal();
+    at("2026-11-05T09:00:00Z");
+    await updateSharedPreferences(d.db, { weekStart: 6 });
+    await fillDevices(d, goalId, "2026-11-01");
+    const before = await prefsAndPlans(d);
+    at("2026-11-05T10:00:00Z");
+    await expect(updateSharedPreferences(d.db, { weekStart: 0 })).rejects.toMatchObject({ name: "GoalPlanError", code: "DEVICE_LIMIT", weekStartChange: true });
+    expect(await prefsAndPlans(d)).toEqual(before);
+    expect(await weekOn(d, "2026-11-05")).toBe("2026-10-31");
+  });
+
   it("outside a change of week start, a takeover the counter cannot record leaves the plan as it is, as the entry counter does: the goal change itself is kept", async () => {
     const { d, goalId } = await sundayGoal();
     at("2026-11-05T09:00:00Z");

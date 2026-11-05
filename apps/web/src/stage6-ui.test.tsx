@@ -971,4 +971,23 @@ describe("week start changes the plans cannot record (T-247)", () => {
     expect((select as HTMLSelectElement).value).toBe("0");
     expect((await services.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).map((r) => r.contentHash)).toEqual(plansBefore);
   });
+
+  it("the message names the limit that stops it: a week plan already changed on 32 other devices", async () => {
+    let goalId = "";
+    await renderApp(async (s) => {
+      goalId = await createGoal(s.db, { name: "Pages", startDate: "2026-11-02", deadline: "2026-11-29", kind: "taskCount", target: 600, workdays: [1, 2, 3, 4, 5] });
+      await updateSharedPreferences(s.db, { weekStart: 0 }); // a Sunday week record from Wednesday
+      await updateSharedPreferences(s.db, { weekStart: 1 }); // back to Monday
+      const row = (await s.db.records.get([GOAL_WEEK_PLANS, weekPlanId(goalId, "2026-11-01")]))!;
+      await s.db.records.put({ ...row, version: Object.fromEntries(Array.from({ length: 32 }, () => [crypto.randomUUID(), 1])) });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const select = await screen.findByLabelText("Week starts on");
+    fireEvent.change(select, { target: { value: "0" } });
+    const message = (await screen.findByTestId("settings-save-error")).textContent!;
+    expect(message).toContain("The week start was not changed");
+    expect(message).toContain("(32)");
+    expect(message).not.toContain("counter");
+    expect((await getSharedPreferences(services.db)).weekStart).toBe(1);
+  });
 });

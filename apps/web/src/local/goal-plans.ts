@@ -70,12 +70,24 @@ export type GoalPlanErrorCode =
 
 export class GoalPlanError extends Error {
   readonly code: GoalPlanErrorCode;
-  constructor(code: GoalPlanErrorCode, message: string) {
+  /** Raised for a change of week start that a goal's plan cannot record (T-247): the whole change was refused. */
+  readonly weekStartChange: boolean;
+  constructor(code: GoalPlanErrorCode, message: string, weekStartChange = false) {
     super(message);
     this.name = "GoalPlanError";
     this.code = code;
+    this.weekStartChange = weekStartChange;
   }
 }
+
+/** The error code for a plan write that is blocked, by its reason. */
+const BLOCKED_CODE: Record<"counter" | "takeover" | EnvelopeLimit, GoalPlanErrorCode> = {
+  counter: "SEQ_LIMIT",
+  takeover: "SEQ_LIMIT",
+  size: "RECORD_LIMIT",
+  devices: "DEVICE_LIMIT",
+  versionCounter: "VERSION_LIMIT",
+};
 
 /** A weekly plan with its version vector, so the exact envelope of its next write can be measured. */
 export type PlanItem = Item<GoalWeekPlanData> & { version: VersionVector };
@@ -228,6 +240,8 @@ export function planWriteStep(
     if (state.plan.deadline === null || state.plan.workdays.length === 0) return { kind: "none" };
     const data = plannedRecord(goalPlans, { goalId, weekStart: state.currentWeek, dates: [] }, today, thisDevice, segment);
     if (!data) return { kind: "blocked", reason: "takeover", segment, inEffect: null };
+    const problem = limit(data);
+    if (problem) return { kind: "blocked", reason: problem, segment, inEffect: null };
     return { kind: "start", segment, data };
   }
   const todayDate = existing.dates.find((d) => d.from === today);
@@ -268,7 +282,7 @@ export async function refreshWeekPlans(
   registry: Registry,
   mode: "open" | "change",
   now: number = Date.now(),
-  /** After a change of week start (T-247): a plan this device cannot record for a counter at its maximum refuses the whole change. */
+  /** After a change of week start (T-247): a plan this device cannot record, for any limit, refuses the whole change. */
   weekStartChange = false,
 ): Promise<void> {
   const { today, zone, weekStart } = await todayOf(db, now);
@@ -285,10 +299,11 @@ export async function refreshWeekPlans(
     const id = weekPlanId(goal.id, state.currentWeek);
     const goalPlans = plans.filter((p) => p.data.goalId === goal.id).map((p) => p.data);
     const step = planWriteStep(goal.id, goal.data, state, manualAmounts(allocations, goal.id), goalPlans, today, device.id, limit);
-    if (weekStartChange && step.kind === "blocked" && (step.reason === "counter" || step.reason === "takeover")) {
-      // The week under the new start could not apply from today: the caller's transaction is undone,
-      // so the week start, the import, the decision, or the undo changes nothing (as `decidePlanDate`).
-      throw new GoalPlanError("SEQ_LIMIT", "this device's counter for today's plan is at its maximum; the week start was not changed");
+    if (weekStartChange && step.kind === "blocked") {
+      // The week under the new start could not apply from today, whatever the limit (a counter, the
+      // record's size, its devices, or its edit counter): the caller's transaction is undone, so the
+      // week start, the import, the decision, or the undo changes nothing (as `decidePlanDate`).
+      throw new GoalPlanError(BLOCKED_CODE[step.reason], `today's plan cannot be recorded (${step.reason}); the week start was not changed`, true);
     }
     if (step.kind === "start") {
       // After a change of week start, a takeover mark makes it apply from today over the goal's

@@ -8,7 +8,7 @@ import {
 import { useId, useMemo, useState } from "react";
 import { usePreferences, useServices, useT } from "../app-context.tsx";
 import { CAPACITY_MAX_MINUTES } from "../backup/registry.ts";
-import { formatDateTime } from "../i18n/index.ts";
+import { formatDateTime, type MessageKey } from "../i18n/index.ts";
 import { GoalPlanError } from "../local/goal-plans.ts";
 import { updateDeviceSettings } from "../local/records.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
@@ -54,7 +54,7 @@ export function SettingsView() {
     try {
       await updateSharedPreferences(db, shared);
     } catch (e) {
-      setSaveError(e instanceof GoalPlanError && e.code === "SEQ_LIMIT" ? t("pace.error.weekStartSeqLimit") : t("backup.error.generic"));
+      setSaveError(e instanceof GoalPlanError && e.weekStartChange ? t(`pace.error.weekStart.${e.code}` as MessageKey) : t("backup.error.generic"));
     }
   }
 
