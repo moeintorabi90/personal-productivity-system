@@ -332,7 +332,7 @@ Not covered, or covered only in part:
 - The floating window was opened only as a test-provided window (an iframe in jsdom); in Edge the end-to-end test checks only that the control follows feature detection, since opening the real window needs a user gesture. The compact view (T-238) is likewise tested with a test window (an iframe, in jsdom and in Edge), not a real Picture-in-Picture window, whose smallest size is set by the browser. The alert tone is not checked automatically.
 - Two segments whose hashes match but whose content differs cannot be produced (a SHA-256 collision); the test checks that candidates are compared by canonical content.
 - Several item 17 and 18 cases (for example a change of week start or workdays, and two contradicting decisions) are tested on the pure functions rather than through the screens.
-- The segment-merge design has not had the independent review that DECISIONS asks for.
+- The segment-merge design had not had the independent review that DECISIONS asks for. *(Updated 2026-11-06: Codex's independent review of the segment-merge and derived data design is complete, through the takeover-mark integrity correction `e3849fb`; no code tests were run as part of that review. The manual checks on the owner's devices above stay open.)*
 
 ## Stage 5 acceptance tests (specified 2026-10-26; implemented 2026-10-29 on `feat/stage-5-sessions-outputs`, see "Stage 5 test report")
 
