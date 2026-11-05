@@ -8,7 +8,7 @@
 import { canonicalize } from "../backup/jcs.ts";
 import { type GoalWeekPlanChoiceData, type GoalWeekPlanData, PLAN_SEQ_MAX, type PlanDateData, type PlanEntryData, type SegmentData } from "../backup/registry.ts";
 import { addDays } from "../planning/time.ts";
-import { hasCoverageCycle } from "./plan-integrity.ts";
+import { hasCoverageCycle, hasUnsettledSeenAnomaly } from "./plan-integrity.ts";
 
 const key = (value: unknown) => canonicalize(value);
 
@@ -30,10 +30,13 @@ export { hasCoverageCycle };
 export const planHasCoverageCycle = (plan: GoalWeekPlanData) => plan.dates.some(hasCoverageCycle);
 
 /**
- * Entries that leave no candidate: every entry is covered, which only a coverage cycle can cause.
- * Shown as a data-integrity issue for the owner to settle, never as a silent "no data".
+ * Malformed entries the owner has to settle: no candidate at all (every entry is covered, which
+ * only a coverage cycle can cause), or a stored `seen` claim no entry bears out that no sound entry
+ * has covered yet. Shown as a data-integrity issue for the owner to settle, never as a silent
+ * "no data" or a silently chosen plan.
  */
-export const isInconsistentDate = (date: Pick<PlanDateData, "entries">) => date.entries.length > 0 && candidatesOf(date).length === 0;
+export const isInconsistentDate = (date: Pick<PlanDateData, "entries">) =>
+  date.entries.length > 0 && (candidatesOf(date).length === 0 || hasUnsettledSeenAnomaly(date));
 
 /** Distinct segments of all entries of a date, sorted by canonical JSON (the choices for an inconsistent date). */
 function entrySegments(date: Pick<PlanDateData, "entries">): SegmentData[] {
@@ -50,19 +53,19 @@ export type DateResolution =
   /** Several candidates and none of this device's own: no data until decided (T-228). */
   | { kind: "undecided"; candidates: SegmentData[] }
   /**
-   * Malformed entries that cover one another so none is a candidate: a data-integrity issue. This
-   * device's own entry still applies if it has one (null otherwise), shown with a warning, and the
-   * owner chooses among the segments of all entries.
+   * Malformed entries (`isInconsistentDate`): a data-integrity issue. This device's own entry still
+   * applies if it has one (null otherwise), shown with a warning, and the owner chooses among the
+   * segments of all entries.
    */
   | { kind: "inconsistent"; segment: SegmentData | null; candidates: SegmentData[] };
 
 export function resolveDate(date: PlanDateData, thisDevice: string): DateResolution {
-  const candidates = candidatesOf(date);
-  if (candidates.length === 1) return { kind: "settled", segment: candidates[0]! };
   if (isInconsistentDate(date)) {
     const own = date.entries.find((e) => e.device === thisDevice);
     return { kind: "inconsistent", segment: own?.segment ?? null, candidates: entrySegments(date) };
   }
+  const candidates = candidatesOf(date);
+  if (candidates.length === 1) return { kind: "settled", segment: candidates[0]! };
   const own = date.entries.find((e) => e.device === thisDevice);
   if (own && candidates.length > 1 && !isCovered(own, date.entries)) return { kind: "conflict", segment: own.segment, candidates };
   return { kind: "undecided", candidates };

@@ -224,6 +224,27 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("20")); // 100 over 5 workdays
   });
 
+  it("a stored seen claim of an absent entry shows a data-integrity warning with this device's plan, and choosing settles it (Codex review of 9b736d2)", async () => {
+    const goalId = await goal();
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30"));
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const plan = (await services.db.records.get([GOAL_WEEK_PLANS, planId]))!.data as GoalWeekPlanData;
+    const own = plan.dates[0]!.entries[0]!;
+    // Written as malformed data may have arrived before the integrity checks existed.
+    await storeUnchecked(GOAL_WEEK_PLANS, planId, { ...plan, dates: [{ ...plan.dates[0]!, entries: [{ ...own, seen: { "dddddddd-dddd-4ddd-8ddd-dddddddddddd": 1 } }] }] });
+    const warning = await screen.findByTestId("plan-conflict");
+    expect(warning.dataset.kind).toBe("inconsistent");
+    expect(warning.textContent).toMatch(/^Data integrity issue: .*This device's version applies until you choose\.$/);
+    expect(screen.getByTestId("today-target").textContent).toBe("30"); // this device's plan still applies
+    const decide = screen.getByTestId("decide");
+    fireEvent.click(within(decide).getByRole("button", { name: "Choose" }));
+    fireEvent.click(within(await screen.findByTestId("confirm-choice")).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(screen.queryByTestId("plan-conflict")).toBeNull());
+    const settled = ((await services.db.records.get([GOAL_WEEK_PLANS, planId]))!.data as GoalWeekPlanData).dates[0]!;
+    expect(settled.entries.find((e) => e.device === own.device)!.seen).toEqual({}); // the claim is gone with the decision
+    expect(screen.getByTestId("today-target").textContent).toBe("30");
+  });
+
   it("after an automatic write replaced the chosen segment, \"Change choice\" shows the one applying apart from the recorded versions, which stay as they were (T-237)", async () => {
     const goalId = await goal();
     await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30"));

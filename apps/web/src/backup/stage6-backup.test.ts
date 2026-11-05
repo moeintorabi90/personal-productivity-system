@@ -19,7 +19,20 @@ import { createBlock, dragBlockTimes } from "../local/planning.ts";
 import { setMeta } from "../local/db.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
 import { loadTimer, saveCountdown, saveSelectedTimer, saveStopwatch, startCountdown, startStopwatch } from "../local/timer.ts";
-import { canChangeChoice, canWriteEntry, candidatesOf, eventStatus, hasCoverageCycle, mergePlans, nextSeq, planDateOn, planHasCoverageCycle, resolveDate } from "../insights/plan-merge.ts";
+import {
+  canChangeChoice,
+  canWriteEntry,
+  candidatesOf,
+  decisionChoices,
+  eventStatus,
+  hasCoverageCycle,
+  mergePlans,
+  needsDecision,
+  nextSeq,
+  planDateOn,
+  planHasCoverageCycle,
+  resolveDate,
+} from "../insights/plan-merge.ts";
 import { newPlanIntegrityProblem } from "../insights/plan-integrity.ts";
 import { SUGGESTED_MAIN_DASHBOARD } from "../insights/metrics.ts";
 import { DATA_SCHEMA_VERSION } from "./limits.ts";
@@ -278,7 +291,8 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
       expect(preview.counts.planDecisions).toBe(0);
       expect(await a.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(before); // byte-identical
     }
-    expect(resolveDate((await planOf(a, goalId))!.dates[0]!, a.deviceId)).toEqual({ kind: "settled", segment: own.segment });
+    // The stored claim of an absent entry is shown for the owner to settle; this device's plan still applies.
+    expect(resolveDate((await planOf(a, goalId))!.dates[0]!, a.deviceId)).toMatchObject({ kind: "inconsistent", segment: own.segment });
   });
 
   it("a choice whose counter would pass the maximum is refused (SEQ_LIMIT) and writes nothing; up to the maximum it is recorded; a plan write is skipped (Codex review)", async () => {
@@ -1175,6 +1189,50 @@ describe("weekly plan integrity: new cycles and seen claims (Codex review, 2026-
     const { preview } = await importInto(b, fileWith(text, planId, [own, { device: x, seq: 1, seen: {}, segment: seg(90) }]), { ...product, applyUpdates: true });
     expect(preview.counts.planMerge).toBe(1);
     expect(candidatesOf((await planOf(b, goalId))!.dates[0]!)).toHaveLength(2);
+  });
+
+  it("a stored claim of an absent entry: the entry's later arrival is refused instead of silently covered, and the owner can settle the date (Codex review of 9b736d2)", async () => {
+    const { a, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const text = await exportText(a);
+    const original = (await planOf(a, goalId))!;
+    const own = original.dates[0]!.entries[0]!;
+    const d = newId();
+    // Stored before the checks: this device's entry claims D's first entry, which is not here.
+    const legacyOwn = { ...own, seen: { [d]: 1 } };
+    await storeUnchecked(a, GOAL_WEEK_PLANS, planId, mondayWith(original, [legacyOwn]));
+    const stored = (await planOf(a, goalId))!.dates[0]!;
+    // Shown as a data-integrity issue for the owner, like a cycle; this device's plan still applies.
+    expect(resolveDate(stored, a.deviceId)).toEqual({ kind: "inconsistent", segment: own.segment, candidates: [own.segment] });
+    expect(needsDecision(stored)).toBe(true);
+    expect(decisionChoices(stored)).toEqual([own.segment]);
+
+    // A later backup, valid on its own, brings D's first entry: merged, the old claim would cover it and hide D's plan.
+    const file = fileWith(text, planId, [legacyOwn, { device: d, seq: 1, seen: {}, segment: seg(90) }]);
+    const incoming = incomingOf(file, planId);
+    expect(newPlanIntegrityProblem(undefined, incoming)).toBeNull();
+    expect(candidatesOf(mergePlans(mondayWith(original, [legacyOwn]), incoming)!.dates[0]!)).toEqual([own.segment]); // D would be covered
+    const before = await a.db.records.get([GOAL_WEEK_PLANS, planId]);
+    for (const applyUpdates of [false, true]) {
+      const { preview } = await importInto(a, file, { ...product, applyUpdates });
+      expect(preview.counts.planIntegrity).toBe(1);
+      expect(preview.counts.planMerge).toBe(0);
+      expect(await a.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(before); // byte-identical
+    }
+    expect(candidatesOf((await planOf(a, goalId))!.dates[0]!)).toEqual([own.segment]); // D's entry is not here, so not hidden
+
+    // The owner settles the date: the decision's entry claims only what is here.
+    await decidePlanDate(a.db, planId, "2026-11-02", own.segment, canonicalize(stored));
+    const settled = (await planOf(a, goalId))!.dates[0]!;
+    expect(settled.entries.find((e) => e.device === a.deviceId)!.seen).toEqual({});
+    expect(resolveDate(settled, a.deviceId)).toEqual({ kind: "settled", segment: own.segment });
+    // The same backup now merges, and D's version, written without seeing that decision, is a conflict for the owner.
+    const { preview } = await importInto(a, file, { ...product, applyUpdates: true });
+    expect(preview.counts.planIntegrity).toBe(0);
+    expect(preview.counts.planMerge).toBe(1);
+    const merged = (await planOf(a, goalId))!.dates[0]!;
+    expect(candidatesOf(merged)).toEqual([own.segment, seg(90)].sort((p, q) => (canonicalize(p) < canonicalize(q) ? -1 : 1)));
+    expect(resolveDate(merged, a.deviceId).kind).toBe("conflict");
   });
 
   it("a stored claim from before the checks does not block a write that leaves it as it is", async () => {
