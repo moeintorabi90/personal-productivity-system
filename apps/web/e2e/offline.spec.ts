@@ -481,6 +481,9 @@ test("Stage 3 follow-up offline: project color, tap to plan, drag-move and resiz
   await a.mouse.up();
   await expect(block).toContainText("10:15–10:45");
   await expect(a.getByTestId("undo-bar")).toBeVisible();
+  // On screen, not only rendered: the grid is scrolled into view below the calendar's heading, and
+  // a bar left in the page flow above it was out of sight (owner's manual check, 2026-11-05).
+  await expect(a.getByTestId("undo-bar")).toBeInViewport({ ratio: 1, timeout: 2_000 });
   await expect(a.getByRole("dialog")).toHaveCount(0);
   await expect(a.getByTestId("undo-bar")).toBeHidden({ timeout: 8_000 });
   await expect(block).toContainText("10:15–10:45");
@@ -494,6 +497,7 @@ test("Stage 3 follow-up offline: project color, tap to plan, drag-move and resiz
   await a.mouse.move(q.x, q.y, { steps: 8 });
   await a.mouse.up();
   await expect(block).toContainText("10:15–11:30");
+  await expect(a.getByTestId("undo-bar")).toBeInViewport({ ratio: 1, timeout: 2_000 });
   const undo = a.getByTestId("undo-bar").getByRole("button", { name: "Undo" });
   await undo.focus();
   await a.waitForTimeout(6_000);

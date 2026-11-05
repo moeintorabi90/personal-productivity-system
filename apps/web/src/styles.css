@@ -1003,12 +1003,22 @@ textarea {
   color: var(--error-text);
 }
 
+/* Kept in view at the bottom of the window: the drag happens inside the grid, often scrolled well
+   below the calendar's heading, where a bar in the page flow would be out of sight (T-090). */
 .undo-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  position: fixed;
+  inset-inline: 1rem;
+  inset-block-end: calc(1rem + env(safe-area-inset-bottom, 0px));
+  max-inline-size: 32rem;
+  margin: 0 auto;
+  z-index: 20;
+  border: 1px solid var(--border);
+  box-shadow: 0 0.25rem 1rem rgb(0 0 0 / 0.25);
 }
 
 @media (max-width: 560px) {
