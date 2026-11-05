@@ -33,7 +33,7 @@ import {
   planHasCoverageCycle,
   resolveDate,
 } from "../insights/plan-merge.ts";
-import { newPlanIntegrityProblem } from "../insights/plan-integrity.ts";
+import { cyclicEntries, newPlanIntegrityProblem } from "../insights/plan-integrity.ts";
 import { SUGGESTED_MAIN_DASHBOARD } from "../insights/metrics.ts";
 import { DATA_SCHEMA_VERSION } from "./limits.ts";
 import {
@@ -1076,6 +1076,7 @@ describe("weekly plan integrity: new cycles and seen claims (Codex review, 2026-
     });
   const incomingOf = (text: string, planId: string) => JSON.parse(text).payload.records[GOAL_WEEK_PLANS].find((e: { id: string }) => e.id === planId).data as GoalWeekPlanData;
   const newId = () => crypto.randomUUID();
+  const cyclicEntriesOf = (plan: GoalWeekPlanData) => cyclicEntries(plan.dates[0]!).map((e) => e.device);
 
   it("a date that already had a cycle: an import that would add a second cycle is an integrity issue and changes nothing", async () => {
     const { a, goalId } = await sharedGoal();
@@ -1140,6 +1141,75 @@ describe("weekly plan integrity: new cycles and seen claims (Codex review, 2026-
     const monday = (await planOf(a, goalId))!.dates[0]!;
     expect(hasCoverageCycle(monday)).toBe(false);
     expect(resolveDate(monday, a.deviceId)).toEqual({ kind: "settled", segment: seg(90) });
+  });
+
+  it("a third device's backup carrying the same old cycle plus its decision covering both merges: the decision applies, the old cycle stays as it was", async () => {
+    const { a, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const text = await exportText(a);
+    const original = (await planOf(a, goalId))!;
+    const [p, q, c] = [newId(), newId(), newId()];
+    // Stored before the checks here: P's and Q's entries cover each other (the old cycle A/B of the report).
+    const p1: Entry = { device: p, seq: 1, seen: { [q]: 1 }, segment: seg(90) };
+    const q1: Entry = { device: q, seq: 1, seen: { [p]: 1 }, segment: seg(80) };
+    await storeUnchecked(a, GOAL_WEEK_PLANS, planId, mondayWith(original, [p1, q1]));
+    expect(resolveDate((await planOf(a, goalId))!.dates[0]!, a.deviceId).kind).toBe("inconsistent");
+    // The third device holds the same two entries and decided after seeing both.
+    const c1: Entry = { device: c, seq: 1, seen: { [p]: 1, [q]: 1 }, segment: seg(70) };
+    const file = fileWith(text, planId, [p1, q1, c1]);
+    const incoming = incomingOf(file, planId);
+    expect(newPlanIntegrityProblem(undefined, incoming)).toBe("cycle"); // on its own, the backup's record has a cycle
+    const local = (await planOf(a, goalId))!;
+    expect(newPlanIntegrityProblem(local, incoming)).toBeNull(); // but exactly the one already here
+
+    // Without "Apply updates" nothing is written; with it, the merge is accepted.
+    const before = await a.db.records.get([GOAL_WEEK_PLANS, planId]);
+    const skipped = await importInto(a, file, { ...product, applyUpdates: false });
+    expect(skipped.preview.counts.planIntegrity).toBe(0);
+    expect(skipped.preview.counts.planMerge).toBe(1);
+    expect(await a.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(before);
+    const { preview } = await importInto(a, file, { ...product, applyUpdates: true });
+    expect(preview.counts.planIntegrity).toBe(0);
+    expect(preview.counts.planMerge).toBe(1);
+    const monday = (await planOf(a, goalId))!.dates[0]!;
+    expect(candidatesOf(monday)).toEqual([seg(70)]); // C's decision is the only candidate
+    expect(resolveDate(monday, a.deviceId)).toEqual({ kind: "settled", segment: seg(70) });
+    // The old cycle is still there, unchanged, and covered by C's entry.
+    expect(monday.entries.find((e) => e.device === p)).toEqual(p1);
+    expect(monday.entries.find((e) => e.device === q)).toEqual(q1);
+    expect(hasCoverageCycle(monday)).toBe(true);
+
+    // The same backup is still refused as a plan new to a device, which has no such baseline.
+    const d = await device("D");
+    const fresh = await importInto(d, file, product);
+    expect(fresh.preview.counts.planIntegrity).toBe(1);
+    expect(await planOf(d, goalId)).toBeUndefined();
+  });
+
+  it("with an old cycle here, a merge that would create a new cycle is still refused and nothing changes", async () => {
+    const { a, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const text = await exportText(a);
+    const original = (await planOf(a, goalId))!;
+    const [p, q, x, y] = [newId(), newId(), newId(), newId()];
+    const p1: Entry = { device: p, seq: 1, seen: { [q]: 1 }, segment: seg(90) };
+    const q1: Entry = { device: q, seq: 1, seen: { [p]: 1 }, segment: seg(80) };
+    // Also stored before the checks: X's entry claims Y's first entry, which is not here.
+    const x1: Entry = { device: x, seq: 1, seen: { [y]: 1 }, segment: seg(60) };
+    const local = mondayWith(original, [p1, q1, x1]);
+    await storeUnchecked(a, GOAL_WEEK_PLANS, planId, local);
+    const before = await a.db.records.get([GOAL_WEEK_PLANS, planId]);
+    // A backup with the same old cycle and Y's entry claiming X's: merged, X and Y would cover each other.
+    const file = fileWith(text, planId, [p1, q1, { device: y, seq: 1, seen: { [x]: 1 }, segment: seg(50) }]);
+    const merged = mergePlans(local, incomingOf(file, planId))!;
+    expect(cyclicEntriesOf(merged).sort()).toEqual([p, q, x, y].sort()); // the old cycle and a new one
+    expect(newPlanIntegrityProblem(local, merged)).toBe("cycle");
+    for (const applyUpdates of [false, true]) {
+      const { preview } = await importInto(a, file, { ...product, applyUpdates });
+      expect(preview.counts.planIntegrity).toBe(1);
+      expect(preview.counts.planMerge).toBe(0);
+      expect(await a.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(before); // byte-identical
+    }
   });
 
   for (const kind of ["missing device", "impossible counter"] as const) {

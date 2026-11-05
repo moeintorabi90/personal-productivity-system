@@ -72,14 +72,16 @@ function planMergeEnvelope(local: Envelope, incoming: Envelope, merged: GoalWeek
 
 /**
  * The merge of a weekly plan, or null when it has a data-integrity issue: the same device and
- * counter with different content, a backup record that has a coverage cycle or a `seen` claim no
- * entry of its date bears out, or a merge that brings such a problem in, such as a cycle that only
- * the merge creates. A problem already stored here (from before these checks) and left as it is
- * does not block the merge, so a date with an older cycle still takes entries that add no new
- * one, and the owner can settle it; a new cycle on that date is refused like any other.
+ * counter with different content, a backup record with a coverage cycle or a `seen` claim no entry
+ * of its date bears out that this device does not already hold in exactly that form, or a merge
+ * that brings such a problem in, such as a cycle that only the merge creates. A problem already
+ * stored here (from before these checks), arriving again unchanged or left as it is, does not block
+ * the merge, so a date with an older cycle still takes entries that add no new one (such as another
+ * device's decision that covers it), and the owner can settle it; a new cycle on that date is
+ * refused like any other. A plan new to this device has no such baseline (see `classifyAll`).
  */
 function mergeWeekPlan(here: GoalWeekPlanData, incoming: GoalWeekPlanData): GoalWeekPlanData | null {
-  if (newPlanIntegrityProblem(undefined, incoming)) return null;
+  if (newPlanIntegrityProblem(here, incoming)) return null;
   const merged = mergePlans(here, incoming);
   if (!merged) return null;
   return newPlanIntegrityProblem(here, merged) ? null : merged;
