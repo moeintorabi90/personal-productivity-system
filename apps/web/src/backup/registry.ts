@@ -4,6 +4,7 @@ import { isLocalDate, localDateOf } from "../planning/time.ts";
 import { sessionTimesProblem } from "../work/session-time.ts";
 import { appUseDayId, estimateCaptureId, planChoiceId, weekAllocationId, weekPlanId } from "./derived-id.ts";
 import { canonicalize } from "./jcs.ts";
+import { newPlanIntegrityProblem } from "../insights/plan-integrity.ts";
 import { SHARED_PREFERENCES_ID } from "./limits.ts";
 
 /**
@@ -70,6 +71,11 @@ export interface RecordTypeDef {
    * rule that reads a field that is not immutable must accept a target if any version satisfies it.
    */
   rule?: (data: Record<string, unknown>, lookup: DataLookup, lookupAll?: DataLookupAll) => string | null;
+  /**
+   * Data integrity of a local write, given the data it replaces (`undefined` for a new record):
+   * a problem the write would bring in, or null. Problems already stored are left to the owner.
+   */
+  writeIntegrity?: (data: Record<string, unknown>, previous: Record<string, unknown> | undefined) => string | null;
 }
 
 export interface Registry {
@@ -1079,6 +1085,11 @@ export const goalWeekPlansType: RecordTypeDef = {
   immutableFields: ["goalId", "weekStart"],
   noTombstones: true,
   derivedId: (d) => weekPlanId(d.goalId as string, d.weekStart as string),
+  // DECISIONS "Entries that cover one another" and "`seen` claims": no write brings in either problem.
+  writeIntegrity: (d, previous) => {
+    const problem = newPlanIntegrityProblem(previous as GoalWeekPlanData | undefined, d as GoalWeekPlanData);
+    return problem === "cycle" ? "an entry would cover and be covered in a cycle" : problem === "seen" ? "a seen claim names a device or counter not on its date" : null;
+  },
 };
 
 export const goalWeekPlanChoicesType: RecordTypeDef = {

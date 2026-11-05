@@ -108,6 +108,7 @@ export const en = {
   "org.error.RECORD_TOO_LARGE": "This change would make the item larger than a backup can hold for one item. Nothing was changed.",
   "backup.resolve.idMismatch": "this version's identity does not match its content, so it cannot be used",
   "org.error.ID_MISMATCH": "This item could not be saved because its identity does not match its content. Nothing was changed.",
+  "org.error.DATA_INTEGRITY": "This item could not be saved because it would contain inconsistent data. Nothing was changed.",
   "org.error.generic": "This could not be saved. Check the fields and try again.",
 
   "today.title": "Today",

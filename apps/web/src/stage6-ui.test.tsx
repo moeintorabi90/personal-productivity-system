@@ -78,6 +78,16 @@ afterEach(async () => {
 
 const goTo = async (name: string) => fireEvent.click(await screen.findByRole("button", { name }));
 
+/**
+ * Stores `data` as a build before the weekly plans' integrity checks could have (malformed data
+ * already on a device): the envelope `putRecord` would write, without its checks.
+ */
+async function storeUnchecked(type: string, id: string, data: unknown) {
+  const row = await services.db.records.get([type, id]);
+  const envelope = plannedWriteEnvelope(row, id, data as Record<string, unknown>, (await deviceIdentity(services.db)).id, nowIso());
+  await services.db.records.put({ type, ...envelope });
+}
+
 describe("1–2. calendar: Planned and Actual subcolumns, segments, drag correction (T-072, T-174 to T-177)", () => {
   async function withPausedSession() {
     await renderApp(async (s) => {
@@ -197,7 +207,7 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     const other = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
     const theirs = { state: "allocated" as const, allocation: { num: 100, den: 1 }, source: "manual" as const };
     // Written as malformed data may have arrived before this check existed.
-    await putRecord(services.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, planId, {
+    await storeUnchecked(GOAL_WEEK_PLANS, planId, {
       ...plan,
       dates: [{ ...plan.dates[0]!, entries: [{ ...own, seen: { [other]: 1 } }, { device: other, seq: 1, seen: { [own.device]: own.seq }, segment: theirs }].sort((p, q) => (p.device < q.device ? -1 : 1)) }],
     });
@@ -279,7 +289,8 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     const own = plan.dates[0]!.entries[0]!;
     const other = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
     const theirs = { state: "allocated" as const, allocation: { num: 100, den: 1 }, source: "manual" as const };
-    await putRecord(services.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, planId, {
+    // Written as malformed data may have arrived before the integrity checks existed.
+    await storeUnchecked(GOAL_WEEK_PLANS, planId, {
       ...plan,
       dates: [{ ...plan.dates[0]!, entries: [{ ...own, seen: { [other]: 1 } }, { device: other, seq: 1, seen: { [own.device]: PLAN_SEQ_MAX }, segment: theirs }].sort((p, q) => (p.device < q.device ? -1 : 1)) }],
     });

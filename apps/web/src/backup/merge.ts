@@ -18,7 +18,8 @@ import {
   SESSIONS,
 } from "./registry.ts";
 import { compareVersions, isContainedIn, mergeVersions, bumpVersion } from "./versions.ts";
-import { conflictDates, hasCoverageCycle, mergePlans, planHasCoverageCycle } from "../insights/plan-merge.ts";
+import { conflictDates, mergePlans } from "../insights/plan-merge.ts";
+import { newPlanIntegrityProblem } from "../insights/plan-integrity.ts";
 
 /** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
 export type ItemCategory =
@@ -49,18 +50,13 @@ export interface PreviewItem {
    */
   planMerge?: { data: GoalWeekPlanData | null; decisions: number; limit?: EnvelopeLimit };
   /**
-   * A new weekly plan whose entries cover one another in a cycle: malformed, a data-integrity issue.
-   * It is counted with the plans that have one and is not imported.
+   * A new weekly plan with a data-integrity issue: entries that cover one another in a cycle, or a
+   * `seen` claim no entry of its date bears out. It is counted with the plans that have one and is
+   * not imported.
    */
   planIntegrity?: true;
 }
 
-/**
- * The merge of a weekly plan, or null when it has a data-integrity issue: the same device and
- * counter with different content, entries in the backup that cover one another in a cycle, or a
- * cycle that only the merge creates. A date that already had a cycle here (written before this
- * check existed) does not block the merge; it is shown for the owner to settle.
- */
 /**
  * The envelope a weekly plan merge writes, exactly: the merged data with this record's ID and
  * `createdAt`, `at` as `updatedAt`, the combined version vector raised for this device, and the
@@ -74,12 +70,19 @@ function planMergeEnvelope(local: Envelope, incoming: Envelope, merged: GoalWeek
   return next.contentHash === local.contentHash ? { ...local, version } : { ...next, version: bumpVersion(version, thisDevice) };
 }
 
+/**
+ * The merge of a weekly plan, or null when it has a data-integrity issue: the same device and
+ * counter with different content, a backup record that has a coverage cycle or a `seen` claim no
+ * entry of its date bears out, or a merge that brings such a problem in, such as a cycle that only
+ * the merge creates. A problem already stored here (from before these checks) and left as it is
+ * does not block the merge, so a date with an older cycle still takes entries that add no new
+ * one, and the owner can settle it; a new cycle on that date is refused like any other.
+ */
 function mergeWeekPlan(here: GoalWeekPlanData, incoming: GoalWeekPlanData): GoalWeekPlanData | null {
-  if (planHasCoverageCycle(incoming)) return null;
+  if (newPlanIntegrityProblem(undefined, incoming)) return null;
   const merged = mergePlans(here, incoming);
   if (!merged) return null;
-  const cycleHere = new Set(here.dates.filter(hasCoverageCycle).map((d) => d.from));
-  return merged.dates.some((d) => !cycleHere.has(d.from) && hasCoverageCycle(d)) ? null : merged;
+  return newPlanIntegrityProblem(here, merged) ? null : merged;
 }
 
 /**
@@ -434,7 +437,7 @@ async function classifyAll(db: LocalDb, payload: BackupPayload, registry: Regist
           item.planMerge = { data: merged, decisions: merged ? conflictDates(merged).filter((d) => !before.has(d)).length : 0 };
         }
       }
-      if (item.category === "new" && type === GOAL_WEEK_PLANS && planHasCoverageCycle(envelope.data as GoalWeekPlanData)) item.planIntegrity = true;
+      if (item.category === "new" && type === GOAL_WEEK_PLANS && newPlanIntegrityProblem(undefined, envelope.data as GoalWeekPlanData)) item.planIntegrity = true;
       items.push(item);
     }
   }

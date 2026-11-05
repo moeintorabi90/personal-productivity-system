@@ -20,6 +20,7 @@ import { setMeta } from "../local/db.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
 import { loadTimer, saveCountdown, saveSelectedTimer, saveStopwatch, startCountdown, startStopwatch } from "../local/timer.ts";
 import { canChangeChoice, canWriteEntry, candidatesOf, eventStatus, hasCoverageCycle, mergePlans, nextSeq, planDateOn, planHasCoverageCycle, resolveDate } from "../insights/plan-merge.ts";
+import { newPlanIntegrityProblem } from "../insights/plan-integrity.ts";
 import { SUGGESTED_MAIN_DASHBOARD } from "../insights/metrics.ts";
 import { DATA_SCHEMA_VERSION } from "./limits.ts";
 import {
@@ -78,6 +79,15 @@ const recordsOf = async (d: TestDevice) =>
   (await d.db.records.toArray())
     .map((r) => ({ type: r.type, id: r.id, contentHash: r.contentHash, version: r.version, data: r.data }))
     .sort((a, b) => `${a.type}/${a.id}`.localeCompare(`${b.type}/${b.id}`));
+/**
+ * Stores `data` as a build before the weekly plans' integrity checks could have (malformed data
+ * already on a device): the envelope `putRecord` would write, without its checks.
+ */
+async function storeUnchecked(d: TestDevice, type: string, id: string, data: unknown) {
+  const row = await d.db.records.get([type, id]);
+  await d.db.records.put({ type, ...plannedWriteEnvelope(row, id, data as Record<string, unknown>, d.deviceId, nowIso()) });
+}
+
 const planOf = async (d: TestDevice, goalId: string, week = "2026-11-02") => (await d.db.records.get([GOAL_WEEK_PLANS, weekPlanId(goalId, week)]))?.data as GoalWeekPlanData | undefined;
 
 const goalInput = { name: "Pages", startDate: "2026-11-02", deadline: "2026-11-29", kind: "taskCount" as const, target: 600, workdays: [1, 2, 3, 4, 5] };
@@ -246,8 +256,9 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
     const d = crypto.randomUUID();
     const y = { state: "allocated" as const, allocation: { num: 90, den: 1 }, source: "manual" as const };
     const byDevice = (p: PlanEntryData, q: PlanEntryData) => (p.device < q.device ? -1 : 1);
-    // Here: this device's next Monday entry claims to have seen D's first entry, which is not here.
-    await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, { ...original, dates: [{ ...original.dates[0]!, entries: [{ ...own, seq: own.seq + 1, seen: { [d]: 1 } }] }] });
+    // Here: this device's next Monday entry claims to have seen D's first entry, which is not here
+    // (a claim no entry bears out, so only data stored before that check could hold it).
+    await storeUnchecked(a, GOAL_WEEK_PLANS, planId, { ...original, dates: [{ ...original.dates[0]!, entries: [{ ...own, seq: own.seq + 1, seen: { [d]: 1 } }] }] });
     const before = (await a.db.records.get([GOAL_WEEK_PLANS, planId]))!;
     // In the file: D's first entry claims this device's second, while the file holds its first.
     const incomingText = mutate(text, (doc) => {
@@ -283,7 +294,9 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
       ...original,
       dates: [{ ...original.dates[0]!, entries: [{ ...own, seen: { [d]: 1 } }, { device: d, seq: 1, seen: { [own.device]: claim }, segment: y }].sort(byDevice) }],
     });
-    await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, cyclic(PLAN_SEQ_MAX));
+    // Malformed data stored before the integrity checks (normal writes refuse it, DATA_INTEGRITY).
+    expect(await codeOf(putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, cyclic(PLAN_SEQ_MAX)))).toBe("DATA_INTEGRITY");
+    await storeUnchecked(a, GOAL_WEEK_PLANS, planId, cyclic(PLAN_SEQ_MAX));
     const stored = (await planOf(a, goalId))!.dates[0]!;
     expect(resolveDate(stored, a.deviceId).kind).toBe("inconsistent");
     expect(nextSeq(stored, a.deviceId)).toBe(PLAN_SEQ_MAX + 1);
@@ -294,7 +307,7 @@ describe("18. weekly plans and allocations through backups (T-223, T-227 to T-22
     expect(await recordsOf(a)).toEqual(before); // no plan entry and no choice event
 
     // One below the maximum: the choice is recorded at the maximum and settles the date.
-    await putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, cyclic(PLAN_SEQ_MAX - 1));
+    await storeUnchecked(a, GOAL_WEEK_PLANS, planId, cyclic(PLAN_SEQ_MAX - 1));
     const below = (await planOf(a, goalId))!.dates[0]!;
     await decidePlanDate(a.db, planId, "2026-11-02", y, canonicalize(below));
     const decided = (await planOf(a, goalId))!.dates[0]!;
@@ -1033,3 +1046,149 @@ describe("weekly plan options are distinct and in canonical order (independent r
     expect((await planOf(b, goalId))!.dates[0]!.options).toEqual(options);
   });
 });
+
+describe("weekly plan integrity: new cycles and seen claims (Codex review, 2026-11-05)", () => {
+  type Entry = PlanEntryData;
+  const seg = (num: number): SegmentData => ({ state: "allocated", allocation: { num, den: 1 }, source: "manual" });
+  const byDevice = (p: Entry, q: Entry) => (p.device < q.device ? -1 : 1);
+  const mondayWith = (plan: GoalWeekPlanData, entries: Entry[]): GoalWeekPlanData => ({ ...plan, dates: [{ ...plan.dates[0]!, entries: [...entries].sort(byDevice) }] });
+  /** The exported file with this plan's Monday entries replaced; its version is concurrent with the device's, so it is a plan merge. */
+  const fileWith = (text: string, planId: string, entries: Entry[]) =>
+    mutate(text, (doc) => {
+      const env = doc.payload.records[GOAL_WEEK_PLANS].find((e: { id: string }) => e.id === planId);
+      env.data.dates[0].entries = [...entries].sort(byDevice);
+      env.contentHash = contentHashOf(env.data);
+      env.version = { ...env.version, [crypto.randomUUID()]: 1 };
+    });
+  const incomingOf = (text: string, planId: string) => JSON.parse(text).payload.records[GOAL_WEEK_PLANS].find((e: { id: string }) => e.id === planId).data as GoalWeekPlanData;
+  const newId = () => crypto.randomUUID();
+
+  it("a date that already had a cycle: an import that would add a second cycle is an integrity issue and changes nothing", async () => {
+    const { a, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const text = await exportText(a);
+    const original = (await planOf(a, goalId))!;
+    const own = original.dates[0]!.entries[0]!;
+    const [p, q, r] = [newId(), newId(), newId()];
+    // Stored before the checks: this device and P cover each other, and Q claims R, which is not here.
+    const local = mondayWith(original, [
+      { ...own, seen: { [p]: 1 } },
+      { device: p, seq: 1, seen: { [own.device]: own.seq }, segment: seg(90) },
+      { device: q, seq: 1, seen: { [r]: 1 }, segment: seg(80) },
+    ]);
+    await storeUnchecked(a, GOAL_WEEK_PLANS, planId, local);
+    expect(hasCoverageCycle(local.dates[0]!)).toBe(true);
+    const before = await a.db.records.get([GOAL_WEEK_PLANS, planId]);
+    // The file brings R's entry claiming Q's: merged, Q and R would cover each other, a second cycle.
+    const file = fileWith(text, planId, [{ device: r, seq: 1, seen: { [q]: 1 }, segment: seg(70) }]);
+    expect(newPlanIntegrityProblem(local, mergePlans(local, incomingOf(file, planId))!)).toBe("cycle");
+    for (const applyUpdates of [false, true]) {
+      const { preview } = await importInto(a, file, { ...product, applyUpdates });
+      expect(preview.counts.planIntegrity).toBe(1);
+      expect(preview.counts.planMerge).toBe(0);
+      expect(await a.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(before); // byte-identical
+    }
+    expect(resolveDate((await planOf(a, goalId))!.dates[0]!, a.deviceId)).toEqual(resolveDate(local.dates[0]!, a.deviceId)); // the plan applying is as before
+  });
+
+  it("the cycle rule on its own: an older cycle left as it is allows a merge, a new cycle on the same date does not", () => {
+    const [a, p, q, r] = [newId(), newId(), newId(), newId()];
+    const plan = (entries: Entry[]): GoalWeekPlanData => ({ goalId: GOAL_ID_FOR_RULE, weekStart: "2026-11-02", dates: [{ from: "2026-11-02", entries: [...entries].sort(byDevice), options: [] }] });
+    const old: Entry[] = [
+      { device: a, seq: 1, seen: { [p]: 1 }, segment: seg(100) },
+      { device: p, seq: 1, seen: { [a]: 1 }, segment: seg(90) },
+    ];
+    const before = plan(old);
+    expect(newPlanIntegrityProblem(undefined, before)).toBe("cycle"); // a record new here with a cycle
+    expect(newPlanIntegrityProblem(before, plan([...old, { device: q, seq: 1, seen: {}, segment: seg(80) }]))).toBeNull();
+    const second = [...old, { device: q, seq: 1, seen: { [r]: 1 }, segment: seg(80) }, { device: r, seq: 1, seen: { [q]: 1 }, segment: seg(70) }];
+    expect(newPlanIntegrityProblem(before, plan(second))).toBe("cycle");
+    // P's entry replaced by a newer one that still lies on a cycle with this device's: a new cycle as well.
+    const replaced = [{ ...old[0]!, seen: { [p]: 2 } }, { device: p, seq: 2, seen: { [a]: 1 }, segment: seg(60) }];
+    expect(newPlanIntegrityProblem(before, plan(replaced))).toBe("cycle");
+  });
+
+  it("a date that already had a cycle still takes a merge that adds none: the owner's decision from another device settles it", async () => {
+    const { a, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const text = await exportText(a);
+    const original = (await planOf(a, goalId))!;
+    const own = original.dates[0]!.entries[0]!;
+    const p = newId();
+    const ownCyclic = { ...own, seen: { [p]: 1 } };
+    await storeUnchecked(a, GOAL_WEEK_PLANS, planId, mondayWith(original, [ownCyclic, { device: p, seq: 1, seen: { [own.device]: own.seq }, segment: seg(90) }]));
+    expect(resolveDate((await planOf(a, goalId))!.dates[0]!, a.deviceId).kind).toBe("inconsistent");
+    // P decided after seeing both entries: its second entry covers this device's, and nothing covers it.
+    const decided = fileWith(text, planId, [ownCyclic, { device: p, seq: 2, seen: { [own.device]: own.seq }, segment: seg(90) }]);
+    const { preview } = await importInto(a, decided, { ...product, applyUpdates: true });
+    expect(preview.counts.planIntegrity).toBe(0);
+    expect(preview.counts.planMerge).toBe(1);
+    const monday = (await planOf(a, goalId))!.dates[0]!;
+    expect(hasCoverageCycle(monday)).toBe(false);
+    expect(resolveDate(monday, a.deviceId)).toEqual({ kind: "settled", segment: seg(90) });
+  });
+
+  for (const kind of ["missing device", "impossible counter"] as const) {
+    it(`a seen claim with ${kind === "missing device" ? "a" : "an"} ${kind}: not imported as a new plan, not merged, refused as a local write; nothing changes`, async () => {
+      const { a, b, goalId } = await sharedGoal();
+      const planId = weekPlanId(goalId, "2026-11-02");
+      const text = await exportText(a);
+      const original = (await planOf(a, goalId))!;
+      const own = original.dates[0]!.entries[0]!;
+      const x = newId();
+      // Missing device: X has no entry on Monday. Impossible counter: X's entry is its first, the claim its third.
+      const entries: Entry[] =
+        kind === "missing device" ? [{ ...own, seen: { [x]: 1 } }] : [{ ...own, seen: { [x]: 3 } }, { device: x, seq: 1, seen: {}, segment: seg(90) }];
+      expect(newPlanIntegrityProblem(undefined, mondayWith(original, entries))).toBe("seen");
+      const file = fileWith(text, planId, entries);
+      // As a new record: counted with the integrity issues and not imported; the rest of the file is.
+      const c = await device("C");
+      const fresh = await importInto(c, file, product);
+      expect(fresh.preview.counts.planIntegrity).toBe(1);
+      expect(await planOf(c, goalId)).toBeUndefined();
+      expect(await c.db.records.get([GOALS, goalId])).toBeTruthy();
+      // Merged into B's plan: counted, and B's plan stays byte-identical in either "Apply updates" run.
+      const bBefore = await b.db.records.get([GOAL_WEEK_PLANS, planId]);
+      for (const applyUpdates of [false, true]) {
+        const { preview } = await importInto(b, file, { ...product, applyUpdates });
+        expect(preview.counts.planIntegrity).toBe(1);
+        expect(preview.counts.planMerge).toBe(0);
+        expect(await b.db.records.get([GOAL_WEEK_PLANS, planId])).toEqual(bBefore);
+      }
+      // A local write that would bring the claim in is refused.
+      const aBefore = await recordsOf(a);
+      expect(await codeOf(putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, mondayWith(original, entries)))).toBe("DATA_INTEGRITY");
+      expect(await recordsOf(a)).toEqual(aBefore);
+    });
+  }
+
+  it("a claim no entry bears out cannot hide a later entry: when X's real entry arrives, the owner sees a conflict", async () => {
+    const { a, b, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const text = await exportText(a);
+    const own = (await planOf(a, goalId))!.dates[0]!.entries[0]!;
+    const x = newId();
+    // A file whose next entry of A's claims X's third entry while X has none: refused, so B keeps no such claim.
+    const claim = await importInto(b, fileWith(text, planId, [{ ...own, seq: own.seq + 1, seen: { [x]: 3 } }]), { ...product, applyUpdates: true });
+    expect(claim.preview.counts.planIntegrity).toBe(1);
+    // X's first entry, written without seeing anyone, then arrives and is not silently covered.
+    const { preview } = await importInto(b, fileWith(text, planId, [own, { device: x, seq: 1, seen: {}, segment: seg(90) }]), { ...product, applyUpdates: true });
+    expect(preview.counts.planMerge).toBe(1);
+    expect(candidatesOf((await planOf(b, goalId))!.dates[0]!)).toHaveLength(2);
+  });
+
+  it("a stored claim from before the checks does not block a write that leaves it as it is", async () => {
+    const { a, goalId } = await sharedGoal();
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const original = (await planOf(a, goalId))!;
+    const own = original.dates[0]!.entries[0]!;
+    const legacy = mondayWith(original, [{ ...own, seen: { [newId()]: 1 } }]);
+    await storeUnchecked(a, GOAL_WEEK_PLANS, planId, legacy);
+    // The same claim, unchanged, with another part of the record changed: written.
+    const next = { ...legacy, dates: [{ ...legacy.dates[0]!, options: [seg(50)] }] };
+    expect(await codeOf(putRecord(a.db, registry, GOAL_WEEK_PLANS, planId, next))).toBe("OK");
+    expect((await planOf(a, goalId))!.dates[0]!.options).toEqual([seg(50)]);
+  });
+});
+
+const GOAL_ID_FOR_RULE = "77777777-7777-4777-8777-777777777777";

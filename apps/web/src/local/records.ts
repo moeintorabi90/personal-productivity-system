@@ -40,7 +40,16 @@ export class RecordRuleError extends Error {
    * written would break a per-record limit of the backup format (256 KiB; 32 devices in its version
    * vector; this device's edit counter past `MAX_VERSION_COUNTER`), so nothing is written.
    */
-  readonly code: "BROKEN_LINK" | "INVALID_RELATIONSHIP" | "IMMUTABLE_FIELD" | "RECORD_TOO_LARGE" | "TOO_MANY_DEVICES" | "VERSION_COUNTER_EXHAUSTED" | "ID_MISMATCH";
+  readonly code:
+    | "BROKEN_LINK"
+    | "INVALID_RELATIONSHIP"
+    | "IMMUTABLE_FIELD"
+    | "RECORD_TOO_LARGE"
+    | "TOO_MANY_DEVICES"
+    | "VERSION_COUNTER_EXHAUSTED"
+    | "ID_MISMATCH"
+    /** The write would bring in a data-integrity problem the type checks (a weekly plan's cycle or `seen` claim). */
+    | "DATA_INTEGRITY";
   constructor(code: RecordRuleError["code"], message: string) {
     super(message);
     this.name = "RecordRuleError";
@@ -86,6 +95,8 @@ export async function putRecord(
         throw new RecordRuleError("IMMUTABLE_FIELD", `${type}.${field} cannot change`);
       }
     }
+    const integrity = def.writeIntegrity?.(parsed, current?.data);
+    if (integrity) throw new RecordRuleError("DATA_INTEGRITY", `${type}/${id}: ${integrity}`);
     if (current) {
       if (def.appendOnly) throw new Error("Append-only records cannot be edited");
       if (contentHashOf(parsed) === current.contentHash) return current;

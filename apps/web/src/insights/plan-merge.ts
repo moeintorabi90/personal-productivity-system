@@ -8,6 +8,7 @@
 import { canonicalize } from "../backup/jcs.ts";
 import { type GoalWeekPlanChoiceData, type GoalWeekPlanData, PLAN_SEQ_MAX, type PlanDateData, type PlanEntryData, type SegmentData } from "../backup/registry.ts";
 import { addDays } from "../planning/time.ts";
+import { hasCoverageCycle } from "./plan-integrity.ts";
 
 const key = (value: unknown) => canonicalize(value);
 
@@ -23,26 +24,7 @@ export function candidatesOf(date: Pick<PlanDateData, "entries">): SegmentData[]
   return [...out.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, s]) => s);
 }
 
-/**
- * Whether the entries of a date cover one another in a cycle (A covered by B, B covered by A, or a
- * longer loop). An entry can only cover one written before it, so a cycle never arises from the
- * app's own writes and merges: it is malformed data, a data-integrity issue.
- */
-export function hasCoverageCycle(date: Pick<PlanDateData, "entries">): boolean {
-  const entries = date.entries;
-  // Edge i -> j: entry i is covered by entry j.
-  const next = entries.map((e) => entries.flatMap((o, j) => (o.device !== e.device && (o.seen[e.device] ?? 0) >= e.seq ? [j] : [])));
-  const state = entries.map(() => 0); // 0 unvisited, 1 on the path, 2 done
-  const visit = (i: number): boolean => {
-    if (state[i] === 1) return true;
-    if (state[i] === 2) return false;
-    state[i] = 1;
-    if (next[i]!.some(visit)) return true;
-    state[i] = 2;
-    return false;
-  };
-  return entries.some((_, i) => visit(i));
-}
+export { hasCoverageCycle };
 
 /** Whether any date of a weekly plan record has a coverage cycle (refused on import as an integrity issue). */
 export const planHasCoverageCycle = (plan: GoalWeekPlanData) => plan.dates.some(hasCoverageCycle);
