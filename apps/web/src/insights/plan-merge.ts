@@ -213,19 +213,24 @@ interface PlacedMark {
   week: string;
   day: string;
   mark: TakeoverData;
+  /** The date holding the mark also holds an entry of the mark's device (its plan write, whatever its `seq`). */
+  ownEntry: boolean;
 }
 
 const coversDay = (week: string, day: string) => week <= day && day <= addDays(week, 6);
 const markKey = (m: PlacedMark) => `${m.goalId}|${m.week}|${m.day}|${m.mark.device}`;
 
 function placedMarks(plans: readonly GoalWeekPlanData[]): PlacedMark[] {
-  return plans.flatMap((p) => p.dates.flatMap((d) => (d.takeovers ?? []).map((mark) => ({ goalId: p.goalId, week: p.weekStart, day: d.from, mark }))));
+  return plans.flatMap((p) =>
+    p.dates.flatMap((d) => (d.takeovers ?? []).map((mark) => ({ goalId: p.goalId, week: p.weekStart, day: d.from, mark, ownEntry: d.entries.some((e) => e.device === mark.device) }))),
+  );
 }
 
 /**
  * Takeover marks that `plans` do not bear out (T-247; derived "Takeover marks that are not borne
  * out"), keyed by goal, week, day, and device. A mark is borne out when the goal's records here hold
- * what it claims: each week in `over` has a record that covers the day and has a date from it; each
+ * what it claims: its own date holds an entry of its device (the plan write it was made with; its
+ * counter is the entry's own, not the mark's); each week in `over` has a record that covers the day and has a date from it; each
  * `seen` claim names a device with a mark for that goal and day at least that high; no other record
  * holds a mark of the same device and `seq` for that day; and it is not on a cycle of marks that
  * cover one another. The app writes only such marks, so one that is not borne out is malformed data
@@ -242,7 +247,7 @@ export function unbackedMarks(plans: readonly GoalWeekPlanData[]): Set<string> {
     );
     const seenBacked = Object.entries(m.mark.seen).every(([device, n]) => peers.some((o) => o.mark.device === device && o.mark.seq >= n));
     const unique = !peers.some((o) => o !== m && o.week !== m.week && o.mark.device === m.mark.device && o.mark.seq === m.mark.seq);
-    if (!overBacked || !seenBacked || !unique) out.add(markKey(m));
+    if (!m.ownEntry || !overBacked || !seenBacked || !unique) out.add(markKey(m));
   }
   // Marks on a coverage cycle (each covered, directly or not, by the other): never written by the app.
   const groups = new Map<string, PlacedMark[]>();
@@ -287,7 +292,7 @@ export function tieWinner(tied: readonly Dated[], plans: readonly GoalWeekPlanDa
   const goalId = tied[0]!.plan.goalId;
   const unbacked = unbackedMarks(plans.filter((p) => p.goalId === goalId));
   const marks = tied
-    .flatMap((t) => (t.date.takeovers ?? []).map((mark) => ({ goalId, mark, week: t.plan.weekStart, day: t.date.from })))
+    .flatMap((t) => (t.date.takeovers ?? []).map((mark) => ({ goalId, mark, week: t.plan.weekStart, day: t.date.from, ownEntry: t.date.entries.some((e) => e.device === mark.device) })))
     .filter((m) => !unbacked.has(markKey(m)));
   const live = marks.filter((m) => !marks.some((o) => o !== m && markCovered(m.mark, o.mark)));
   const over = new Set(live.flatMap((m) => m.mark.over));

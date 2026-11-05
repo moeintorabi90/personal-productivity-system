@@ -616,6 +616,9 @@ describe("takeover marks that the records here do not bear out (T-247; derived \
         ? p
         : { ...p, dates: p.dates.map((d) => (d.from !== DAY ? d : { ...d, takeovers: [...(d.takeovers ?? []).filter((t) => t.device !== mark.device), mark].sort((x, y) => (x.device < y.device ? -1 : 1)) })) },
     );
+  /** `plans` with an entry of `device` on `week`'s date from DAY (the plan write a mark is made with). */
+  const withEntry = (plans: GoalWeekPlanData[], week: string, device: string): GoalWeekPlanData[] =>
+    plans.map((p) => (p.weekStart !== week ? p : withDate(p, writeEntry(p.dates.find((d) => d.from === DAY), DAY, device, seg(7)))));
   // A made the Saturday week apply over the Sunday week (a mark borne out).
   const base = () => claim([rec(SUN, 1)], SAT, A);
 
@@ -624,8 +627,8 @@ describe("takeover marks that the records here do not bear out (T-247; derived \
     const forged = withMark(base(), SUN, { device: B, seq: 1, seen: { [A]: 5 }, over: [SAT] }); // A has no mark 5
     expect(unbackedMarks(forged).size).toBe(1);
     expect(weekOn(forged)).toBe(SAT);
-    // The same claim borne out (A's mark 1) is an ordinary later change of B: it applies.
-    expect(weekOn(withMark(base(), SUN, { device: B, seq: 1, seen: { [A]: 1 }, over: [SAT] }))).toBe(SUN);
+    // The same claim borne out (A's mark 1), with B's own entry on that date, is an ordinary later change of B: it applies.
+    expect(weekOn(withMark(withEntry(base(), SUN, B), SUN, { device: B, seq: 1, seen: { [A]: 1 }, over: [SAT] }))).toBe(SUN);
   });
 
   it("an over naming a week with no date from that day here does not count, nor does the rest of that mark", () => {
@@ -639,6 +642,19 @@ describe("takeover marks that the records here do not bear out (T-247; derived \
     expect(unbackedMarks(twice).size).toBe(2);
     const cycle = withMark(withMark(base(), SAT, { device: A, seq: 1, seen: { [B]: 1 }, over: [SUN] }), SUN, { device: B, seq: 1, seen: { [A]: 1 }, over: [SAT] });
     expect(unbackedMarks(cycle).size).toBe(2);
+  });
+
+  it("a mark on a date with no entry of its own device is not borne out and decides nothing, whatever else it claims", () => {
+    // Everything else about B's mark is borne out (A's mark 1 exists; the Saturday week has a date from DAY).
+    const mark = { device: B, seq: 1, seen: { [A]: 1 }, over: [SAT] };
+    const forged = withMark(base(), SUN, mark); // the Sunday date holds only A's entry
+    expect(recordsWithUnbackedMarks(forged)).toEqual(new Set([`${GOAL}|${SUN}`]));
+    expect(weekOn(forged)).toBe(SAT); // the Saturday week is not put out
+    expect(weekOn([...forged].reverse())).toBe(SAT);
+    // B's entry there, with any counter of its own (here 1, unrelated to the mark's), makes it borne out.
+    const backed = withMark(withEntry(base(), SUN, B), SUN, { ...mark, seq: 4 });
+    expect(unbackedMarks(backed).size).toBe(0);
+    expect(weekOn(backed)).toBe(SUN);
   });
 
   it("a mark whose record is not here yet waits, and applies once it arrives; the result is the same in any order", () => {

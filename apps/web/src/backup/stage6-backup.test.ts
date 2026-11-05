@@ -1462,6 +1462,39 @@ describe("changes of week start on one day travel in backups (T-247; derived \"W
     expect((await prefsAndPlans(c)).filter((r) => r.type === GOAL_WEEK_PLANS)).toEqual(before.filter((r) => r.type === GOAL_WEEK_PLANS));
   });
 
+  it("a takeover on a date with no entry of its own device is an integrity issue, in a new record and in an existing one: not imported, not merged, the plan in effect unchanged", async () => {
+    const { b, goalId } = await goalOnBWithWeeks(); // B's marks: 1 on Sunday, 2 on Saturday; Saturday applies
+    const valid = await exportText(b);
+    // Everything else borne out by the file: B's marks exist, and both weeks have a date from 11-05.
+    const foreign = { device: OTHER, seq: 1, seen: { [b.deviceId]: 2 }, over: ["2026-10-31", "2026-11-01"] };
+
+    // New here: the Monday record carries it; C has none of B's plans yet.
+    const c = await device("C");
+    const newForged = withPlan(valid, goalId, "2026-11-02", addMark(foreign));
+    for (let i = 0; i < 2; i++) {
+      const { preview } = await importInto(c, newForged, apply);
+      expect(preview.counts.planIntegrity).toBe(1);
+      expect(await planOf(c, goalId, "2026-11-02")).toBeUndefined();
+    }
+    // B's own marks name the Monday week, which was refused here: they wait, and the later week key applies meanwhile.
+    expect(unbackedMarks(await plansOf(c)).size).toBe(2);
+    expect(await weekOn(c)).toBe("2026-11-01");
+    await importInto(c, valid, apply); // the valid backup brings the Monday record: B's marks apply
+    expect(unbackedMarks(await plansOf(c)).size).toBe(0);
+    expect(await weekOn(c)).toBe("2026-10-31");
+
+    // Existing here: D already holds B's Monday record.
+    const d = await device("D");
+    await importInto(d, valid, apply);
+    const before = await prefsAndPlans(d);
+    for (let i = 0; i < 2; i++) {
+      const { preview } = await importInto(d, newForged, apply);
+      expect(preview.counts.planIntegrity).toBe(1);
+      expect(await prefsAndPlans(d)).toEqual(before);
+      expect(await weekOn(d)).toBe("2026-10-31");
+    }
+  });
+
   it("a borne-out takeover whose week record is not merged here waits, changes nothing meanwhile, and applies once the record arrives", async () => {
     at("2026-11-02T08:00:00Z");
     const b = await device("B");
