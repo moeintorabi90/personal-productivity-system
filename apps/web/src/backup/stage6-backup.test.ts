@@ -1086,6 +1086,11 @@ describe("13. the version-8 sample", () => {
     const task = await createTask(a.db, { title: "Draft chapter", estimateMinutes: 90 });
     const block = await createBlock(a.db, { taskId: task, date: "2026-11-05", startTime: "06:00", durationMinutes: 60 });
     await dragBlockTimes(a.db, block, { startsAt: "2026-11-05T09:00:00.000Z", endsAt: "2026-11-05T10:30:00.000Z" });
+    // A change of week start on Thursday (T-247): the Sunday week's new record takes over from the
+    // Monday week's, which already has a date from that day; the setting is then put back.
+    await updateSharedPreferences(a.db, { weekStart: 0 });
+    await recordAppUse(a.db, Date.now());
+    await updateSharedPreferences(a.db, { weekStart: 1 });
     const file = await exportFrom(a, { now: new Date("2026-11-05T09:00:00Z"), backupId: "8c1d2e3f-4a5b-4c6d-8e7f-90a1b2c3d4e5" }, registry);
     writeFileSync(v8Sample, `${file.text}\n`);
   });
@@ -1109,6 +1114,9 @@ describe("13. the version-8 sample", () => {
     expect(new Set(events.map((e: { data: { device: string } }) => e.data.device)).size).toBe(2);
     expect(new Set(events.map((e: { data: { from: string } }) => e.data.from)).size).toBe(1);
     expect(records[DASHBOARDS]).toHaveLength(1);
+    // A week record that takes over from another after a change of week start (T-247).
+    const takeover = records[GOAL_WEEK_PLANS].find((p: { data: GoalWeekPlanData }) => p.data.takesOver)?.data as GoalWeekPlanData | undefined;
+    expect(takeover).toMatchObject({ weekStart: "2026-11-01", takesOver: ["2026-11-02"], dates: [{ from: "2026-11-05" }] });
     const c = await device("C");
     expect(await codeOf(importInto(c, text, product))).toBe("OK");
   });

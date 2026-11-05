@@ -123,7 +123,13 @@ export function mergePlans(local: GoalWeekPlanData, incoming: GoalWeekPlanData):
       dates.set(d.from, merged);
     }
   }
-  return { goalId: local.goalId, weekStart: local.weekStart, dates: [...dates.values()].sort((x, y) => (x.from < y.from ? -1 : 1)) };
+  const takesOver = [...new Set([...(local.takesOver ?? []), ...(incoming.takesOver ?? [])])].sort();
+  return {
+    goalId: local.goalId,
+    weekStart: local.weekStart,
+    ...(takesOver.length > 0 ? { takesOver } : {}),
+    dates: [...dates.values()].sort((x, y) => (x.from < y.from ? -1 : 1)),
+  };
 }
 
 /** Dates of a record that need the owner's decision: undecided or in conflict, or inconsistent. */
@@ -191,8 +197,20 @@ export interface AppliedPlan {
 }
 
 /**
+ * Which of two week records wins a tie: the same `from` on a day both cover, after a change of week
+ * start (T-247). A record that takes over from the other wins; otherwise, or if each names the
+ * other (only from devices that did not see each other), the later week key, as before.
+ */
+export function winsTie(a: GoalWeekPlanData, b: GoalWeekPlanData): boolean {
+  const aTakes = a.takesOver?.includes(b.weekStart) ?? false;
+  const bTakes = b.takesOver?.includes(a.weekStart) ?? false;
+  if (aTakes !== bTakes) return aTakes;
+  return a.weekStart > b.weekStart;
+}
+
+/**
  * The plan date in effect on `day`: among the goal's records whose seven days include it, the date
- * with the latest `from` on or before `day` (later week keys win a tie). Null: no recorded plan.
+ * with the latest `from` on or before `day`; on a tie, `winsTie` (T-247). Null: no recorded plan.
  */
 export function planDateOn(plans: readonly GoalWeekPlanData[], day: string, thisDevice: string): AppliedPlan | null {
   let best: { plan: GoalWeekPlanData; date: PlanDateData } | null = null;
@@ -200,7 +218,7 @@ export function planDateOn(plans: readonly GoalWeekPlanData[], day: string, this
     if (!(plan.weekStart <= day && day <= addDays(plan.weekStart, 6))) continue;
     for (const date of plan.dates) {
       if (date.from > day) continue;
-      if (!best || date.from > best.date.from || (date.from === best.date.from && plan.weekStart > best.plan.weekStart)) best = { plan, date };
+      if (!best || date.from > best.date.from || (date.from === best.date.from && winsTie(plan, best.plan))) best = { plan, date };
     }
   }
   return best ? { ...best, resolution: resolveDate(best.date, thisDevice) } : null;

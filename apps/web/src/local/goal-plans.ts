@@ -31,7 +31,7 @@ import {
 import { canonicalize } from "../backup/jcs.ts";
 import { type EnvelopeLimit, envelopeLimitProblem, nowIso } from "../backup/envelope.ts";
 import { planChoiceId, weekAllocationId, weekPlanId } from "../backup/derived-id.ts";
-import { localDateOf } from "../planning/time.ts";
+import { addDays, localDateOf } from "../planning/time.ts";
 import { computeAllocations, segmentFor, type AllocationResult } from "../insights/allocation.ts";
 import { amountBetween, goalDays } from "../insights/actuals.ts";
 import type { Fraction } from "../insights/fraction.ts";
@@ -256,7 +256,18 @@ export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "o
     const goalPlans = plans.filter((p) => p.data.goalId === goal.id).map((p) => p.data);
     const step = planWriteStep(goal.data, state, manualAmounts(allocations, goal.id), goalPlans, today, device.id, limit);
     if (step.kind === "start") {
-      const data: GoalWeekPlanData = { goalId: goal.id, weekStart: state.currentWeek, dates: [writeEntry(undefined, today, device.id, step.segment)] };
+      // After a change of week start (T-247): the goal's other week records that also have a date
+      // from today are taken over, so the new week's plan applies from today and earlier days keep theirs.
+      const takesOver = goalPlans
+        .filter((p) => p.weekStart !== state.currentWeek && p.weekStart <= today && today <= addDays(p.weekStart, 6) && p.dates.some((x) => x.from === today))
+        .map((p) => p.weekStart)
+        .sort();
+      const data: GoalWeekPlanData = {
+        goalId: goal.id,
+        weekStart: state.currentWeek,
+        ...(takesOver.length > 0 ? { takesOver } : {}),
+        dates: [writeEntry(undefined, today, device.id, step.segment)],
+      };
       await putRecord(db, registry, GOAL_WEEK_PLANS, id, data);
     } else if (step.kind === "write" && mode === "change") {
       const existing = goalPlans.find((p) => p.weekStart === state.currentWeek)!;

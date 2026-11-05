@@ -1003,6 +1003,15 @@ export const goalWeekPlanSchema = z
   .object({
     goalId: z.uuid(),
     weekStart: localDateSchema,
+    // T-247: the other week keys of the goal this record takes over from, on a day both have a date
+    // from (after a change of week start). Distinct, ascending, within six days of `weekStart`, never
+    // itself; only ever grows (a merge takes the union). Absent when unused.
+    takesOver: z
+      .array(localDateSchema)
+      .min(1)
+      .max(6)
+      .refine((list) => list.every((w, i) => i === 0 || w > list[i - 1]!), { message: "takesOver must be distinct and ascending" })
+      .optional(),
     dates: z
       .array(
         z
@@ -1033,6 +1042,8 @@ export const goalWeekPlanSchema = z
     if (!isLocalDate(p.weekStart)) return;
     const last = new Date(Date.parse(`${p.weekStart}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
     if (p.dates.some((d) => d.from < p.weekStart || d.from > last)) ctx.addIssue({ code: "custom", message: "a date lies outside its week" });
+    const first = new Date(Date.parse(`${p.weekStart}T00:00:00Z`) - 6 * 86_400_000).toISOString().slice(0, 10);
+    if (p.takesOver?.some((w) => !isLocalDate(w) || w === p.weekStart || w < first || w > last)) ctx.addIssue({ code: "custom", message: "takesOver names a week key that cannot overlap this week" });
   });
 export type GoalWeekPlanData = z.infer<typeof goalWeekPlanSchema>;
 export type PlanDateData = GoalWeekPlanData["dates"][number];

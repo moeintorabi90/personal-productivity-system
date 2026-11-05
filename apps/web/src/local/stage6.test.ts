@@ -23,6 +23,7 @@ import { GoalPlanError, moveWeekAllocation, setWeekAllocation } from "./goal-pla
 import { recordAppUse } from "./insights.ts";
 import { createTask, updateTask } from "./organization.ts";
 import { createBlock, setRecurrence, updateBlock } from "./planning.ts";
+import { appliedSegment, planDateOn } from "../insights/plan-merge.ts";
 import { updateSharedPreferences } from "./settings.ts";
 import {
   countdownReachedZero,
@@ -152,6 +153,75 @@ describe("17–18. manual allocations and moves (T-206, T-207, T-218, T-220, T-2
 
   it("errors are GoalPlanErrors", () => {
     expect(new GoalPlanError("NOT_FOUND", "x").code).toBe("NOT_FOUND");
+  });
+});
+
+describe("a change of week start applies the new week's plan from that day (T-217, T-247)", () => {
+  const planOf = async (d: TestDevice, goalId: string, week: string) => (await d.db.records.get([GOAL_WEEK_PLANS, weekPlanId(goalId, week)]))?.data as GoalWeekPlanData;
+  const allPlans = async (d: TestDevice) => (await d.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).map((r) => r.data as GoalWeekPlanData);
+  /** The week key and segment in effect on `day` on this device. */
+  const inEffect = async (d: TestDevice, day: string) => {
+    const applied = planDateOn(await allPlans(d), day, d.deviceId)!;
+    return [applied.plan.weekStart, appliedSegment(applied.resolution)];
+  };
+  const latest = (plan: GoalWeekPlanData, from: string) => plan.dates.find((x) => x.from === from)!.entries[0]!.segment;
+
+  /**
+   * A goal from Monday 11-02 under one week start; its target changed on Thursday 11-05 (a segment
+   * from 11-05 in the old week's record); then, still on 11-05, the week start changes and the
+   * target changes again, which starts the new week's record from 11-05.
+   */
+  async function changeWeekStart(from: number, to: number) {
+    const d = await device();
+    await updateSharedPreferences(d.db, { weekStart: from });
+    const goalId = await createGoal(d.db, goalInput);
+    at("2026-11-05T08:00:00Z");
+    await updateGoal(d.db, goalId, { target: 700 });
+    await updateSharedPreferences(d.db, { weekStart: to });
+    at("2026-11-05T09:00:00Z");
+    await updateGoal(d.db, goalId, { target: 800 });
+    return { d, goalId };
+  }
+
+  it("Sunday to Saturday: the new week (10-31, the smaller key) applies from 11-05; 11-02 to 11-04 keep the Sunday week's plan", async () => {
+    const { d, goalId } = await changeWeekStart(0, 6);
+    const sunday = await planOf(d, goalId, "2026-11-01");
+    const saturday = await planOf(d, goalId, "2026-10-31");
+    expect(sunday.dates.map((x) => x.from)).toEqual(["2026-11-02", "2026-11-05"]);
+    expect(saturday).toMatchObject({ takesOver: ["2026-11-01"], dates: [{ from: "2026-11-05" }] });
+    expect(latest(saturday, "2026-11-05")).not.toEqual(latest(sunday, "2026-11-05")); // target 800, not 700
+    expect(await inEffect(d, "2026-11-05")).toEqual(["2026-10-31", latest(saturday, "2026-11-05")]);
+    expect(await inEffect(d, "2026-11-06")).toEqual(["2026-10-31", latest(saturday, "2026-11-05")]);
+    for (const day of ["2026-11-02", "2026-11-03", "2026-11-04"]) expect(await inEffect(d, day)).toEqual(["2026-11-01", latest(sunday, "2026-11-02")]);
+    // A further change the same day goes to the new week's record and applies at once.
+    at("2026-11-05T10:00:00Z");
+    await updateGoal(d.db, goalId, { target: 900 });
+    const after = await planOf(d, goalId, "2026-10-31");
+    expect(await inEffect(d, "2026-11-05")).toEqual(["2026-10-31", latest(after, "2026-11-05")]);
+    expect(latest(after, "2026-11-05")).not.toEqual(latest(saturday, "2026-11-05"));
+    expect((await planOf(d, goalId, "2026-11-01")).dates).toEqual(sunday.dates); // the old week's record is unchanged
+  });
+
+  it("Saturday to Sunday: the new week (11-01, the larger key) applies from 11-05 too; 11-02 to 11-04 keep the Saturday week's plan", async () => {
+    const { d, goalId } = await changeWeekStart(6, 0);
+    const saturday = await planOf(d, goalId, "2026-10-31");
+    const sunday = await planOf(d, goalId, "2026-11-01");
+    expect(saturday.dates.map((x) => x.from)).toEqual(["2026-11-02", "2026-11-05"]);
+    expect(sunday).toMatchObject({ takesOver: ["2026-10-31"], dates: [{ from: "2026-11-05" }] });
+    expect(await inEffect(d, "2026-11-05")).toEqual(["2026-11-01", latest(sunday, "2026-11-05")]);
+    for (const day of ["2026-11-02", "2026-11-03", "2026-11-04"]) expect(await inEffect(d, day)).toEqual(["2026-10-31", latest(saturday, "2026-11-02")]);
+  });
+
+  it("a new week's record that starts on a day no other record has a date from takes nothing over", async () => {
+    const d = await device();
+    await updateSharedPreferences(d.db, { weekStart: 0 });
+    const goalId = await createGoal(d.db, goalInput);
+    at("2026-11-05T09:00:00Z");
+    await updateSharedPreferences(d.db, { weekStart: 6 });
+    await updateGoal(d.db, goalId, { target: 800 });
+    const saturday = await planOf(d, goalId, "2026-10-31");
+    expect(saturday.takesOver).toBeUndefined();
+    expect(await inEffect(d, "2026-11-05")).toEqual(["2026-10-31", latest(saturday, "2026-11-05")]); // the later `from` wins as before
   });
 });
 

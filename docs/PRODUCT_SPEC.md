@@ -275,7 +275,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 
 ### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; implemented on `feat/stage-6`, not merged; TESTING "Stage 6 test report")
 
-Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-246 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
+Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-247 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
 
 **Calendar**
 
@@ -307,6 +307,7 @@ Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-246 (DECIS
 - [ ] **Abandonment and streaks (T-244):** abandoning a goal ends its current streak; if it is reopened, the streak starts again from zero, and the longest streak never joins the days before the abandonment with those after the reopening. This holds for the consistency streak and the daily pace streak.
 - [ ] **Hidden while paused or abandoned (T-245):** until the goal is active again, its pacing indicators are hidden, including the calculated daily, weekly, and monthly targets and the goal's streaks, on the goal page and on the dashboard and report cards. Recorded actual amounts and history are kept unchanged; the app-use streak is not affected.
 - [ ] **Weekly plans while paused and on resuming (T-246):** no weekly plan is written or updated while a goal is paused, earlier plans are kept, and no plan is made afterwards for the days of the pause. Resuming a paused goal first asks: recalculate the plan from the resume date, or continue the weekly amount from before the pause in that and every later week until the goal or its weekly allocations change. Cancelling keeps the goal paused and writes nothing. Reopening an abandoned or completed goal asks nothing.
+- [ ] **A change of week start (T-247):** the week under the new week start applies from the day of the change, also when the other week already has a plan from that day; earlier days keep their plan, and this stays fixed if the week start changes again later.
 - [ ] Tone: streaks are simple, supportive, and informational: no points, penalties, coercive pressure, or meaningless scores (T-075).
 
 **Estimation and reports**

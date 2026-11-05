@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { canonicalize } from "../backup/jcs.ts";
-import type { GoalWeekPlanChoiceData, GoalWeekPlanData, PlanDateData, PlanEntryData, SegmentData } from "../backup/registry.ts";
+import { goalWeekPlanSchema, type GoalWeekPlanChoiceData, type GoalWeekPlanData, type PlanDateData, type PlanEntryData, type SegmentData } from "../backup/registry.ts";
 import {
   appliedSegment,
   candidatesOf,
@@ -483,5 +483,48 @@ describe("18. choice history (T-237)", () => {
     expect(ordered.some((o) => o.uncertain || o.cyclic)).toBe(false);
     // The earlier closure needed 3,000³ steps here (minutes); this stays well under a second on this PC.
     expect(elapsed).toBeLessThan(2_000);
+  });
+});
+
+describe("two week records with a date from the same day, after a change of week start (T-247)", () => {
+  const seg = (n: number): SegmentData => ({ state: "allocated", allocation: { num: n, den: 1 }, source: "automatic" });
+  const rec = (weekStart: string, from: string, n: number, takesOver?: string[]): GoalWeekPlanData => ({
+    goalId: GOAL,
+    weekStart,
+    ...(takesOver ? { takesOver } : {}),
+    dates: [writeEntry(undefined, from, A, seg(n))],
+  });
+  const weekOn = (plans: GoalWeekPlanData[], day: string) => planDateOn(plans, day, A)!.plan.weekStart;
+
+  it("the record that takes over wins, whether its week key is smaller or larger; without it, the later key wins as before", () => {
+    expect(weekOn([rec("2026-11-01", "2026-11-05", 1), rec("2026-10-31", "2026-11-05", 2, ["2026-11-01"])], "2026-11-05")).toBe("2026-10-31");
+    expect(weekOn([rec("2026-10-31", "2026-11-05", 1), rec("2026-11-01", "2026-11-05", 2, ["2026-10-31"])], "2026-11-05")).toBe("2026-11-01");
+    expect(weekOn([rec("2026-11-01", "2026-11-05", 1), rec("2026-10-31", "2026-11-05", 2)], "2026-11-05")).toBe("2026-11-01");
+    // Each naming the other (devices that never saw each other): the later key, as before.
+    expect(weekOn([rec("2026-11-01", "2026-11-05", 1, ["2026-10-31"]), rec("2026-10-31", "2026-11-05", 2, ["2026-11-01"])], "2026-11-05")).toBe("2026-11-01");
+    // The order of the records does not matter.
+    expect(weekOn([rec("2026-10-31", "2026-11-05", 2, ["2026-11-01"]), rec("2026-11-01", "2026-11-05", 1)], "2026-11-05")).toBe("2026-10-31");
+  });
+
+  it("a merge keeps the union of the taken-over keys, in either order, and adds none when neither has any", () => {
+    const here = rec("2026-10-31", "2026-11-05", 2, ["2026-11-01"]);
+    const incoming = rec("2026-10-31", "2026-11-05", 2, ["2026-11-02"]);
+    expect(mergePlans(here, incoming)!.takesOver).toEqual(["2026-11-01", "2026-11-02"]);
+    expect(mergePlans(incoming, here)!.takesOver).toEqual(["2026-11-01", "2026-11-02"]);
+    expect(mergePlans(rec("2026-10-31", "2026-11-05", 2), rec("2026-10-31", "2026-11-05", 2))).not.toHaveProperty("takesOver");
+    expect(mergePlans(rec("2026-10-31", "2026-11-05", 2), here)!.takesOver).toEqual(["2026-11-01"]);
+  });
+
+  it("the stored field is checked: distinct, ascending, never the record's own key, and only keys whose weeks can overlap it", () => {
+    const ok = (takesOver: unknown) => goalWeekPlanSchema.safeParse({ ...rec("2026-10-31", "2026-11-05", 2), takesOver }).success;
+    expect(ok(["2026-11-01"])).toBe(true);
+    expect(ok(["2026-10-25", "2026-11-06"])).toBe(true); // six days either side
+    expect(ok(["2026-10-31"])).toBe(false); // itself
+    expect(ok(["2026-11-07"])).toBe(false); // its week cannot overlap
+    expect(ok(["2026-10-24"])).toBe(false);
+    expect(ok(["2026-11-02", "2026-11-01"])).toBe(false); // not ascending
+    expect(ok(["2026-11-01", "2026-11-01"])).toBe(false); // not distinct
+    expect(ok([])).toBe(false); // absent when unused
+    expect(goalWeekPlanSchema.safeParse(rec("2026-10-31", "2026-11-05", 2)).success).toBe(true);
   });
 });
