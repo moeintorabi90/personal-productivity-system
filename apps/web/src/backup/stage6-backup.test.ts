@@ -30,6 +30,7 @@ import {
   needsDecision,
   nextSeq,
   planDateOn,
+  unbackedMarks,
   planHasCoverageCycle,
   resolveDate,
 } from "../insights/plan-merge.ts";
@@ -1391,6 +1392,102 @@ describe("changes of week start on one day travel in backups (T-247; derived \"W
     expect(await codeOf(restoreReplacedVersion(c.b.db, registry, replaced.replacedId))).toBe("DEVICE_LIMIT");
     expect(await stateOf(c.b)).toEqual(before);
     expect(await weekStartOn(c.b)).toBe(0);
+  });
+
+  /** `text` with `change` applied to the weekly plan of `week`, its content hash and the file's integrity hash computed again. */
+  const withPlan = (text: string, goalId: string, week: string, change: (plan: GoalWeekPlanData) => GoalWeekPlanData) =>
+    mutate(text, (doc) => {
+      const env = doc.payload.records[GOAL_WEEK_PLANS].find((e: { data: GoalWeekPlanData }) => e.data.goalId === goalId && e.data.weekStart === week);
+      env.data = change(env.data);
+      env.contentHash = contentHashOf(env.data);
+    });
+  /** Adds `mark` to the plan's date from 11-05 (replacing that device's mark there). */
+  const addMark = (mark: { device: string; seq: number; seen: Record<string, number>; over: string[] }) => (plan: GoalWeekPlanData): GoalWeekPlanData => ({
+    ...plan,
+    dates: plan.dates.map((d) =>
+      d.from !== "2026-11-05" ? d : { ...d, takeovers: [...(d.takeovers ?? []).filter((t) => t.device !== mark.device), mark].sort((p, q) => p.device.localeCompare(q.device)) },
+    ),
+  });
+
+  it("a new week record with a takeover the backup does not bear out is not imported, is counted, and hides nothing; importing it again changes nothing", async () => {
+    const { b, goalId } = await goalOnBWithWeeks(); // Saturday applies on B, by B's marks
+    const valid = await exportText(b);
+    // The Saturday record's mark claims to have seen a device whose marks are nowhere in the file.
+    const forged = withPlan(valid, goalId, "2026-10-31", (p) => ({
+      ...p,
+      dates: p.dates.map((d) => ({ ...d, takeovers: d.takeovers?.map((t) => ({ ...t, seen: { [OTHER]: 3 } })) })),
+    }));
+    const c = await device("C");
+    const first = await importInto(c, forged, apply);
+    expect(first.preview.counts.planIntegrity).toBe(1);
+    expect(await planOf(c, goalId, "2026-10-31")).toBeUndefined(); // not imported
+    expect(await weekOn(c)).toBe("2026-11-01"); // decided by the borne-out marks that did arrive
+    const after = await prefsAndPlans(c);
+    expect((await importInto(c, forged, apply)).preview.counts.planIntegrity).toBe(1);
+    expect(await prefsAndPlans(c)).toEqual(after);
+    // The valid backup brings the record, and C agrees with B.
+    await importInto(c, valid, apply);
+    expect(await weekOn(c)).toBe("2026-10-31");
+  });
+
+  it("a takeover in an existing week record that the backup does not bear out is not merged, so it cannot put a week out; again changes nothing", async () => {
+    const { b, goalId } = await goalOnBWithWeeks();
+    const valid = await exportText(b);
+    const c = await device("C");
+    await importInto(c, valid, apply);
+    expect(await weekOn(c)).toBe("2026-10-31");
+    // A mark on the Monday record that claims to have seen B's ninth mark and puts the other weeks out.
+    const forged = withPlan(valid, goalId, "2026-11-02", addMark({ device: OTHER, seq: 1, seen: { [b.deviceId]: 9 }, over: ["2026-10-31", "2026-11-01"] }));
+    const before = await prefsAndPlans(c);
+    for (let i = 0; i < 2; i++) {
+      const { preview } = await importInto(c, forged, apply);
+      expect(preview.counts.planIntegrity).toBe(1);
+      expect(await prefsAndPlans(c)).toEqual(before);
+      expect(await weekOn(c)).toBe("2026-10-31");
+    }
+  });
+
+  it("a takeover that reuses a device's counter for the day held by another record here is not merged", async () => {
+    const { b, goalId } = await goalOnBWithWeeks();
+    const valid = await exportText(b);
+    const c = await device("C");
+    await importInto(c, valid, apply);
+    const sunday = (await planOf(c, goalId, "2026-11-01"))!.dates.find((d) => d.from === "2026-11-05")!.takeovers![0]!;
+    // Consistent within the file (B's first mark moved from the Sunday to the Monday record), but C holds it on Sunday.
+    let moved = withPlan(valid, goalId, "2026-11-01", (p) => ({ ...p, dates: p.dates.map((d) => (d.from !== "2026-11-05" ? d : { from: d.from, entries: d.entries, options: d.options })) }));
+    moved = withPlan(moved, goalId, "2026-11-02", addMark({ ...sunday, over: ["2026-11-01"] }));
+    const before = await prefsAndPlans(c);
+    const { preview } = await importInto(c, moved, apply);
+    expect(preview.counts.planIntegrity).toBe(1);
+    expect((await prefsAndPlans(c)).filter((r) => r.type === GOAL_WEEK_PLANS)).toEqual(before.filter((r) => r.type === GOAL_WEEK_PLANS));
+  });
+
+  it("a borne-out takeover whose week record is not merged here waits, changes nothing meanwhile, and applies once the record arrives", async () => {
+    at("2026-11-02T08:00:00Z");
+    const b = await device("B");
+    const goalId = await createGoal(b.db, goalInput); // Monday record from 11-02 only
+    const early = await exportText(b);
+    at("2026-11-05T08:00:00Z");
+    await updateGoal(b.db, goalId, { target: 700 }, registry, Date.now()); // the Monday record gets a date from 11-05
+    await updateSharedPreferences(b.db, { weekStart: 0 }); // the Sunday week takes over from it
+    const late = await exportText(b);
+    const c = await device("C");
+    await importInto(c, early, apply);
+    // Without "Apply updates": the new Sunday record is imported, the Monday one is not merged.
+    const { preview } = await importInto(c, late, product);
+    expect(preview.counts.planIntegrity).toBe(0); // borne out by the backup itself
+    const partial = await plansOf(c);
+    expect(unbackedMarks(partial).size).toBe(1); // its Monday date from 11-05 is not here yet: the mark waits
+    expect(await weekOn(c)).toBe("2026-11-01"); // the only record with a date from 11-05 here
+    await importInto(c, late, apply);
+    expect(unbackedMarks(await plansOf(c)).size).toBe(0);
+    expect(await weekOn(c)).toBe("2026-11-01");
+    expect(await weekOn(c, "2026-11-04")).toBe("2026-11-02");
+    // A device that receives everything at once ends the same.
+    const d = await device("D");
+    await importInto(d, late, apply);
+    expect(await weekOn(d)).toBe("2026-11-01");
+    expect(unbackedMarks(await plansOf(d)).size).toBe(0);
   });
 
   it("once a device has seen the other's change, its own later change applies on both, carried by its counters, not its clock", async () => {

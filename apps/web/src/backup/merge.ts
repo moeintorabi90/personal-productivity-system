@@ -19,7 +19,7 @@ import {
   SESSIONS,
 } from "./registry.ts";
 import { compareVersions, isContainedIn, mergeVersions, bumpVersion } from "./versions.ts";
-import { conflictDates, mergePlans } from "../insights/plan-merge.ts";
+import { conflictDates, mergePlans, recordsWithClashingMarks, recordsWithUnbackedMarks } from "../insights/plan-merge.ts";
 import { newPlanIntegrityProblem } from "../insights/plan-integrity.ts";
 
 /** Preview categories (docs/BACKUP_FORMAT.md, "Import flow"). */
@@ -417,6 +417,12 @@ async function classifyAll(db: LocalDb, payload: BackupPayload, registry: Regist
   const thisDevice = (await deviceIdentity(db)).id;
   const at = nowIso();
   const items: PreviewItem[] = [];
+  // Takeover marks (T-247; derived "Takeover marks that are not borne out"): a backup holds all its
+  // source's weekly plans, so each mark must be borne out by the file's own plans, and none may reuse
+  // a device's counter for that day that another record here already holds.
+  const filePlans = (payload.records[GOAL_WEEK_PLANS] ?? []).map((e) => e.data as GoalWeekPlanData);
+  const herePlans = (await db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).map((r) => r.data as GoalWeekPlanData);
+  const badMarks = new Set([...recordsWithUnbackedMarks(filePlans), ...recordsWithClashingMarks(filePlans, herePlans)]);
   for (const [type, list] of Object.entries(payload.records)) {
     const appendOnly = !!registry.get(type)!.appendOnly;
     for (const envelope of list) {
@@ -441,6 +447,14 @@ async function classifyAll(db: LocalDb, payload: BackupPayload, registry: Regist
         }
       }
       if (item.category === "new" && type === GOAL_WEEK_PLANS && newPlanIntegrityProblem(undefined, envelope.data as GoalWeekPlanData)) item.planIntegrity = true;
+      if (type === GOAL_WEEK_PLANS) {
+        const plan = envelope.data as GoalWeekPlanData;
+        if (badMarks.has(`${plan.goalId}|${plan.weekStart}`)) {
+          // A data-integrity issue, like a coverage cycle: not imported when new, not merged, and counted.
+          if (item.category === "new") item.planIntegrity = true;
+          else if (item.category === "planMerge") item.planMerge = { data: null, decisions: 0 };
+        }
+      }
       items.push(item);
     }
   }

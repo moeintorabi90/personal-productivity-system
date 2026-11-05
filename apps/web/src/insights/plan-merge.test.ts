@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { canonicalize } from "../backup/jcs.ts";
-import { goalWeekPlanSchema, type GoalWeekPlanChoiceData, type GoalWeekPlanData, type PlanDateData, type PlanEntryData, type SegmentData } from "../backup/registry.ts";
+import { goalWeekPlanSchema, type GoalWeekPlanChoiceData, type GoalWeekPlanData, type PlanDateData, type PlanEntryData, type SegmentData, type TakeoverData } from "../backup/registry.ts";
 import {
   appliedSegment,
   candidatesOf,
@@ -24,7 +24,9 @@ import {
   eventSeenVerified,
   orderEvents,
   planDateOn,
+  recordsWithUnbackedMarks,
   resolveDate,
+  unbackedMarks,
   withDate,
   writeEntry,
 } from "./plan-merge.ts";
@@ -581,13 +583,75 @@ describe("week records with a date from the same day, after changes of week star
     const ok = (takeovers: unknown) => goalWeekPlanSchema.safeParse({ ...one, dates: [{ ...one.dates[0]!, takeovers }] }).success;
     const mark = { device: A, seq: 1, seen: {}, over: [SUN] };
     expect(ok([mark])).toBe(true);
-    expect(ok([{ ...mark, over: ["2026-10-25", "2026-11-06"] }])).toBe(true); // six days either side
+    expect(ok([{ ...mark, over: ["2026-10-30", "2026-11-05"] }])).toBe(true); // weeks whose seven days include 11-05
+    expect(ok([{ ...mark, over: ["2026-10-29"] }])).toBe(false); // its week ends before 11-05
+    expect(ok([{ ...mark, over: ["2026-11-06"] }])).toBe(false); // its week starts after 11-05
     expect(ok([{ ...mark, over: [SAT] }])).toBe(false); // its own key
-    expect(ok([{ ...mark, over: ["2026-11-07"] }])).toBe(false); // cannot overlap
+    expect(ok([{ ...mark, over: ["2026-11-07"] }])).toBe(false);
     expect(ok([{ ...mark, over: [MONK, SUN] }])).toBe(false); // not ascending
     expect(ok([{ ...mark, over: [] }])).toBe(false);
     expect(ok([{ ...mark, seen: { [A]: 1 } }])).toBe(false); // its own device as seen
     expect(ok([{ ...mark, device: B }, mark])).toBe(false); // not sorted by device
     expect(ok([])).toBe(false); // absent when unused
+  });
+});
+
+describe("takeover marks that the records here do not bear out (T-247; derived \"Takeover marks that are not borne out\")", () => {
+  const DAY = "2026-11-05";
+  const SAT = "2026-10-31";
+  const SUN = "2026-11-01";
+  const MONK = "2026-11-02";
+  const seg = (n: number): SegmentData => ({ state: "allocated", allocation: { num: n, den: 1 }, source: "automatic" });
+  const rec = (weekStart: string, n: number): GoalWeekPlanData => ({ goalId: GOAL, weekStart, dates: [writeEntry(undefined, DAY, A, seg(n))] });
+  const weekOn = (plans: readonly GoalWeekPlanData[]) => planDateOn(plans, DAY, A)!.plan.weekStart;
+  const claim = (plans: GoalWeekPlanData[], week: string, device: string): GoalWeekPlanData[] => {
+    const plan = plans.find((p) => p.weekStart === week) ?? { goalId: GOAL, weekStart: week, dates: [] };
+    const date = claimDay(plans, plan, writeEntry(plan.dates.find((d) => d.from === DAY), DAY, device, seg(1)), DAY, device)!;
+    return [...plans.filter((p) => p.weekStart !== week), withDate(plan, date)];
+  };
+  /** `plans` with `mark` added to `week`'s date from DAY (malformed or not). */
+  const withMark = (plans: GoalWeekPlanData[], week: string, mark: TakeoverData): GoalWeekPlanData[] =>
+    plans.map((p) =>
+      p.weekStart !== week
+        ? p
+        : { ...p, dates: p.dates.map((d) => (d.from !== DAY ? d : { ...d, takeovers: [...(d.takeovers ?? []).filter((t) => t.device !== mark.device), mark].sort((x, y) => (x.device < y.device ? -1 : 1)) })) },
+    );
+  // A made the Saturday week apply over the Sunday week (a mark borne out).
+  const base = () => claim([rec(SUN, 1)], SAT, A);
+
+  it("a seen claim no mark bears out does not cover a mark or put a week out: the plan in effect stays", () => {
+    expect(weekOn(base())).toBe(SAT);
+    const forged = withMark(base(), SUN, { device: B, seq: 1, seen: { [A]: 5 }, over: [SAT] }); // A has no mark 5
+    expect(unbackedMarks(forged).size).toBe(1);
+    expect(weekOn(forged)).toBe(SAT);
+    // The same claim borne out (A's mark 1) is an ordinary later change of B: it applies.
+    expect(weekOn(withMark(base(), SUN, { device: B, seq: 1, seen: { [A]: 1 }, over: [SAT] }))).toBe(SUN);
+  });
+
+  it("an over naming a week with no date from that day here does not count, nor does the rest of that mark", () => {
+    const forged = withMark(base(), SUN, { device: B, seq: 1, seen: { [A]: 1 }, over: [SAT, MONK] }); // no Monday record
+    expect(recordsWithUnbackedMarks(forged)).toEqual(new Set([`${GOAL}|${SUN}`]));
+    expect(weekOn(forged)).toBe(SAT);
+  });
+
+  it("one device's counter used in two records, and marks covering one another in a cycle, are not borne out", () => {
+    const twice = withMark(base(), SUN, { device: A, seq: 1, seen: {}, over: [SAT] });
+    expect(unbackedMarks(twice).size).toBe(2);
+    const cycle = withMark(withMark(base(), SAT, { device: A, seq: 1, seen: { [B]: 1 }, over: [SUN] }), SUN, { device: B, seq: 1, seen: { [A]: 1 }, over: [SAT] });
+    expect(unbackedMarks(cycle).size).toBe(2);
+  });
+
+  it("a mark whose record is not here yet waits, and applies once it arrives; the result is the same in any order", () => {
+    const onA = claim([rec(MONK, 1)], SUN, A); // A: Monday → Sunday
+    const onB = claim(onA, SAT, B); // B, having A's: → Saturday (seen A, over Monday and Sunday)
+    expect(weekOn(onB)).toBe(SAT);
+    // Here: the Monday record and B's Saturday record, but not yet the Sunday record its mark names.
+    const partial = onB.filter((p) => p.weekStart !== SUN);
+    expect(unbackedMarks(partial).size).toBe(1);
+    expect(weekOn(partial)).toBe(MONK); // B's mark waits: no week is put out on its word
+    const complete = [...partial, onB.find((p) => p.weekStart === SUN)!];
+    expect(unbackedMarks(complete).size).toBe(0);
+    expect(weekOn(complete)).toBe(SAT);
+    expect(weekOn([...complete].reverse())).toBe(SAT);
   });
 });

@@ -207,15 +207,88 @@ type Dated = { plan: GoalWeekPlanData; date: PlanDateData };
 /** Whether takeover mark `a` is covered by `b`: a later mark of the same device, or one that had seen it. */
 const markCovered = (a: TakeoverData, b: TakeoverData) => (a.device === b.device ? b.seq > a.seq : (b.seen[a.device] ?? 0) >= a.seq);
 
+/** A takeover mark with its place: the goal, the week record holding it, and the date it is on. */
+interface PlacedMark {
+  goalId: string;
+  week: string;
+  day: string;
+  mark: TakeoverData;
+}
+
+const coversDay = (week: string, day: string) => week <= day && day <= addDays(week, 6);
+const markKey = (m: PlacedMark) => `${m.goalId}|${m.week}|${m.day}|${m.mark.device}`;
+
+function placedMarks(plans: readonly GoalWeekPlanData[]): PlacedMark[] {
+  return plans.flatMap((p) => p.dates.flatMap((d) => (d.takeovers ?? []).map((mark) => ({ goalId: p.goalId, week: p.weekStart, day: d.from, mark }))));
+}
+
+/**
+ * Takeover marks that `plans` do not bear out (T-247; derived "Takeover marks that are not borne
+ * out"), keyed by goal, week, day, and device. A mark is borne out when the goal's records here hold
+ * what it claims: each week in `over` has a record that covers the day and has a date from it; each
+ * `seen` claim names a device with a mark for that goal and day at least that high; no other record
+ * holds a mark of the same device and `seq` for that day; and it is not on a cycle of marks that
+ * cover one another. The app writes only such marks, so one that is not borne out is malformed data
+ * (in a backup) or waits for records not yet here (on this device).
+ */
+export function unbackedMarks(plans: readonly GoalWeekPlanData[]): Set<string> {
+  const marks = placedMarks(plans);
+  const out = new Set<string>();
+  const sameDay = (a: PlacedMark, b: PlacedMark) => a.goalId === b.goalId && a.day === b.day;
+  for (const m of marks) {
+    const peers = marks.filter((o) => sameDay(o, m));
+    const overBacked = m.mark.over.every(
+      (w) => w !== m.week && coversDay(w, m.day) && plans.some((p) => p.goalId === m.goalId && p.weekStart === w && p.dates.some((d) => d.from === m.day)),
+    );
+    const seenBacked = Object.entries(m.mark.seen).every(([device, n]) => peers.some((o) => o.mark.device === device && o.mark.seq >= n));
+    const unique = !peers.some((o) => o !== m && o.week !== m.week && o.mark.device === m.mark.device && o.mark.seq === m.mark.seq);
+    if (!overBacked || !seenBacked || !unique) out.add(markKey(m));
+  }
+  // Marks on a coverage cycle (each covered, directly or not, by the other): never written by the app.
+  const groups = new Map<string, PlacedMark[]>();
+  for (const m of marks) groups.set(`${m.goalId}|${m.day}`, [...(groups.get(`${m.goalId}|${m.day}`) ?? []), m]);
+  for (const group of groups.values()) {
+    const reach = group.map((a) => group.map((b) => a !== b && markCovered(a.mark, b.mark)));
+    for (let k = 0; k < group.length; k++) for (let i = 0; i < group.length; i++) for (let j = 0; j < group.length; j++) if (reach[i]![k] && reach[k]![j]) reach[i]![j] = true;
+    group.forEach((m, i) => reach[i]![i] && out.add(markKey(m)));
+  }
+  return out;
+}
+
+/** Week records (`goalId|weekStart`) holding a takeover mark that `plans` do not bear out. */
+export function recordsWithUnbackedMarks(plans: readonly GoalWeekPlanData[]): Set<string> {
+  const bad = unbackedMarks(plans);
+  return new Set(placedMarks(plans).filter((m) => bad.has(markKey(m))).map((m) => `${m.goalId}|${m.week}`));
+}
+
+/**
+ * Week records (`goalId|weekStart`) of `incoming` holding a takeover mark whose device and `seq`
+ * for that goal and day another record already holds in `here` (one device's counter used twice).
+ */
+export function recordsWithClashingMarks(incoming: readonly GoalWeekPlanData[], here: readonly GoalWeekPlanData[]): Set<string> {
+  const held = placedMarks(here);
+  return new Set(
+    placedMarks(incoming)
+      .filter((m) => held.some((h) => h.goalId === m.goalId && h.day === m.day && h.mark.device === m.mark.device && h.mark.seq === m.mark.seq && h.week !== m.week))
+      .map((m) => `${m.goalId}|${m.week}`),
+  );
+}
+
 /**
  * Which of several week records with a date from the same day applies (T-247; derived "Week start
  * changes on one day"). Their takeover marks for that date are ordered like plan entries: a mark is
  * covered by a later mark of its device or by one that had seen it. A record that one of the marks
  * left uncovered names in `over` is out, unless it holds such a mark itself (two devices that did
- * not see each other). Of the rest, the later week key, as before T-247.
+ * not see each other). Of the rest, the later week key, as before T-247. Only marks the goal's
+ * records here bear out count (`unbackedMarks`): one that is not is suspended, so it neither covers
+ * another mark nor puts a record out, until the records it claims arrive.
  */
-export function tieWinner(tied: readonly Dated[]): Dated {
-  const marks = tied.flatMap((t) => (t.date.takeovers ?? []).map((mark) => ({ mark, week: t.plan.weekStart })));
+export function tieWinner(tied: readonly Dated[], plans: readonly GoalWeekPlanData[] = tied.map((t) => t.plan)): Dated {
+  const goalId = tied[0]!.plan.goalId;
+  const unbacked = unbackedMarks(plans.filter((p) => p.goalId === goalId));
+  const marks = tied
+    .flatMap((t) => (t.date.takeovers ?? []).map((mark) => ({ goalId, mark, week: t.plan.weekStart, day: t.date.from })))
+    .filter((m) => !unbacked.has(markKey(m)));
   const live = marks.filter((m) => !marks.some((o) => o !== m && markCovered(m.mark, o.mark)));
   const over = new Set(live.flatMap((m) => m.mark.over));
   const holders = new Set(live.map((m) => m.week));
@@ -239,7 +312,7 @@ export function planDateOn(plans: readonly GoalWeekPlanData[], day: string, this
     else if (own.from === latest[0]!.date.from) latest.push({ plan, date: own });
   }
   if (latest.length === 0) return null;
-  const best = latest.length === 1 ? latest[0]! : tieWinner(latest);
+  const best = latest.length === 1 ? latest[0]! : tieWinner(latest, plans);
   return { ...best, resolution: resolveDate(best.date, thisDevice) };
 }
 
