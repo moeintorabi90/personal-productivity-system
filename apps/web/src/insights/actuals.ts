@@ -7,19 +7,45 @@ import type { GoalData } from "../backup/registry.ts";
 import { localDateOf, startOfLocalDay } from "../planning/time.ts";
 import { completionDate } from "../work/completions.ts";
 import type { ProgressRecords } from "../work/progress.ts";
-import { MINUTE, type SessionTimes, workIntervals } from "../work/session-time.ts";
+import { MINUTE, type SessionTimes, workIntervals, workMinutes } from "../work/session-time.ts";
 
-/** Whole work minutes of `times` per local date (paused time excluded). */
-export function minutesByLocalDay(times: SessionTimes, zone: string, now: number = Date.now()): Map<string, number> {
+/** Exact work milliseconds of `times` per local date in `zone` (paused time excluded, split at local midnight). */
+export function workMsByLocalDay(times: SessionTimes, zone: string, now: number = Date.now()): Map<string, number> {
   const out = new Map<string, number>();
   for (const [start, end] of workIntervals(times, now)) {
     let cursor = start;
     while (cursor < end) {
       const date = localDateOf(cursor, zone);
       const next = Math.min(end, startOfLocalDay(nextDate(date), zone));
-      out.set(date, (out.get(date) ?? 0) + Math.round((next - cursor) / MINUTE));
+      out.set(date, (out.get(date) ?? 0) + (next - cursor));
       cursor = next;
     }
+  }
+  return out;
+}
+
+/**
+ * Whole work minutes of `times` per local date (derived "Local-day aggregation"): the session's
+ * whole minutes (`workMinutes`, as goal progress counts them) are shared among its local days, so
+ * the days always add up to that number. Each day's work time is summed over all of its parts
+ * (pauses, midnight) before rounding; each day gets its whole minutes, and the minutes left go one
+ * each to the days with the largest leftover part of a minute, the earlier day first on a tie
+ * (largest remainder; derived, 2026-11-05). Days that end with no minute are left out.
+ */
+export function minutesByLocalDay(times: SessionTimes, zone: string, now: number = Date.now()): Map<string, number> {
+  return shareMinutes(workMsByLocalDay(times, zone, now), workMinutes(times, now));
+}
+
+/** Shares `total` whole minutes among days by largest remainder of their milliseconds (ties: earlier day). */
+export function shareMinutes(msByDay: ReadonlyMap<string, number>, total: number): Map<string, number> {
+  const days = [...msByDay].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const out = new Map(days.map(([date, ms]) => [date, Math.floor(ms / MINUTE)]));
+  let left = total - [...out.values()].reduce((sum, m) => sum + m, 0);
+  // Stable sort: equal remainders keep date order, so the earlier day comes first.
+  for (const [date] of [...days].sort(([, a], [, b]) => (b % MINUTE) - (a % MINUTE))) {
+    if (left <= 0) break;
+    out.set(date, out.get(date)! + 1);
+    left -= 1;
   }
   for (const [d, m] of out) if (m === 0) out.delete(d);
   return out;
