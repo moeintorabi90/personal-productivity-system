@@ -462,7 +462,7 @@ function PlanDateRow({ ctx, goalId, goal, plan, date, definitions }: { ctx: Insi
           <details data-testid="choice-history">
             <summary>{t("pace.choiceHistory", { count: events.length })}</summary>
             <ol className="count-list">
-              {orderEvents(events).map(({ event, uncertain, cyclic }) => {
+              {orderEvents(events, ctx.planning.plans.map((p) => p.data)).map(({ event, uncertain, cyclic }) => {
                 const status = eventStatus(event.data, ctx.planning.plans.map((p) => p.data));
                 return (
                   <li key={event.id} data-testid="choice-event" data-status={status} data-cyclic={cyclic ? "true" : undefined}>

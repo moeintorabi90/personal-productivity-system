@@ -231,46 +231,244 @@ export function happenedAfter(b: GoalWeekPlanChoiceData, a: GoalWeekPlanChoiceDa
   return (b.seen[a.device] ?? 0) >= a.seq;
 }
 
+/**
+ * Whether an event's `seen` can be relied on to order it (DECISIONS "Order of events"): this
+ * device's plan for the date has the event's device at its `seq` or later, an entry at the same
+ * `seq` matches it exactly (`eventStatus` is not an integrity issue), its `seen` does not list its
+ * own device, and every claim is borne out by an entry of the date with at least that `seq`. An
+ * event not applied here yet, or with a claim the plan contradicts, cannot be verified; once the
+ * plan arrives, the next display verifies it.
+ */
+export function eventSeenVerified(event: GoalWeekPlanChoiceData, plans: readonly GoalWeekPlanData[]): boolean {
+  if (event.device in event.seen) return false;
+  const date = plans.find((p) => p.goalId === event.goalId && p.weekStart === event.weekStart)?.dates.find((d) => d.from === event.from);
+  const entry = date?.entries.find((e) => e.device === event.device);
+  if (!date || !entry || entry.seq < event.seq) return false;
+  if (entry.seq === event.seq && (key(entry.segment) !== key(event.chosen) || key(entry.seen) !== key(event.seen))) return false;
+  return Object.entries(event.seen).every(([device, claimed]) => (date.entries.find((e) => e.device === device)?.seq ?? 0) >= claimed);
+}
+
 export interface OrderedEvent<T> {
   event: T;
-  /** Another event of the date neither came before nor after it (T-237), or the event is `cyclic`. */
+  /**
+   * Another event of the date neither came before nor after it as far as the counters and verified
+   * `seen` claims tell (T-237), or the event is `cyclic`.
+   */
   uncertain: boolean;
   /**
-   * The event both came before and after another (each claims in `seen` to have seen the other):
-   * malformed history, a data-integrity issue. An app device can only see an event written before.
+   * The event both came before and after another by the events' claims (each claims in `seen` to
+   * have seen the other): malformed history, a data-integrity issue, whether or not the claims are
+   * verified. An app device can only see an event written before.
    */
   cyclic: boolean;
 }
 
 /**
- * The events of one date oldest first: by counter and `seen` where they tell; independent events
- * are placed by their device clocks only to keep them near each other, and marked uncertain.
- * Events in a causal cycle are kept together after what they all saw and before what saw them,
- * placed among themselves by their clocks only for display, and marked cyclic and uncertain: no
- * clock decides which of them came first.
+ * Strongly connected components of a graph given as adjacency lists (iterative Tarjan, so long
+ * chains need no deep recursion). Components come out in reverse topological order: each after
+ * every component it reaches.
  */
-export function orderEvents<T extends { data: GoalWeekPlanChoiceData }>(events: readonly T[]): OrderedEvent<T>[] {
-  const n = events.length;
-  const after = (i: number, j: number) => happenedAfter(events[i]!.data, events[j]!.data);
-  // Transitive closure of "came after" (small lists).
-  const reach = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => i !== j && after(i, j)));
-  for (let k = 0; k < n; k++) for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (reach[i]![k] && reach[k]![j]) reach[i]![j] = true;
-  const tie = (i: number, j: number) => {
-    const a = events[i]!.data;
-    const b = events[j]!.data;
-    return a.recordedAt < b.recordedAt ? -1 : a.recordedAt > b.recordedAt ? 1 : a.device < b.device ? -1 : a.device > b.device ? 1 : a.seq - b.seq;
-  };
-  const placed: number[] = [];
-  const left = new Set(events.map((_, i) => i));
-  while (left.size > 0) {
-    // Ready: nothing left came before it, except events in a cycle with it (never empty).
-    const ready = [...left].filter((i) => [...left].every((j) => j === i || !reach[i]![j] || reach[j]![i]));
-    const next = ready.sort(tie)[0]!;
-    placed.push(next);
-    left.delete(next);
+function components(adjacency: readonly number[][]): { comp: number[]; order: number[][] } {
+  const n = adjacency.length;
+  const index = new Array<number>(n).fill(-1);
+  const low = new Array<number>(n).fill(0);
+  const onStack = new Array<boolean>(n).fill(false);
+  const comp = new Array<number>(n).fill(-1);
+  const stack: number[] = [];
+  const order: number[][] = [];
+  let counter = 0;
+  for (let root = 0; root < n; root++) {
+    if (index[root] !== -1) continue;
+    const work: [number, number][] = [[root, 0]];
+    index[root] = low[root] = counter++;
+    stack.push(root);
+    onStack[root] = true;
+    while (work.length > 0) {
+      const frame = work[work.length - 1]!;
+      const [v, i] = frame;
+      if (i < adjacency[v]!.length) {
+        frame[1] = i + 1;
+        const w = adjacency[v]![i]!;
+        if (index[w] === -1) {
+          index[w] = low[w] = counter++;
+          stack.push(w);
+          onStack[w] = true;
+          work.push([w, 0]);
+        } else if (onStack[w]) low[v] = Math.min(low[v]!, index[w]!);
+        continue;
+      }
+      work.pop();
+      if (work.length > 0) {
+        const parent = work[work.length - 1]![0];
+        low[parent] = Math.min(low[parent]!, low[v]!);
+      }
+      if (low[v] === index[v]) {
+        const members: number[] = [];
+        let w: number;
+        do {
+          w = stack.pop()!;
+          onStack[w] = false;
+          comp[w] = order.length;
+          members.push(w);
+        } while (w !== v);
+        order.push(members);
+      }
+    }
   }
-  return placed.map((i) => {
-    const cyclic = reach[i]![i]!;
-    return { event: events[i]!, cyclic, uncertain: cyclic || events.some((_, j) => j !== i && !reach[i]![j] && !reach[j]![i]) };
+  return { comp, order };
+}
+
+/**
+ * The events of one date oldest first: by counter, and by `seen` where it is verified
+ * (`eventSeenVerified`); independent events, and events whose claims cannot be verified, are
+ * placed by their device clocks only to keep them near each other, and marked uncertain where no
+ * counter or verified claim orders them. Events in a causal cycle (by any of their claims) are
+ * marked cyclic and uncertain; those in a cycle of verified claims are kept together after what
+ * they all saw and before what saw them, placed among themselves by their clocks only for display.
+ * No clock decides which of two events came first.
+ *
+ * Runs in about O(n·D² + n log n) for n events of D devices (choice history has no count limit): an
+ * event depends directly only on its device's previous event and, per claimed device, on that
+ * device's latest event the claim reaches; what each event came after is a vector of counters per
+ * device, so no n × n closure is built.
+ */
+export function orderEvents<T extends { data: GoalWeekPlanChoiceData }>(events: readonly T[], plans: readonly GoalWeekPlanData[]): OrderedEvent<T>[] {
+  const n = events.length;
+  const data = events.map((e) => e.data);
+  // Display order only; the input order last, so even repeated events have one fixed place.
+  const tie = (i: number, j: number) => {
+    const a = data[i]!;
+    const b = data[j]!;
+    return a.recordedAt < b.recordedAt ? -1 : a.recordedAt > b.recordedAt ? 1 : a.device < b.device ? -1 : a.device > b.device ? 1 : a.seq - b.seq || i - j;
+  };
+  // Each device's events by counter.
+  const byDevice = new Map<string, number[]>();
+  for (let i = 0; i < n; i++) {
+    const list = byDevice.get(data[i]!.device);
+    if (list) list.push(i);
+    else byDevice.set(data[i]!.device, [i]);
+  }
+  for (const list of byDevice.values()) list.sort((i, j) => data[i]!.seq - data[j]!.seq || tie(i, j));
+  /** The position in `list` of the first event with a `seq` above `seq` (at or above it when `inclusive`). */
+  const firstPast = (list: readonly number[], seq: number, inclusive = false): number => {
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      const s = data[list[mid]!]!.seq;
+      if (inclusive ? s < seq : s <= seq) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  /**
+   * The events of `device` with the highest `seq` at most `max` (strictly below it when `strict`):
+   * one event, or several should malformed data repeat a counter (event IDs derive from it).
+   */
+  const latest = (device: string, max: number, strict = false): number[] => {
+    const list = byDevice.get(device);
+    if (!list) return [];
+    let at = firstPast(list, max, strict) - 1;
+    if (at < 0) return [];
+    const out: number[] = [];
+    for (const seq = data[list[at]!]!.seq; at >= 0 && data[list[at]!]!.seq === seq; at--) out.push(list[at]!);
+    return out;
+  };
+  /** Direct dependencies: the device's previous event, and per claim the latest event it reaches. */
+  const dependencies = (useClaims: (i: number) => boolean) =>
+    data.map((e, i) => {
+      const out = latest(e.device, e.seq, true);
+      if (useClaims(i)) for (const [device, claimed] of Object.entries(e.seen)) if (device !== e.device) out.push(...latest(device, claimed));
+      return out;
+    });
+
+  // Cycles by every claim, verified or not: a data-integrity issue either way.
+  const raw = components(dependencies(() => true));
+  const rawSize = raw.order.map((members) => members.length);
+  // Order by counters and verified claims only.
+  const verified = data.map((e) => eventSeenVerified(e, plans));
+  const edges = dependencies((i) => verified[i]!);
+  const { comp, order } = components(edges);
+
+  // What each component came after: per device, the highest counter (dependencies come first in `order`).
+  const known: Map<string, number>[] = [];
+  for (const members of order) {
+    const vector = new Map<string, number>();
+    const raise = (device: string, seq: number) => vector.set(device, Math.max(vector.get(device) ?? 0, seq));
+    for (const i of members) {
+      raise(data[i]!.device, data[i]!.seq);
+      for (const j of edges[i]!) if (comp[j] !== comp[i]) for (const [device, seq] of known[comp[j]!]!) raise(device, seq);
+    }
+    known.push(vector);
+  }
+  const cameAfter = (i: number, j: number) =>
+    comp[i] !== comp[j] && !(data[i]!.device === data[j]!.device && data[i]!.seq === data[j]!.seq) && (known[comp[i]!]!.get(data[j]!.device) ?? 0) >= data[j]!.seq;
+
+  // Uncertain: some other event is neither before nor after it. Per device, the events after it are a
+  // suffix of that device's events (each knows at least what its previous one knew), so checking the
+  // first event past what it came after is enough.
+  const uncertainAt = (i: number): boolean => {
+    if (rawSize[raw.comp[i]!]! > 1 || order[comp[i]!]!.length > 1) return true;
+    for (const [device, list] of byDevice) {
+      const own = device === data[i]!.device;
+      const reached = own ? data[i]!.seq : (known[comp[i]!]!.get(device) ?? 0);
+      const next = firstPast(list, reached);
+      // Its own device with the same counter twice: neither came first.
+      if (own && next - firstPast(list, reached, true) > 1) return true;
+      if (next < list.length && !cameAfter(list[next]!, i)) return true;
+    }
+    return false;
+  };
+
+  // Topological order of the components; among the events ready, the earliest clock first.
+  const pending = order.map(() => 0);
+  const followers: number[][] = order.map(() => []);
+  for (let i = 0; i < n; i++) {
+    for (const j of edges[i]!) {
+      if (comp[j] === comp[i]) continue;
+      pending[comp[i]!]! += 1;
+      followers[comp[j]!]!.push(comp[i]!);
+    }
+  }
+  const heap: number[] = [];
+  const push = (i: number) => {
+    heap.push(i);
+    for (let c = heap.length - 1; c > 0; ) {
+      const p = (c - 1) >> 1;
+      if (tie(heap[c]!, heap[p]!) >= 0) break;
+      [heap[c], heap[p]] = [heap[p]!, heap[c]!];
+      c = p;
+    }
+  };
+  const pop = (): number => {
+    const top = heap[0]!;
+    const last = heap.pop()!;
+    if (heap.length > 0) {
+      heap[0] = last;
+      for (let p = 0; ; ) {
+        const l = 2 * p + 1;
+        const r = l + 1;
+        let m = p;
+        if (l < heap.length && tie(heap[l]!, heap[m]!) < 0) m = l;
+        if (r < heap.length && tie(heap[r]!, heap[m]!) < 0) m = r;
+        if (m === p) break;
+        [heap[m], heap[p]] = [heap[p]!, heap[m]!];
+        p = m;
+      }
+    }
+    return top;
+  };
+  const left = order.map((members) => members.length);
+  order.forEach((members, c) => {
+    if (pending[c] === 0) members.forEach(push);
   });
+  const placed: number[] = [];
+  while (heap.length > 0) {
+    const i = pop();
+    placed.push(i);
+    const c = comp[i]!;
+    if (--left[c]! > 0) continue;
+    for (const f of followers[c]!) if (--pending[f]! === 0) order[f]!.forEach(push);
+  }
+  return placed.map((i) => ({ event: events[i]!, cyclic: rawSize[raw.comp[i]!]! > 1, uncertain: uncertainAt(i) }));
 }

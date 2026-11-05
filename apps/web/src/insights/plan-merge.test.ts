@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { canonicalize } from "../backup/jcs.ts";
-import type { GoalWeekPlanChoiceData, GoalWeekPlanData, PlanDateData, SegmentData } from "../backup/registry.ts";
+import type { GoalWeekPlanChoiceData, GoalWeekPlanData, PlanDateData, PlanEntryData, SegmentData } from "../backup/registry.ts";
 import {
   appliedSegment,
   candidatesOf,
@@ -20,6 +20,7 @@ import {
   isInconsistentDate,
   mergePlans,
   needsDecision,
+  eventSeenVerified,
   orderEvents,
   planDateOn,
   resolveDate,
@@ -266,6 +267,9 @@ describe("18. decisions, options, and change of choice (T-223, T-237)", () => {
 });
 
 describe("18. choice history (T-237)", () => {
+  /** The plan entry an event wrote, and a plan for Monday holding the given entries. */
+  const entryOf = (e: GoalWeekPlanChoiceData): PlanEntryData => ({ device: e.device, seq: e.seq, segment: e.chosen, seen: e.seen });
+  const planOf = (...entries: PlanEntryData[]): GoalWeekPlanData => record({ from: MON, entries: [...entries].sort((p, q) => (p.device < q.device ? -1 : 1)), options: [] });
   const event = (device: string, seq: number, chosen: SegmentData, seen: Record<string, number>, recordedAt: string, previous: SegmentData | null = null): GoalWeekPlanChoiceData => ({
     goalId: GOAL,
     weekStart: WEEK,
@@ -295,12 +299,13 @@ describe("18. choice history (T-237)", () => {
     const a1 = { data: event(A, 2, x, { [B]: 1 }, "2026-11-02T12:00:00.000Z") };
     const a2 = { data: event(A, 3, y, { [B]: 1 }, "2026-11-02T09:00:00.000Z") }; // A's clock went back
     const b1 = { data: event(B, 2, x, { [A]: 1 }, "2026-11-02T08:00:00.000Z") }; // B never saw A's choices
-    const ordered = orderEvents([a2, b1, a1]);
+    // The plan here backs every event: each device's latest entry matches its latest event.
+    const ordered = orderEvents([a2, b1, a1], [planOf(entryOf(a2.data), entryOf(b1.data))]);
     const indexOf = (e: unknown) => ordered.findIndex((o) => o.event === e);
     expect(indexOf(a1)).toBeLessThan(indexOf(a2));
     expect(ordered.every((o) => o.uncertain)).toBe(true);
     const b2 = { data: event(B, 3, y, { [A]: 3 }, "2026-11-01T00:00:00.000Z") }; // B saw both, clock far behind
-    const withB2 = orderEvents([b2, a2, a1, b1]);
+    const withB2 = orderEvents([b2, a2, a1, b1], [planOf(entryOf(a2.data), entryOf(b2.data))]);
     expect(withB2.at(-1)!.event).toBe(b2);
     expect(withB2.find((o) => o.event === b2)!.uncertain).toBe(false);
     expect(withB2.some((o) => o.cyclic)).toBe(false); // ordinary history has no cycle
@@ -310,16 +315,144 @@ describe("18. choice history (T-237)", () => {
     const a1 = { data: event(A, 2, x, { [B]: 2 }, "2026-11-02T08:00:00.000Z") }; // claims B's choice
     const b1 = { data: event(B, 2, y, { [A]: 2 }, "2026-11-02T09:00:00.000Z") }; // claims A's choice
     expect(happenedAfter(a1.data, b1.data) && happenedAfter(b1.data, a1.data)).toBe(true);
-    for (const list of [[a1, b1], [b1, a1]]) {
-      const ordered = orderEvents(list);
-      expect(ordered).toHaveLength(2);
-      expect(ordered.every((o) => o.cyclic && o.uncertain)).toBe(true);
+    // Whether or not a plan backs their claims (here a plan stored before the checks, with the same cycle).
+    const legacy = planOf(entryOf(a1.data), entryOf(b1.data));
+    for (const plans of [[], [legacy]]) {
+      for (const list of [[a1, b1], [b1, a1]]) {
+        const ordered = orderEvents(list, plans);
+        expect(ordered).toHaveLength(2);
+        expect(ordered.every((o) => o.cyclic && o.uncertain)).toBe(true);
+      }
     }
     // Events outside the cycle keep their causal place and certainty: one both saw, one that saw both.
+    // (The plan below, stored before the checks, backs every claim.)
     const before = { data: event(A, 1, y, {}, "2026-11-02T10:00:00.000Z") }; // clock after the cycle's
     const later = { data: event(C, 1, x, { [A]: 2, [B]: 2 }, "2026-11-01T00:00:00.000Z") }; // clock before it
-    const ordered = orderEvents([later, b1, a1, before]);
+    const ordered = orderEvents([later, b1, a1, before], [planOf(entryOf(a1.data), entryOf(b1.data), entryOf(later.data))]);
     expect(ordered.map((o) => o.event)).toEqual([before, a1, b1, later]); // the cycle's inner order is display only
     expect(ordered.map((o) => [o.cyclic, o.uncertain])).toEqual([[false, false], [true, true], [true, true], [false, false]]);
+  });
+
+  describe("claims that cannot be verified order nothing (independent review, 2026-11-05)", () => {
+    // B's choice claims to have seen A's: with a plan that backs it, B's comes after A's for certain.
+    const a1 = { data: event(A, 1, x, {}, "2026-11-02T10:00:00.000Z") };
+    const b1 = { data: event(B, 1, y, { [A]: 1 }, "2026-11-02T08:00:00.000Z") }; // clock before A's
+    const flags = (plans: GoalWeekPlanData[], list = [a1, b1]) => orderEvents(list, plans).map((o) => [o.event, o.uncertain, o.cyclic]);
+    const certain = [[a1, false, false], [b1, false, false]];
+    const unordered = [[b1, true, false], [a1, true, false]]; // placed by clock only, both marked
+
+    it("a verified claim orders the events as before", () => {
+      expect(eventSeenVerified(b1.data, [planOf(entryOf(a1.data), entryOf(b1.data))])).toBe(true);
+      expect(flags([planOf(entryOf(a1.data), entryOf(b1.data))])).toEqual(certain);
+    });
+
+    it("an event whose seen differs from its same-seq plan entry is an integrity issue and its claim orders nothing", () => {
+      const plan = planOf(entryOf(a1.data), { ...entryOf(b1.data), seen: {} });
+      expect(eventStatus(b1.data, [plan])).toBe("integrity");
+      expect(eventSeenVerified(b1.data, [plan])).toBe(false);
+      expect(flags([plan])).toEqual(unordered);
+    });
+
+    it("an event with no plan entry yet orders nothing until the plan arrives; then it is verified on the next display", () => {
+      const onlyA = planOf(entryOf(a1.data));
+      expect(eventStatus(b1.data, [onlyA])).toBe("notApplied");
+      expect(flags([onlyA])).toEqual(unordered);
+      expect(flags([])).toEqual(unordered);
+      const arrived = planOf(entryOf(a1.data), entryOf(b1.data));
+      expect(eventStatus(b1.data, [arrived])).toBe("current");
+      expect(flags([arrived])).toEqual(certain);
+    });
+
+    it("a choice event whose seen lists its own device orders nothing, even when its status is otherwise fine", () => {
+      const own = { data: { ...b1.data, seen: { [A]: 1, [B]: 1 } } };
+      // B has written again since, so the event is "replaced later", not an integrity issue by counters.
+      const plan = planOf(entryOf(a1.data), { device: B, seq: 2, segment: x, seen: { [A]: 1 } });
+      expect(eventStatus(own.data, [plan])).toBe("replaced");
+      expect(eventSeenVerified(own.data, [plan])).toBe(false);
+      expect(flags([plan], [a1, own])).toEqual([[own, true, false], [a1, true, false]]);
+    });
+
+    it("a claim the plan does not bear out (a counter above the device's entry) orders nothing", () => {
+      const far = { data: { ...b1.data, seen: { [A]: 5 } } };
+      const plan = planOf(entryOf(a1.data), { device: B, seq: 2, segment: x, seen: { [A]: 1 } });
+      expect(eventSeenVerified(far.data, [plan])).toBe(false);
+      expect(flags([plan], [a1, far])).toEqual([[far, true, false], [a1, true, false]]);
+    });
+  });
+
+  it("matches the full closure on random histories: order, uncertainty, and cycles (verified claims order, all claims show cycles)", () => {
+    // The earlier n × n closure, kept here as the reference for the faster ordering.
+    function reference(events: { data: GoalWeekPlanChoiceData }[], plans: GoalWeekPlanData[]) {
+      const n = events.length;
+      const d = events.map((e) => e.data);
+      const trusted = d.map((e) => eventSeenVerified(e, plans));
+      const closure = (useClaim: (i: number) => boolean) => {
+        const r = d.map((b, i) => d.map((a, j) => i !== j && (a.device === b.device ? b.seq > a.seq : useClaim(i) && b.device !== a.device && (b.seen[a.device] ?? 0) >= a.seq)));
+        for (let k = 0; k < n; k++) for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (r[i]![k] && r[k]![j]) r[i]![j] = true;
+        return r;
+      };
+      const rawReach = closure(() => true);
+      const reach = closure((i) => trusted[i]!);
+      const tie = (i: number, j: number) => {
+        const a = d[i]!;
+        const b = d[j]!;
+        return a.recordedAt < b.recordedAt ? -1 : a.recordedAt > b.recordedAt ? 1 : a.device < b.device ? -1 : a.device > b.device ? 1 : a.seq - b.seq;
+      };
+      const placed: number[] = [];
+      const left = new Set(d.map((_, i) => i));
+      while (left.size > 0) {
+        const ready = [...left].filter((i) => [...left].every((j) => j === i || !reach[i]![j] || reach[j]![i]));
+        const next = ready.sort(tie)[0]!;
+        placed.push(next);
+        left.delete(next);
+      }
+      return placed.map((i) => {
+        const cyclic = rawReach[i]![i]!;
+        return [i, cyclic, cyclic || reach[i]![i]! || d.some((_, j) => j !== i && !reach[i]![j] && !reach[j]![i])];
+      });
+    }
+    let state = 12345;
+    const rand = (m: number) => ((state = (state * 1103515245 + 12345) % 2147483648) % m);
+    const devices = [A, B, C];
+    for (let round = 0; round < 300; round++) {
+      const events = Array.from({ length: 2 + rand(9) }, () => {
+        const device = devices[rand(3)]!;
+        const seen: Record<string, number> = {};
+        for (const other of devices) if (rand(3) === 0 && (other !== device || rand(4) === 0)) seen[other] = 1 + rand(5);
+        return { data: event(device, 1 + rand(5), rand(2) ? x : y, seen, `2026-11-02T${String(10 + rand(10))}:00:00.000Z`) };
+      });
+      // Sometimes no plan; else each device's entry from one of its events (which then matches it), or a later one.
+      const entries = devices.flatMap((device) => {
+        const own = events.filter((e) => e.data.device === device);
+        if (own.length === 0 || rand(4) === 0) return [];
+        const pick = own[rand(own.length)]!.data;
+        return [rand(3) === 0 ? { ...entryOf(pick), seq: pick.seq + 1 + rand(3), seen: {} } : { ...entryOf(pick), seen: Object.fromEntries(Object.entries(pick.seen).filter(([k]) => k !== device)) }];
+      });
+      const plans = rand(5) === 0 ? [] : [planOf(...entries)];
+      const fast = orderEvents(events, plans).map((o) => [events.indexOf(o.event as (typeof events)[number]), o.cyclic, o.uncertain]);
+      expect(fast).toEqual(reference(events, plans));
+    }
+  });
+
+  it("orders a long history quickly: 3,000 events of three devices, each after the one before, whatever the clocks", () => {
+    const devices = [A, B, C];
+    const counters: Record<string, number> = { [A]: 0, [B]: 0, [C]: 0 };
+    const events: { data: GoalWeekPlanChoiceData }[] = [];
+    for (let k = 0; k < 3000; k++) {
+      const device = devices[k % 3]!;
+      counters[device]! += 1;
+      const seen = Object.fromEntries(devices.filter((d) => d !== device && counters[d]! > 0).map((d) => [d, counters[d]!]));
+      // Clocks run backwards, so only counters and claims can give the order.
+      events.push({ data: event(device, counters[device]!, k % 2 ? x : y, seen, new Date(Date.UTC(2026, 10, 2) - k * 1000).toISOString()) });
+    }
+    const latest = devices.map((d) => entryOf(events.filter((e) => e.data.device === d).at(-1)!.data));
+    const shuffled = [...events].reverse();
+    const started = performance.now();
+    const ordered = orderEvents(shuffled, [planOf(...latest)]);
+    const elapsed = performance.now() - started;
+    expect(ordered.map((o) => o.event)).toEqual(events);
+    expect(ordered.some((o) => o.uncertain || o.cyclic)).toBe(false);
+    // The earlier closure needed 3,000³ steps here (minutes); this stays well under a second on this PC.
+    expect(elapsed).toBeLessThan(2_000);
   });
 });
