@@ -20,7 +20,7 @@ import {
 } from "../backup/registry.ts";
 import { localDateOf } from "../planning/time.ts";
 import type { LocalDb, RecordRow } from "./db.ts";
-import { refreshWeekPlans, todayOf, withPlanHistory, withStatusHistory } from "./goal-plans.ts";
+import { amountBeforePause, refreshWeekPlans, todayOf, withPlanHistory, withStatusHistory } from "./goal-plans.ts";
 import type { Item } from "./organization.ts";
 import { deleteRecord, putRecord } from "./records.ts";
 
@@ -46,7 +46,11 @@ export type GoalErrorCode =
   /** Workdays are distinct weekdays 0–6 (T-180). */
   | "INVALID_WORKDAYS"
   /** A daily cap is a whole number of 1 or more in the goal's measure (T-183). */
-  | "INVALID_CAP";
+  | "INVALID_CAP"
+  /** A paused goal is resumed only with the owner's choice of plan (`resumeGoal`, T-246). */
+  | "RESUME_NEEDS_CHOICE"
+  /** "Continue the previous plan" needs a weekly amount that applied just before the pause (T-246). */
+  | "NOTHING_TO_CONTINUE";
 
 export class GoalError extends Error {
   readonly code: GoalErrorCode;
@@ -242,6 +246,14 @@ export async function updateGoal(
     }
     // Target, deadline, workdays, and cap keep their history (T-182); actual records never change.
     const { today } = await todayOf(db, now);
+    // A change of the goal's plan ends a weekly amount continued after a pause (T-246).
+    const planChanged =
+      next.startDate !== goal.startDate ||
+      next.deadline !== goal.deadline ||
+      next.target !== goal.target ||
+      JSON.stringify(next.workdays ?? null) !== JSON.stringify(goal.workdays ?? null) ||
+      (next.dailyCap ?? null) !== (goal.dailyCap ?? null);
+    if (planChanged) delete next.continuedAllocation;
     await putRecord(db, registry, GOALS, id, withPlanHistory(goal, next, today));
     await refreshWeekPlans(db, registry, "change", now);
   });
@@ -250,16 +262,46 @@ export async function updateGoal(
 /**
  * Pause, resume, complete (also from paused), abandon (from active or paused), or reopen a completed
  * or abandoned goal (T-043, T-044, T-060, T-062, T-243). Dates never change (T-045); progress,
- * milestones, plans, and history stay as they are.
+ * milestones, plans, and history stay as they are. A paused goal is resumed with `resumeGoal`, which
+ * asks for the plan to use (T-246); leaving `active` drops a continued weekly amount.
  */
 export async function setGoalStatus(db: LocalDb, id: string, status: GoalStatus, registry: Registry = PRODUCT_REGISTRY): Promise<void> {
   await db.transaction("rw", WRITE_TABLES(db), async () => {
     const goal = await editableGoal(db, id);
     if (goal.status === status) return;
     if (!canChangeStatus(goal.status, status)) throw new GoalError("INVALID_STATUS_CHANGE", `${goal.status} → ${status}`);
+    if (goal.status === "paused" && status === "active") throw new GoalError("RESUME_NEEDS_CHOICE", "resume a paused goal with resumeGoal");
     const { today } = await todayOf(db);
-    await putRecord(db, registry, GOALS, id, withStatusHistory(goal, { ...goal, status }, today));
+    const { continuedAllocation: _dropped, ...rest } = goal;
+    await putRecord(db, registry, GOALS, id, withStatusHistory(goal, { ...rest, status }, today));
     await refreshWeekPlans(db, registry, "change");
+  });
+}
+
+/**
+ * The owner's choice when resuming a paused goal (T-246): "recalculate" calculates the plan from the
+ * resume date with the usual rules; "continue" keeps, from the resume date, the weekly amount that
+ * applied on the last day before the pause, in this and every later week, until the goal's plan or
+ * its weekly allocations change. Either way the plan is written from the resume date only: days of
+ * the pause are never filled in, and earlier plans stay as they are.
+ */
+export type ResumeChoice = "recalculate" | "continue";
+
+/** Resumes a paused goal with the owner's plan choice (T-044, T-246). Cancelling the prompt calls nothing. */
+export async function resumeGoal(db: LocalDb, id: string, choice: ResumeChoice, registry: Registry = PRODUCT_REGISTRY, now: number = Date.now()): Promise<void> {
+  await db.transaction("rw", WRITE_TABLES(db), async () => {
+    const goal = await editableGoal(db, id);
+    if (goal.status !== "paused") throw new GoalError("INVALID_STATUS_CHANGE", `${goal.status} → active (resume)`);
+    const { today } = await todayOf(db, now);
+    const { continuedAllocation: _previous, ...rest } = goal;
+    const next: GoalData = { ...rest, status: "active" };
+    if (choice === "continue") {
+      const amount = await amountBeforePause(db, id, goal, today);
+      if (!amount) throw new GoalError("NOTHING_TO_CONTINUE", "no weekly amount applied just before the pause");
+      next.continuedAllocation = { from: today, amount };
+    }
+    await putRecord(db, registry, GOALS, id, withStatusHistory(goal, next, today));
+    await refreshWeekPlans(db, registry, "change", now);
   });
 }
 

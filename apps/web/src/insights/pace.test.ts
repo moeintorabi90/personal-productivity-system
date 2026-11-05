@@ -351,4 +351,47 @@ describe("3 and 6. targets and streaks (T-181, T-184 to T-186, T-225, T-226)", (
     expect(paceStreak(pace(completedThenReopened({ dailyCap: 10 }), plans, amounts, "2026-11-11"))).toEqual({ current: 2, longest: 3, counted: 5 });
     expect(paceStreak(pace({ ...stillCompleted, dailyCap: 10 }, plans, amounts, "2026-11-11"))).toMatchObject({ current: 0, longest: 3 });
   });
+
+  // Abandoned on Thursday 11-05 and reopened on Monday 11-09, with the same met days (T-244).
+  const abandonedThenReopened = (extra: Partial<GoalData> = {}) =>
+    goal({
+      statusHistory: [
+        { from: MON, status: "active", archived: false },
+        { from: "2026-11-05", status: "abandoned", archived: false },
+        { from: "2026-11-09", status: "active", archived: false },
+      ],
+      ...extra,
+    });
+  const stillAbandoned = goal({
+    status: "abandoned",
+    statusHistory: [
+      { from: MON, status: "active", archived: false },
+      { from: "2026-11-05", status: "abandoned", archived: false },
+    ],
+  });
+
+  it("abandonment breaks the consistency streak: a reopened goal counts from zero and the longest never joins the periods (T-244)", () => {
+    const attributed = new Set(metDays);
+    expect(consistencyStreak(abandonedThenReopened(), attributed, "2026-11-11")).toEqual({ current: 2, longest: 3, counted: 5 });
+    const more = new Set([...metDays, "2026-11-11", "2026-11-12"]);
+    expect(consistencyStreak(abandonedThenReopened(), more, "2026-11-13")).toMatchObject({ current: 4, longest: 4 });
+    // While abandoned: no current streak, the longest from before is kept.
+    expect(consistencyStreak(stillAbandoned, attributed, "2026-11-11")).toEqual({ current: 0, longest: 3, counted: 3 });
+    // A pause, by contrast, neither adds nor breaks (T-185): the run continues after resuming.
+    const pausedThenResumed = goal({
+      statusHistory: [
+        { from: MON, status: "active", archived: false },
+        { from: "2026-11-05", status: "paused", archived: false },
+        { from: "2026-11-09", status: "active", archived: false },
+      ],
+    });
+    expect(consistencyStreak(pausedThenResumed, attributed, "2026-11-11")).toMatchObject({ current: 5, longest: 5 });
+  });
+
+  it("abandonment breaks the daily pace streak the same way (T-244)", () => {
+    const plans = [plan(MON, [[MON, allocated(500)]]), plan("2026-11-09", [["2026-11-09", allocated(500)]])];
+    const amounts = Object.fromEntries(metDays.map((d) => [d, 10]));
+    expect(paceStreak(pace(abandonedThenReopened({ dailyCap: 10 }), plans, amounts, "2026-11-11"))).toEqual({ current: 2, longest: 3, counted: 5 });
+    expect(paceStreak(pace({ ...stillAbandoned, dailyCap: 10 }, plans, amounts, "2026-11-11"))).toMatchObject({ current: 0, longest: 3 });
+  });
 });

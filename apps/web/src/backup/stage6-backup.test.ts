@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { canonicalize } from "./jcs.ts";
 import { contentHashOf } from "./envelope.ts";
-import { createGoal, setGoalStatus, updateGoal } from "../local/goals.ts";
+import { createGoal, resumeGoal, setGoalStatus, updateGoal } from "../local/goals.ts";
 import { decidePlanDate, loadGoalPlanning, planWriteLimit, refreshWeekPlans, setWeekAllocation } from "../local/goal-plans.ts";
 import { deleteRecord, plannedWriteEnvelope, putRecord, toEnvelope } from "../local/records.ts";
 import { envelopeFits, nowIso } from "./envelope.ts";
@@ -169,6 +169,79 @@ describe("13. backup version 8 (derived)", () => {
     });
     expect(await codeOf(importInto(b, tomb, product))).toBe("INVALID_PAYLOAD");
     expect(await recordsOf(b)).toEqual(before);
+  });
+
+  describe("pausing and resuming a goal's weekly plans (T-246)", () => {
+    const allPlans = async (d: TestDevice) =>
+      (await d.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).map((r) => r.data as GoalWeekPlanData).sort((p, q) => p.weekStart.localeCompare(q.weekStart));
+    const datesOf = (plans: GoalWeekPlanData[]) => plans.map((p) => [p.weekStart, p.dates.map((d) => [d.from, d.entries[0]!.segment.allocation])]);
+    /** Created Monday 11-02 (150 a week: 600 over four weeks), paused Tuesday, its target raised to 700 on Thursday while paused. */
+    async function pausedGoal() {
+      const a = await device("A");
+      const goalId = await createGoal(a.db, goalInput);
+      at("2026-11-03T08:00:00Z");
+      await setGoalStatus(a.db, goalId, "paused");
+      at("2026-11-05T08:00:00Z");
+      await updateGoal(a.db, goalId, { target: 700 }, registry, Date.now()); // would rewrite today's plan of an active goal
+      at("2026-11-09T08:00:00Z"); // the next Monday: an active goal would start that week's plan
+      await refreshWeekPlans(a.db, registry, "change");
+      return { a, goalId };
+    }
+
+    it("no weekly plan is written or updated while paused; earlier plans stay; resuming needs the owner's choice", async () => {
+      const { a, goalId } = await pausedGoal();
+      expect(datesOf(await allPlans(a))).toEqual([["2026-11-02", [["2026-11-02", { num: 150, den: 1 }]]]]);
+      const before = await recordsOf(a);
+      expect(await codeOf(setGoalStatus(a.db, goalId, "active"))).toBe("RESUME_NEEDS_CHOICE");
+      expect(await recordsOf(a)).toEqual(before);
+    });
+
+    it("resuming with a recalculated plan writes it from the resume date only; the paused days keep no plan", async () => {
+      const { a, goalId } = await pausedGoal();
+      const earlier = (await allPlans(a))[0];
+      await resumeGoal(a.db, goalId, "recalculate", registry, Date.now());
+      const plans = await allPlans(a);
+      expect(plans[0]).toEqual(earlier); // the week before the pause is unchanged
+      // 700 over the three weeks left, from Monday 11-09: nothing for 11-03 to 11-08.
+      expect(datesOf(plans)).toEqual([["2026-11-02", [["2026-11-02", { num: 150, den: 1 }]]], ["2026-11-09", [["2026-11-09", { num: 700, den: 3 }]]]]);
+      expect((await a.db.records.get([GOALS, goalId]))!.data).not.toHaveProperty("continuedAllocation");
+    });
+
+    it("resuming with the previous plan continues the weekly amount from before the pause in every later week, until the goal changes", async () => {
+      const { a, goalId } = await pausedGoal();
+      await resumeGoal(a.db, goalId, "continue", registry, Date.now());
+      expect((await a.db.records.get([GOALS, goalId]))!.data).toMatchObject({ status: "active", continuedAllocation: { from: "2026-11-09", amount: { num: 150, den: 1 } } });
+      at("2026-11-16T08:00:00Z");
+      await refreshWeekPlans(a.db, registry, "change");
+      expect(datesOf(await allPlans(a))).toEqual([
+        ["2026-11-02", [["2026-11-02", { num: 150, den: 1 }]]],
+        ["2026-11-09", [["2026-11-09", { num: 150, den: 1 }]]], // not 700 / 3
+        ["2026-11-16", [["2026-11-16", { num: 150, den: 1 }]]],
+      ]);
+      // A change of the goal's plan ends the continued amount: the usual calculation takes over from that day.
+      at("2026-11-17T08:00:00Z");
+      await updateGoal(a.db, goalId, { target: 650 }, registry, Date.now());
+      expect((await a.db.records.get([GOALS, goalId]))!.data).not.toHaveProperty("continuedAllocation");
+      const week = (await allPlans(a)).find((p) => p.weekStart === "2026-11-16")!;
+      expect(week.dates.map((d) => [d.from, d.entries[0]!.segment.allocation])).toEqual([["2026-11-16", { num: 150, den: 1 }], ["2026-11-17", { num: 325, den: 1 }]]);
+    });
+
+    it("so does a change of a weekly allocation; with no plan just before the pause, continuing is refused and nothing changes", async () => {
+      const { a, goalId } = await pausedGoal();
+      await resumeGoal(a.db, goalId, "continue", registry, Date.now());
+      await setWeekAllocation(a.db, goalId, "2026-11-23", 100, Date.now());
+      expect((await a.db.records.get([GOALS, goalId]))!.data).not.toHaveProperty("continuedAllocation");
+      // Paused on the day it was created: the day before has no recorded plan.
+      const b = await device("B");
+      at("2026-11-09T08:00:00Z");
+      const fresh = await createGoal(b.db, goalInput);
+      await setGoalStatus(b.db, fresh, "paused");
+      const before = await recordsOf(b);
+      expect(await codeOf(resumeGoal(b.db, fresh, "continue", registry, Date.now()))).toBe("NOTHING_TO_CONTINUE");
+      expect(await recordsOf(b)).toEqual(before);
+      await resumeGoal(b.db, fresh, "recalculate", registry, Date.now());
+      expect((await b.db.records.get([GOALS, fresh]))!.data).toMatchObject({ status: "active" });
+    });
   });
 
   it("an abandoned goal gets no new weekly-plan writes and keeps its stored plans; reopened, its plans are written again (T-243)", async () => {

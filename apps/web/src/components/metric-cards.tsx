@@ -184,10 +184,22 @@ export function MetricBody({ ctx, metric, window, size, goalId }: { ctx: Insight
         <GoalProgressBody goal={goal.data} name={goal.data.name} g={g} definitions={definitions} size={size} />
       ) : (
         <div data-testid="metric-goalStreaks">
-          <p className="metric-number">{t("metric.days", { n: g.consistency.current })}</p>
-          <p className="hint">{goal.data.name}</p>
-          <p className="hint">{t("pace.consistencyStreak", { current: g.consistency.current, longest: g.consistency.longest, count: g.consistency.counted })}</p>
-          {g.pacingHidden ? null : <p className="hint">{t("pace.paceStreak", { current: g.pace.current, longest: g.pace.longest, count: g.pace.counted })}</p>}
+          {g.pacingHidden ? (
+            // Hidden while paused or abandoned (T-245), like the goal page's streaks.
+            <>
+              <p className="hint">{goal.data.name}</p>
+              <p className="hint" data-testid="pace-hidden">
+                {t(goal.data.status === "paused" ? "pace.hiddenPaused" : "pace.hiddenAbandoned")}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="metric-number">{t("metric.days", { n: g.consistency.current })}</p>
+              <p className="hint">{goal.data.name}</p>
+              <p className="hint">{t("pace.consistencyStreak", { current: g.consistency.current, longest: g.consistency.longest, count: g.consistency.counted })}</p>
+              <p className="hint">{t("pace.paceStreak", { current: g.pace.current, longest: g.pace.longest, count: g.pace.counted })}</p>
+            </>
+          )}
         </div>
       );
     }

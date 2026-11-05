@@ -61,6 +61,11 @@ export function GoalPacePanel({ ctx, goalId, goal, definitions }: { ctx: Insight
       ) : null}
       {g.pacingHidden ? null : (
         <>
+      {goal.continuedAllocation ? (
+        <p className="notice notice-info" data-testid="plan-continued">
+          {t("pace.continued", { amount: amount(goal.continuedAllocation.amount) })}
+        </p>
+      ) : null}
       {result.kind === "inactive" ? <p className="notice notice-info">{t("pace.inactive")}</p> : null}
       {result.kind === "mismatch" ? (
         <div className="notice notice-warn" role="status" data-testid="mismatch-warning">
@@ -112,13 +117,18 @@ export function GoalPacePanel({ ctx, goalId, goal, definitions }: { ctx: Insight
       </dl>
         </>
       )}
-      <h3>{t("pace.streaks")}</h3>
-      <ul className="count-list" data-testid="goal-streaks">
-        <li>{t("pace.consistencyStreak", { current: g.consistency.current, longest: g.consistency.longest, count: g.consistency.counted })}</li>
-        {g.pacingHidden ? null : <li>{t("pace.paceStreak", { current: g.pace.current, longest: g.pace.longest, count: g.pace.counted })}</li>}
-      </ul>
-      <p className="hint">{t("pace.streakNote")}</p>
-      {g.pacingHidden ? null : <AllocationTable ctx={ctx} goalId={goalId} goal={goal} definitions={definitions} />}
+      {/* The goal's streaks are hidden with its other pacing indicators while paused or abandoned (T-245). */}
+      {g.pacingHidden ? null : (
+        <>
+          <h3>{t("pace.streaks")}</h3>
+          <ul className="count-list" data-testid="goal-streaks">
+            <li>{t("pace.consistencyStreak", { current: g.consistency.current, longest: g.consistency.longest, count: g.consistency.counted })}</li>
+            <li>{t("pace.paceStreak", { current: g.pace.current, longest: g.pace.longest, count: g.pace.counted })}</li>
+          </ul>
+          <p className="hint">{t("pace.streakNote")}</p>
+          <AllocationTable ctx={ctx} goalId={goalId} goal={goal} definitions={definitions} />
+        </>
+      )}
       <PlanHistory goal={goal} definitions={definitions} />
       <WeeklyPlans ctx={ctx} goalId={goalId} goal={goal} definitions={definitions} plans={g.plans} />
     </section>

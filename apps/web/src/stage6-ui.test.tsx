@@ -27,7 +27,7 @@ import {
   SESSIONS,
   type SessionData,
 } from "./backup/registry.ts";
-import { createGoal } from "./local/goals.ts";
+import { createGoal, setGoalStatus } from "./local/goals.ts";
 import { setWeekAllocation } from "./local/goal-plans.ts";
 import { loadInsightRecords } from "./local/insights.ts";
 import { createProject, createTask, updateTask } from "./local/organization.ts";
@@ -414,30 +414,41 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     expect(screen.getAllByTestId("allocation-row").map((r) => r.dataset.week)).toEqual(["2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23"]);
   });
 
-  /** The pace indicators of the goal page: targets, the daily pace streak, and the weekly allocations. */
+  /** The pacing indicators of the goal page: targets, both goal streaks (T-245), and the weekly allocations. */
   const paceShown = () => ({
     targets: ["today-target", "week-target", "month-target"].filter((id) => screen.queryByTestId(id)).length,
-    paceStreak: /Daily pace:/.test(screen.getByTestId("goal-streaks").textContent ?? ""),
+    streaks: ["Consistency:", "Daily pace:"].filter((s) => (screen.queryByTestId("goal-streaks")?.textContent ?? "").includes(s)).length,
     allocations: screen.queryByTestId("allocations") !== null,
   });
+  const shown = { targets: 3, streaks: 2, allocations: true };
+  const hiddenAll = { targets: 0, streaks: 0, allocations: false };
 
   it("pausing hides every pace indicator until the goal is resumed; progress, history, and work attributed while paused stay (T-243)", async () => {
     const goalId = await goal({ kind: "time", target: 600 });
-    await waitFor(() => expect(paceShown()).toEqual({ targets: 3, paceStreak: true, allocations: true }));
+    await waitFor(() => expect(paceShown()).toEqual(shown));
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
     const hidden = await screen.findByTestId("pace-hidden");
     expect(hidden.dataset.status).toBe("paused");
     expect(hidden.textContent).toMatch(/paused, so its targets and pace are hidden until it is resumed/);
-    expect(paceShown()).toEqual({ targets: 0, paceStreak: false, allocations: false });
-    expect(screen.getByTestId("goal-streaks").textContent).toMatch(/Consistency:/); // not a pace indicator
+    expect(paceShown()).toEqual(hiddenAll);
     expect(screen.getByTestId("weekly-plans")).toBeTruthy(); // the recorded plans stay
     // Work explicitly attributed while paused still counts toward actual progress (T-046).
     await recordPastSession(services.db, { date: "2026-11-02", startTime: "06:00", durationMinutes: 30, goalId });
     await waitFor(() => expect(screen.getByTestId("goal-progress").textContent).toMatch(/30 min/));
     expect(paceShown().targets).toBe(0);
+    // Resuming asks for the plan first (T-246); cancelling keeps the goal paused and writes nothing.
+    const recordsBefore = await services.db.records.toArray();
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    const choice = await screen.findByTestId("resume-choice");
+    expect(within(choice).getAllByRole("button").map((b) => b.textContent)).toEqual(["Recalculate the plan from today", "Continue the previous plan from today", "Cancel"]);
+    fireEvent.click(within(choice).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByTestId("resume-choice")).toBeNull();
+    expect(screen.getByTestId("pace-hidden").dataset.status).toBe("paused");
+    expect(await services.db.records.toArray()).toEqual(recordsBefore);
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    fireEvent.click(within(await screen.findByTestId("resume-choice")).getByRole("button", { name: "Recalculate the plan from today" }));
     await waitFor(() => expect(screen.queryByTestId("pace-hidden")).toBeNull());
-    expect(paceShown()).toEqual({ targets: 3, paceStreak: true, allocations: true });
+    expect(paceShown()).toEqual(shown);
     expect(screen.getByTestId("goal-progress").textContent).toMatch(/30 min/);
   });
 
@@ -448,7 +459,7 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     const plansBefore = await services.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray();
     fireEvent.click(screen.getByRole("button", { name: "Abandon" }));
     expect((await screen.findByTestId("pace-hidden")).dataset.status).toBe("abandoned");
-    expect(paceShown()).toEqual({ targets: 0, paceStreak: false, allocations: false });
+    expect(paceShown()).toEqual(hiddenAll);
     expect(screen.getByTestId("goal-progress").textContent).toMatch(/45 min/); // actual progress unchanged
     expect(screen.getAllByText("Abandoned").length).toBeGreaterThan(0);
     expect(screen.queryByText("Completed")).toBeNull();
@@ -456,7 +467,7 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     expect(await services.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).toEqual(plansBefore); // stored plans kept
     fireEvent.click(screen.getByRole("button", { name: "Reopen" }));
     await waitFor(() => expect(screen.queryByTestId("pace-hidden")).toBeNull());
-    expect(paceShown()).toEqual({ targets: 3, paceStreak: true, allocations: true });
+    expect(paceShown()).toEqual(shown);
     expect(screen.getByTestId("goal-progress").textContent).toMatch(/45 min/);
   });
 
@@ -542,6 +553,33 @@ describe("11. dashboards (T-197 to T-202)", () => {
 });
 
 describe("9–10. reports and units (T-192 to T-196)", () => {
+  it("the goal cards hide the targets and goal streaks of a paused and of an abandoned goal, and keep its progress (T-243, T-245)", async () => {
+    let paused = "";
+    let abandoned = "";
+    await renderApp(async (s) => {
+      at("2026-11-02T08:00:00Z");
+      const input = { startDate: "2026-11-02", deadline: "2026-11-29", kind: "time" as const, target: 600, workdays: [1, 2, 3, 4, 5] };
+      paused = await createGoal(s.db, { ...input, name: "Paused goal" });
+      abandoned = await createGoal(s.db, { ...input, name: "Abandoned goal" });
+      await recordPastSession(s.db, { date: "2026-11-02", startTime: "06:00", durationMinutes: 30, goalId: paused });
+      await setGoalStatus(s.db, paused, "paused");
+      await setGoalStatus(s.db, abandoned, "abandoned");
+    });
+    await goTo("Reports");
+    const cardsOf = async (name: string) =>
+      (await screen.findAllByTestId(/metric-goal(Progress|Streaks)/)).filter((c) => c.textContent!.includes(name));
+    for (const [name, note] of [["Paused goal", /paused, so its targets and pace are hidden/], ["Abandoned goal", /abandoned, not completed/]] as const) {
+      const cards = await cardsOf(name);
+      expect(cards).toHaveLength(2); // progress and streaks
+      for (const card of cards) {
+        expect(card.textContent).toMatch(note);
+        expect(card.textContent).not.toMatch(/Today's target|Daily pace:|Consistency:/);
+      }
+    }
+    expect((await cardsOf("Paused goal"))[0]!.textContent).toMatch(/30 min/); // actual progress stays
+    void abandoned;
+  });
+
   it("shows no data apart from a real zero, sample counts, and the metric dictionary", async () => {
     await renderApp(async (s) => {
       const task = await createTask(s.db, { title: "Essay" });

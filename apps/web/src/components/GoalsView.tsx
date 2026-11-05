@@ -24,6 +24,7 @@ import {
   milestonesOfGoal,
   milestonesOutside,
   setGoalArchived,
+  resumeGoal,
   setGoalStatus,
   setMilestoneCompleted,
   updateGoal,
@@ -476,6 +477,7 @@ function GoalDetail({ goal, goals, org, onBack }: { goal: Goal; goals: Goals; or
   const work = useWork();
   const definitions = definitionsOf(work);
   const [editing, setEditing] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const archived = goal.data.archivedAt !== null;
   const status = goal.data.status;
@@ -560,7 +562,7 @@ function GoalDetail({ goal, goals, org, onBack }: { goal: Goal; goals: Goals; or
                   </button>
                 ) : null}
                 {status === "paused" ? (
-                  <button type="button" className="secondary" onClick={act(() => setGoalStatus(db, goal.id, "active"))}>
+                  <button type="button" className="secondary" onClick={() => setResuming(true)}>
                     {t("goals.resume")}
                   </button>
                 ) : null}
@@ -584,6 +586,23 @@ function GoalDetail({ goal, goals, org, onBack }: { goal: Goal; goals: Goals; or
                 </button>
               </div>
             )}
+            {resuming && status === "paused" && !archived ? (
+              // Resuming asks which plan to use first (T-246); cancelling keeps the goal paused and writes nothing.
+              <div className="notice notice-info" role="group" aria-label={t("goals.resume")} data-testid="resume-choice">
+                <p>{t("goals.resumeChoice")}</p>
+                <div className="button-row">
+                  <button type="button" onClick={act(async () => { await resumeGoal(db, goal.id, "recalculate"); setResuming(false); })}>
+                    {t("goals.resumeRecalculate")}
+                  </button>
+                  <button type="button" onClick={act(async () => { await resumeGoal(db, goal.id, "continue"); setResuming(false); })}>
+                    {t("goals.resumeContinue")}
+                  </button>
+                  <button type="button" className="secondary" onClick={() => setResuming(false)}>
+                    {t("org.cancel")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <ErrorNotice error={error} />
           </>
         )}

@@ -34,6 +34,7 @@ import { planChoiceId, weekAllocationId, weekPlanId } from "../backup/derived-id
 import { localDateOf } from "../planning/time.ts";
 import { computeAllocations, segmentFor, type AllocationResult } from "../insights/allocation.ts";
 import { amountBetween, goalDays } from "../insights/actuals.ts";
+import type { Fraction } from "../insights/fraction.ts";
 import { currentPlan, goalWeekStarts, isClosedWeek, planOn, weekStartOf, workdaysIn, type GoalPlan } from "../insights/goal-plan.ts";
 import { appliedSegment, canWriteEntry, decideEntry, decisionChoices, needsDecision, planDateOn, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
 import type { VersionVector } from "../backup/versions.ts";
@@ -178,13 +179,14 @@ export function allocationState(
 const previousDay = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
 /**
- * Whether the app writes a weekly plan for the goal today: running, not archived, completed, or
- * abandoned (an abandoned goal is not pursued, like a completed one, T-243; derived). A paused goal
- * keeps its plans written, only their pacing is hidden (T-243). Stored plans are never removed.
+ * Whether the app writes a weekly plan for the goal today: active (running), not archived. A paused
+ * goal gets no new or updated weekly plan (owner, T-246), and an abandoned one is not pursued, like
+ * a completed one (T-243; derived). Stored plans are never removed, and days of a pause are never
+ * filled in afterwards.
  */
 function plansToday(goal: GoalData, today: string): boolean {
   const plan = currentPlan(goal);
-  return goal.archivedAt === null && goal.status !== "completed" && goal.status !== "abandoned" && goal.startDate <= today && (plan.deadline === null || plan.deadline >= today);
+  return goal.archivedAt === null && goal.status === "active" && goal.startDate <= today && (plan.deadline === null || plan.deadline >= today);
 }
 
 /**
@@ -340,8 +342,18 @@ export async function setWeekAllocation(db: LocalDb, goalId: string, weekKey: st
         throw new GoalPlanError("WEEK_NOT_EDITABLE", "only open weeks of the goal with a workday");
       }
     }
-    if (await writeAllocation(db, registry, goalId, weekKey, amount, today)) await refreshWeekPlans(db, registry, "change", now);
+    if (await writeAllocation(db, registry, goalId, weekKey, amount, today)) {
+      await endContinuedAmount(db, registry, goalId, goal);
+      await refreshWeekPlans(db, registry, "change", now);
+    }
   });
+}
+
+/** A change of the goal's weekly allocations ends a weekly amount continued after a pause (T-246). */
+async function endContinuedAmount(db: LocalDb, registry: Registry, goalId: string, goal: GoalData): Promise<void> {
+  if (!goal.continuedAllocation) return;
+  const { continuedAllocation: _ended, ...rest } = goal;
+  await putRecord(db, registry, GOALS, goalId, rest);
 }
 
 /**
@@ -374,6 +386,7 @@ export async function moveWeekAllocation(
     checkAmount(total);
     await writeAllocation(db, registry, goalId, fromWeek, null, today);
     await writeAllocation(db, registry, goalId, toWeek, total, today);
+    await endContinuedAmount(db, registry, goalId, goal);
     await refreshWeekPlans(db, registry, "change", now);
   });
 }
@@ -430,6 +443,20 @@ export async function decidePlanDate(
     };
     await putRecord(db, registry, GOAL_WEEK_PLAN_CHOICES, planChoiceId(plan.goalId, plan.weekStart, from, device.id, entry.seq), event);
   });
+}
+
+/**
+ * The weekly amount recorded for the last day before the goal's current pause began (T-246), or null
+ * when that day had no allocated plan here (no plan recorded, a mismatch, inactive, or undecided).
+ * The pause begins on the date of the last status-history entry; without a history, today.
+ */
+export async function amountBeforePause(db: LocalDb, goalId: string, goal: GoalData, today: string): Promise<Fraction | null> {
+  const last = goal.statusHistory?.at(-1);
+  const pausedFrom = last && last.status === "paused" ? last.from : today;
+  const plans = (await rowsOf<GoalWeekPlanData>(db, GOAL_WEEK_PLANS)).filter((p) => p.data.goalId === goalId).map((p) => p.data);
+  const applied = planDateOn(plans, previousDay(pausedFrom), (await deviceIdentity(db)).id);
+  const segment = applied ? appliedSegment(applied.resolution) : null;
+  return segment?.state === "allocated" && segment.allocation ? { ...segment.allocation } : null;
 }
 
 /** The recorded plan in effect today for one goal on this device (for the goal page), if any. */

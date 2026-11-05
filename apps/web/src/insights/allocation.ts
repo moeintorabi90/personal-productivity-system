@@ -10,7 +10,7 @@ import { add, div, frac, type Fraction, mul, ZERO } from "./fraction.ts";
 import { goalWeekStarts, isClosedWeek, type GoalPlan, weekStartOf, workdaysIn } from "./goal-plan.ts";
 
 export interface AllocationInput {
-  goal: Pick<GoalData, "startDate" | "status" | "archivedAt">;
+  goal: Pick<GoalData, "startDate" | "status" | "archivedAt" | "continuedAllocation">;
   plan: GoalPlan;
   /** Configured week start (0 = Sunday … 6). */
   weekStart: number;
@@ -75,6 +75,17 @@ export function computeAllocations(input: AllocationInput): AllocationResult {
   for (const amount of active.values()) share -= amount;
   const automatic = open.filter((w) => !active.has(w) && workdays.get(w)! > 0);
   const blocking = outOfRange.some((o) => !o.historical);
+  // Resumed with "continue the previous plan" (T-246): every open automatic week keeps the weekly amount
+  // from before the pause (its `from` is the resume date, so no open week is earlier); nothing is shared.
+  const continued = goal.continuedAllocation;
+  if (continued) {
+    const weeks = open.map((w): WeekAllocation => {
+      const manual = input.manual.get(w) ?? null;
+      const allocation = blocking ? null : active.has(w) ? frac(active.get(w)!) : workdays.get(w)! > 0 ? { ...continued.amount } : ZERO;
+      return { weekStart: w, workdays: workdays.get(w)!, manual, allocation };
+    });
+    return { kind: blocking ? "mismatch" : "allocated", weeks, share, discrepancy: 0, outOfRange };
+  }
   const shareMismatch = (share < 0 && active.size > 0) || (share > 0 && automatic.length === 0);
   const mismatch = blocking || shareMismatch;
   const totalAutoDays = automatic.reduce((sum, w) => sum + workdays.get(w)!, 0);

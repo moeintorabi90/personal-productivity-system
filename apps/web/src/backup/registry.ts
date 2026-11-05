@@ -560,6 +560,12 @@ export const goalSchema = z
     dailyCap: z.number().int().min(1).optional(),
     planHistory: datedList(goalPlanEntrySchema, "effectiveFrom").optional(),
     statusHistory: datedList(goalStatusEntrySchema, "from").optional(),
+    // Resumed with "continue the previous plan" (T-246): automatic weeks from `from` keep `amount`,
+    // the weekly amount that applied before the pause, until the goal or its allocations change.
+    continuedAllocation: z
+      .object({ from: localDateSchema, amount: z.lazy(() => fractionSchema) })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((g, ctx) => {
