@@ -414,6 +414,52 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     expect(screen.getAllByTestId("allocation-row").map((r) => r.dataset.week)).toEqual(["2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23"]);
   });
 
+  /** The pace indicators of the goal page: targets, the daily pace streak, and the weekly allocations. */
+  const paceShown = () => ({
+    targets: ["today-target", "week-target", "month-target"].filter((id) => screen.queryByTestId(id)).length,
+    paceStreak: /Daily pace:/.test(screen.getByTestId("goal-streaks").textContent ?? ""),
+    allocations: screen.queryByTestId("allocations") !== null,
+  });
+
+  it("pausing hides every pace indicator until the goal is resumed; progress, history, and work attributed while paused stay (T-243)", async () => {
+    const goalId = await goal({ kind: "time", target: 600 });
+    await waitFor(() => expect(paceShown()).toEqual({ targets: 3, paceStreak: true, allocations: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    const hidden = await screen.findByTestId("pace-hidden");
+    expect(hidden.dataset.status).toBe("paused");
+    expect(hidden.textContent).toMatch(/paused, so its targets and pace are hidden until it is resumed/);
+    expect(paceShown()).toEqual({ targets: 0, paceStreak: false, allocations: false });
+    expect(screen.getByTestId("goal-streaks").textContent).toMatch(/Consistency:/); // not a pace indicator
+    expect(screen.getByTestId("weekly-plans")).toBeTruthy(); // the recorded plans stay
+    // Work explicitly attributed while paused still counts toward actual progress (T-046).
+    await recordPastSession(services.db, { date: "2026-11-02", startTime: "06:00", durationMinutes: 30, goalId });
+    await waitFor(() => expect(screen.getByTestId("goal-progress").textContent).toMatch(/30 min/));
+    expect(paceShown().targets).toBe(0);
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(screen.queryByTestId("pace-hidden")).toBeNull());
+    expect(paceShown()).toEqual({ targets: 3, paceStreak: true, allocations: true });
+    expect(screen.getByTestId("goal-progress").textContent).toMatch(/30 min/);
+  });
+
+  it("abandoning hides the pace, keeps progress and history, is never shown as completed, and reopening brings the pace back (T-243)", async () => {
+    const goalId = await goal({ kind: "time", target: 600 });
+    await recordPastSession(services.db, { date: "2026-11-02", startTime: "06:00", durationMinutes: 45, goalId });
+    await waitFor(() => expect(screen.getByTestId("goal-progress").textContent).toMatch(/45 min/));
+    const plansBefore = await services.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray();
+    fireEvent.click(screen.getByRole("button", { name: "Abandon" }));
+    expect((await screen.findByTestId("pace-hidden")).dataset.status).toBe("abandoned");
+    expect(paceShown()).toEqual({ targets: 0, paceStreak: false, allocations: false });
+    expect(screen.getByTestId("goal-progress").textContent).toMatch(/45 min/); // actual progress unchanged
+    expect(screen.getAllByText("Abandoned").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Completed")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mark complete" })).toBeNull(); // only reopening is offered
+    expect(await services.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).toEqual(plansBefore); // stored plans kept
+    fireEvent.click(screen.getByRole("button", { name: "Reopen" }));
+    await waitFor(() => expect(screen.queryByTestId("pace-hidden")).toBeNull());
+    expect(paceShown()).toEqual({ targets: 3, paceStreak: true, allocations: true });
+    expect(screen.getByTestId("goal-progress").textContent).toMatch(/45 min/);
+  });
+
   it("a manual week keeps its amount and the others are rebalanced; moving onto a manual week asks replace, add, or cancel", async () => {
     const goalId = await goal();
     // Rows appear once the live queries have loaded.

@@ -177,10 +177,14 @@ export function allocationState(
 
 const previousDay = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
-/** Whether the app writes a weekly plan for the goal today: running, not archived or completed. */
+/**
+ * Whether the app writes a weekly plan for the goal today: running, not archived, completed, or
+ * abandoned (an abandoned goal is not pursued, like a completed one, T-243; derived). A paused goal
+ * keeps its plans written, only their pacing is hidden (T-243). Stored plans are never removed.
+ */
 function plansToday(goal: GoalData, today: string): boolean {
   const plan = currentPlan(goal);
-  return goal.archivedAt === null && goal.status !== "completed" && goal.startDate <= today && (plan.deadline === null || plan.deadline >= today);
+  return goal.archivedAt === null && goal.status !== "completed" && goal.status !== "abandoned" && goal.startDate <= today && (plan.deadline === null || plan.deadline >= today);
 }
 
 /**

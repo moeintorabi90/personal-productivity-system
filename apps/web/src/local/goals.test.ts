@@ -132,9 +132,40 @@ describe("3–4. status, archive, and restore", () => {
     expect(await goalData(db, id)).toMatchObject({ status: "active", startDate: "2026-11-01", deadline: "2026-12-31" });
   });
 
+  it("abandons from active or paused and reopens as active; never becomes completed by abandoning; milestones, dates, and history stay (T-243)", async () => {
+    expect(canChangeStatus("active", "abandoned")).toBe(true);
+    expect(canChangeStatus("paused", "abandoned")).toBe(true);
+    expect(canChangeStatus("abandoned", "active")).toBe(true); // reopen
+    expect(canChangeStatus("abandoned", "completed")).toBe(false); // abandoning is not completing
+    expect(canChangeStatus("abandoned", "paused")).toBe(false);
+    expect(canChangeStatus("completed", "abandoned")).toBe(false);
+
+    const db = await device();
+    const id = await createGoal(db, pages);
+    const done = await createMilestone(db, { goalId: id, name: "Outline" });
+    await setMilestoneCompleted(db, done, true);
+    const milestoneBefore = await milestoneData(db, done);
+    await setGoalStatus(db, id, "paused");
+    await setGoalStatus(db, id, "abandoned"); // from paused
+    expect(await goalData(db, id)).toMatchObject({ status: "abandoned", startDate: "2026-11-01", deadline: "2026-12-31", archivedAt: null });
+    expect(await milestoneData(db, done)).toEqual(milestoneBefore);
+    expect(await codeOf(setGoalStatus(db, id, "completed"))).toBe("INVALID_STATUS_CHANGE");
+    expect((await goalData(db, id)).status).toBe("abandoned");
+    // The status history records every period (the last entry is the current state).
+    expect(((await goalData(db, id)).statusHistory as { status: string }[]).map((e) => e.status).at(-1)).toBe("abandoned");
+    const { goals } = await loadGoals(db);
+    expect(filterGoals(goals, "abandoned").map((g) => g.id)).toEqual([id]);
+    expect(filterGoals(goals, "completed")).toEqual([]); // never listed as completed
+    await setGoalStatus(db, id, "active"); // reopen (T-243)
+    expect(await goalData(db, id)).toMatchObject({ status: "active", startDate: "2026-11-01", deadline: "2026-12-31" });
+    expect(await milestoneData(db, done)).toEqual(milestoneBefore);
+    await setGoalStatus(db, id, "abandoned"); // from active
+    expect((await goalData(db, id)).status).toBe("abandoned");
+  });
+
   it("archive keeps the status and restore returns to it; an archived goal is read-only", async () => {
     const db = await device();
-    for (const status of ["active", "paused", "completed"] as const) {
+    for (const status of ["active", "paused", "completed", "abandoned"] as const) {
       const id = await createGoal(db, pages);
       if (status !== "active") await setGoalStatus(db, id, status);
       const milestone = await createMilestone(db, { goalId: id, name: "Draft" });

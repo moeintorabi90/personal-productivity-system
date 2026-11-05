@@ -433,7 +433,10 @@ export const GOALS = "goals";
 export const MILESTONES = "milestones";
 export const GOAL_KINDS = ["output", "time", "taskCount"] as const;
 export type GoalKind = (typeof GOAL_KINDS)[number];
-export const GOAL_STATUSES = ["active", "paused", "completed"] as const;
+/** Goal statuses up to data schema version 7 (T-082). */
+const GOAL_STATUSES_V4 = ["active", "paused", "completed"] as const;
+/** From data schema version 8 (T-243): `abandoned`, not achieved and distinct from `completed`. */
+export const GOAL_STATUSES = [...GOAL_STATUSES_V4, "abandoned"] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 export const UNIT_MAX = 50;
 /** Largest target per kind (T-085): output amount, minutes of a time goal, completed tasks. */
@@ -455,7 +458,7 @@ const goalV4Shape = {
   kind: z.enum(GOAL_KINDS),
   target: z.number().int().min(1),
   unit: unitSchema.optional(),
-  status: z.enum(GOAL_STATUSES),
+  status: z.enum(GOAL_STATUSES_V4),
   archivedAt: archivedAtSchema,
 };
 
@@ -546,11 +549,13 @@ const datedList = <T extends z.ZodType>(item: T, key: string) =>
  * it has `definitionId` or a legacy `unit` (or both); goals created from Stage 5 on omit `unit`,
  * and a stored legacy unit is never rewritten (T-161). Other kinds have neither. Data schema
  * version 8 (Stage 6) adds the optional `workdays` (selected weekdays, T-180), `dailyCap` (T-183),
- * `planHistory` (T-182), and `statusHistory`, each absent when unused (T-025).
+ * `planHistory` (T-182), and `statusHistory`, each absent when unused (T-025), and the status
+ * `abandoned` (T-243), which a file of an earlier version cannot hold.
  */
 export const goalSchema = z
   .object({
     ...goalV6Shape,
+    status: z.enum(GOAL_STATUSES),
     workdays: weekdayListSchema.refine((d) => d.length > 0, { message: "at least one workday" }).optional(),
     dailyCap: z.number().int().min(1).optional(),
     planHistory: datedList(goalPlanEntrySchema, "effectiveFrom").optional(),

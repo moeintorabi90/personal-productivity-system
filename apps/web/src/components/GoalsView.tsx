@@ -128,7 +128,7 @@ export function GoalsView() {
   );
 }
 
-const FILTERS: GoalFilter[] = ["current", "active", "paused", "completed", "archived", "all"];
+const FILTERS: GoalFilter[] = ["current", "active", "paused", "completed", "abandoned", "archived", "all"];
 
 function GoalList({ goals, org, onOpen }: { goals: Goals; org: Organization; onOpen: (id: string) => void }) {
   const t = useT();
@@ -564,11 +564,17 @@ function GoalDetail({ goal, goals, org, onBack }: { goal: Goal; goals: Goals; or
                     {t("goals.resume")}
                   </button>
                 ) : null}
-                {status !== "completed" ? (
-                  <button type="button" className="secondary" onClick={act(() => setGoalStatus(db, goal.id, "completed"))}>
-                    {t("goals.complete")}
-                  </button>
+                {status === "active" || status === "paused" ? (
+                  <>
+                    <button type="button" className="secondary" onClick={act(() => setGoalStatus(db, goal.id, "completed"))}>
+                      {t("goals.complete")}
+                    </button>
+                    <button type="button" className="secondary" onClick={act(() => setGoalStatus(db, goal.id, "abandoned"))}>
+                      {t("goals.abandon")}
+                    </button>
+                  </>
                 ) : (
+                  // Completed or abandoned: reopen as active (T-060, T-243).
                   <button type="button" className="secondary" onClick={act(() => setGoalStatus(db, goal.id, "active"))}>
                     {t("goals.reopen")}
                   </button>

@@ -88,7 +88,7 @@ A private, offline-first personal productivity app that helps one person set goa
 - A time goal's target is entered as hours and minutes and stored as whole minutes (T-077).
 - The target type is chosen when the goal is created and never changes; the amount and the unit label stay editable (T-079; from Stage 5 the unit comes from the goal's output definition instead, T-154).
 - A goal's deadline, when set, is on or after its start date. Changing a goal's dates so that a milestone deadline would fall outside them is refused, naming the milestones to adjust first; a milestone that a backup merge leaves outside the dates is shown with a warning (T-078, T-084).
-- Goal statuses: active, paused, completed; pause, resume, complete (also from paused), and reopen. Archiving keeps the status, and restoring returns to it. An archived goal and its milestones are read-only until restored (T-082).
+- Goal statuses: active, paused, completed; pause, resume, complete (also from paused), and reopen. Archiving keeps the status, and restoring returns to it. An archived goal and its milestones are read-only until restored (T-082). *(Stage 6 adds the status abandoned, T-243; see "Stage 6".)*
 - A milestone can be completed, reopened, edited, or deleted (after a confirmation) while its goal is not archived; completing or reopening the goal never changes its milestones (T-080, T-083).
 - The start date defaults to today in the configured time zone, or on the device's calendar when no zone is set (T-086).
 - No progress, percentage, or pacing is shown in Stage 4; goal screens say that progress arrives with recorded work in Stage 5 (T-087).
@@ -275,7 +275,7 @@ Stage 5 contract: DECISIONS "Stage 5 decisions" — owner-approved T-091 to T-10
 
 ### Stage 6: planned versus actual, pace, reports, and dashboards (owner-approved 2026-11-01; implemented on `feat/stage-6`, not merged; TESTING "Stage 6 test report")
 
-Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-242 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
+Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-243 (DECISIONS "Stage 6 decisions"). That section also lists the derived technical choices, which are not owner decisions.
 
 **Calendar**
 
@@ -303,6 +303,7 @@ Decisions: T-071 to T-073 and T-075 as updated, T-145, and T-174 to T-242 (DECIS
 - [ ] **Daily pace streak:** consecutive selected work opportunities on which the displayed daily target is met. Unselected days neither add nor break. Meeting a capped target continues it even when the overall goal is projected to fall short. No weekly or monthly pace streaks; those show percentage and status only (T-184).
 - [ ] **Goal-consistency streak:** one per goal; selected scheduled work opportunities only; attributed recorded work counts, whatever its duration; a missed opportunity breaks the current streak, unscheduled days do not; paused, archived, pre-start, and post-deadline periods are not opportunities; work attributed to a paused goal affects progress but not its streak; completion stops it; the longest is kept, recalculated after corrections (T-216). A planned block alone never counts (T-073, T-185).
 - [ ] A goal's streak is shown on its goal page by default, and goal streaks are available as cards (T-186, T-202).
+- [ ] **Goal statuses (T-243):** active, paused, completed, and abandoned. While a goal is paused, all its pacing indicators are hidden until it is active again: the daily, weekly, and monthly targets and the other pace indicators shown for it. Pausing does not erase actual progress or history, and work explicitly attributed during a pause still counts (T-046). Abandoned is distinct from completed: the goal was not achieved, its actual progress and history remain, and it is never counted as completed because it was abandoned. An abandoned goal can be reopened as active. *(Derived, see DECISIONS "Goal status: abandoned": which indicators are hidden, the same hiding for an abandoned goal, abandon from active or paused, and no new weekly plans while abandoned. Open: how an abandoned period affects the streaks.)*
 - [ ] Tone: streaks are simple, supportive, and informational: no points, penalties, coercive pressure, or meaningless scores (T-075).
 
 **Estimation and reports**

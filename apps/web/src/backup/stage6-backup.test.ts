@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { canonicalize } from "./jcs.ts";
 import { contentHashOf } from "./envelope.ts";
-import { createGoal, updateGoal } from "../local/goals.ts";
+import { createGoal, setGoalStatus, updateGoal } from "../local/goals.ts";
 import { decidePlanDate, loadGoalPlanning, planWriteLimit, refreshWeekPlans, setWeekAllocation } from "../local/goal-plans.ts";
 import { deleteRecord, plannedWriteEnvelope, putRecord, toEnvelope } from "../local/records.ts";
 import { envelopeFits, nowIso } from "./envelope.ts";
@@ -169,6 +169,53 @@ describe("13. backup version 8 (derived)", () => {
     });
     expect(await codeOf(importInto(b, tomb, product))).toBe("INVALID_PAYLOAD");
     expect(await recordsOf(b)).toEqual(before);
+  });
+
+  it("an abandoned goal gets no new weekly-plan writes and keeps its stored plans; reopened, its plans are written again (T-243)", async () => {
+    const a = await device("A");
+    const goalId = await createGoal(a.db, goalInput);
+    at("2026-11-04T08:00:00Z");
+    await setGoalStatus(a.db, goalId, "abandoned");
+    const stored = await a.db.records.get([GOAL_WEEK_PLANS, weekPlanId(goalId, "2026-11-02")]);
+    await updateGoal(a.db, goalId, { target: 900 }, registry, Date.now()); // would change today's plan of a running goal
+    await refreshWeekPlans(a.db, registry, "change");
+    expect(await a.db.records.get([GOAL_WEEK_PLANS, weekPlanId(goalId, "2026-11-02")])).toEqual(stored);
+    await setGoalStatus(a.db, goalId, "active"); // reopen
+    const reopened = (await planOf(a, goalId))!;
+    expect(reopened.dates.map((d) => d.from)).toEqual(["2026-11-02", "2026-11-04"]); // a segment from today with the new target
+  });
+
+  it("an abandoned goal travels in version 8 with its status history; a version-7 file cannot hold the status (T-243)", async () => {
+    const a = await device("A");
+    const goalId = await createGoal(a.db, goalInput);
+    at("2026-11-04T08:00:00Z");
+    await setGoalStatus(a.db, goalId, "abandoned");
+    const plansBefore = await a.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray();
+    expect(plansBefore).toHaveLength(1); // the plan written while it was active stays
+    const text = await exportText(a);
+    const b = await device("B");
+    expect(await codeOf(importInto(b, text, product))).toBe("OK");
+    const onB = (await b.db.records.get([GOALS, goalId]))!.data as { status: string; statusHistory: { from: string; status: string }[] };
+    expect(onB.status).toBe("abandoned");
+    expect(onB.statusHistory.map((e) => [e.from, e.status])).toEqual([["2026-11-02", "active"], ["2026-11-04", "abandoned"]]);
+    expect(await b.db.records.where("type").equals(GOAL_WEEK_PLANS).count()).toBe(1);
+
+    // The same goal as a version-7 file would carry it (no version-8 fields or types): refused only for the new status.
+    const asV7 = (status: string) =>
+      mutate(text, (doc) => {
+        doc.app.dataSchemaVersion = 7;
+        for (const type of [GOAL_WEEK_PLANS, GOAL_WEEK_ALLOCATIONS, GOAL_WEEK_PLAN_CHOICES, APP_USE_DAYS, DASHBOARDS, TASK_ESTIMATE_CAPTURES]) delete doc.payload.records[type];
+        for (const env of doc.payload.records[GOALS]) {
+          for (const field of ["workdays", "dailyCap", "planHistory", "statusHistory"]) delete env.data[field];
+          env.data.status = status;
+          env.contentHash = contentHashOf(env.data);
+        }
+      });
+    const c = await device("C");
+    const cBefore = await recordsOf(c);
+    expect(await codeOf(importInto(c, asV7("abandoned"), product))).toBe("INVALID_PAYLOAD");
+    expect(await recordsOf(c)).toEqual(cBefore);
+    expect(await codeOf(importInto(c, asV7("completed"), product))).toBe("OK");
   });
 
   it("the stored version-7 sample imports, with no weekly plans (no data)", async () => {

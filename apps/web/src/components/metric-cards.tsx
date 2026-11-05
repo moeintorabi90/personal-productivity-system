@@ -187,7 +187,7 @@ export function MetricBody({ ctx, metric, window, size, goalId }: { ctx: Insight
           <p className="metric-number">{t("metric.days", { n: g.consistency.current })}</p>
           <p className="hint">{goal.data.name}</p>
           <p className="hint">{t("pace.consistencyStreak", { current: g.consistency.current, longest: g.consistency.longest, count: g.consistency.counted })}</p>
-          <p className="hint">{t("pace.paceStreak", { current: g.pace.current, longest: g.pace.longest, count: g.pace.counted })}</p>
+          {g.pacingHidden ? null : <p className="hint">{t("pace.paceStreak", { current: g.pace.current, longest: g.pace.longest, count: g.pace.counted })}</p>}
         </div>
       );
     }
@@ -203,16 +203,24 @@ function GoalProgressBody({ goal, name, g, definitions, size }: { goal: GoalData
       <p className="hint">
         {name}: {amount(g.progress)} / {amount(goal.target)}
       </p>
-      {size !== "small" ? (
-        <p className="hint">
-          {t("pace.today")}: {g.today.kind === "target" ? amount(g.today.target) : t(`pace.noTarget.${g.today.reason}` as MessageKey)}
-          {t("stage6.sep")}
-          {t("pace.week")}:{" "}
-          {g.week ? amount(g.week.target) : t("pace.noPeriodTarget")}
+      {g.pacingHidden ? (
+        <p className="hint" data-testid="pace-hidden">
+          {t(goal.status === "paused" ? "pace.hiddenPaused" : "pace.hiddenAbandoned")}
         </p>
-      ) : null}
-      {g.cap?.unreachable ? <p className="notice notice-warn">{t("pace.capWarning", { max: amount(g.cap.maxProjected), target: amount(goal.target), days: g.cap.remainingWorkdays })}</p> : null}
-      {g.allocation.result.kind === "mismatch" ? <p className="notice notice-warn">{t("pace.mismatchShort")}</p> : null}
+      ) : (
+        <>
+          {size !== "small" ? (
+            <p className="hint">
+              {t("pace.today")}: {g.today.kind === "target" ? amount(g.today.target) : t(`pace.noTarget.${g.today.reason}` as MessageKey)}
+              {t("stage6.sep")}
+              {t("pace.week")}:{" "}
+              {g.week ? amount(g.week.target) : t("pace.noPeriodTarget")}
+            </p>
+          ) : null}
+          {g.cap?.unreachable ? <p className="notice notice-warn">{t("pace.capWarning", { max: amount(g.cap.maxProjected), target: amount(goal.target), days: g.cap.remainingWorkdays })}</p> : null}
+          {g.allocation.result.kind === "mismatch" ? <p className="notice notice-warn">{t("pace.mismatchShort")}</p> : null}
+        </>
+      )}
     </div>
   );
 }

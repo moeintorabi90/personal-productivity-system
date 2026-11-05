@@ -209,7 +209,7 @@ export interface CapProjection {
  */
 export function capProjection(goal: GoalData, progress: number, today: string): CapProjection | null {
   const plan = planOn(goal, today);
-  if (plan.dailyCap === null || plan.deadline === null || plan.deadline < today || goal.status === "completed") return null;
+  if (plan.dailyCap === null || plan.deadline === null || plan.deadline < today || goal.status === "completed" || goal.status === "abandoned") return null;
   const from = today > goal.startDate ? today : goal.startDate;
   const remainingWorkdays = datesBetween(from, plan.deadline).filter((d) => isOpportunity(goal, d)).length;
   const maxProjected = progress + plan.dailyCap * remainingWorkdays;

@@ -179,7 +179,7 @@ Owner decisions T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-
 
 ### Stage 6 data (`dataSchemaVersion` 8; implemented on `feat/stage-6`, not merged)
 
-Owner decisions T-174 to T-242. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
+Owner decisions T-174 to T-243. **The version number, field names, and shapes below are derived technical choices, not owner decisions**, and remain open to technical review (DECISIONS "Stage 6 decisions"). New fields on existing types are optional and omitted when unused (T-025 pattern); new types use present-and-nullable fields.
 
 | Type / field | Data fields | Rules |
 |---|---|---|
@@ -187,6 +187,7 @@ Owner decisions T-174 to T-242. **The version number, field names, and shapes be
 | `goals.dailyCap` (optional) | whole number in the goal's measure (T-183) | adding, editing, or removing it changes no actual record |
 | `goals.planHistory` (optional) | plans with the date each took effect: `effectiveFrom`, `target`, `deadline` (or `null`), `workdays` (possibly empty), `dailyCap` (or `null`) (T-182) | the last entry is the current plan; the first change of a goal without history also records the plan in effect since its start; a same-day change replaces that day's entry; used for historical charts; weekly allocations have their own types below |
 | `goals.statusHistory` (optional; derived, added during implementation) | `{ from, status, archived }` entries | the last entry is the current state; paused, archived, and completed periods are not opportunities (T-185); without it, the current state applies |
+| `goals.status` value `abandoned` (new value; T-243) | `status` is `active`, `paused`, `completed`, or `abandoned` (also in `statusHistory` entries) | abandoned is not completed: progress, milestones, attributed records, plans, and history stay; reopening returns it to `active`; a file of version 4 to 7 cannot hold it (DECISIONS "Goal status: abandoned") |
 | `calendarBlocks.comparisonPlan` (optional) | the plan used for comparison when it differs from the current times: `startsAt`, `endsAt`, `status` (T-179) | written by an edit made after the scheduled start; absent = the current times |
 | `sessions.occurrenceDate` (optional) | local date of the recurring occurrence it is assigned to (T-190) | never changes recorded times or block links |
 | `taskEstimateCaptures` (new type) | `taskId`, `occurrenceDate` (or `null` for a one-off task), `estimateMinutes`, `capturedAt`, `source` (`plan` or `session`) (T-189) | ID derived from task and date; `taskId` and `occurrenceDate` never change; never back-filled |

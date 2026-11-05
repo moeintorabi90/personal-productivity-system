@@ -86,9 +86,10 @@ export function milestonesOutside(milestones: Milestone[], goalId: string, range
 }
 
 const TRANSITIONS: Record<GoalStatus, readonly GoalStatus[]> = {
-  active: ["paused", "completed"], // pause; complete (T-043, T-044)
-  paused: ["active", "completed"], // resume; complete without resuming (T-062)
+  active: ["paused", "completed", "abandoned"], // pause; complete (T-043, T-044); abandon (T-243)
+  paused: ["active", "completed", "abandoned"], // resume; complete without resuming (T-062); abandon (derived, T-243)
   completed: ["active"], // reopen (T-060)
+  abandoned: ["active"], // reopen (T-243); never completed by abandoning
 };
 
 export function canChangeStatus(from: GoalStatus, to: GoalStatus): boolean {
@@ -246,7 +247,11 @@ export async function updateGoal(
   });
 }
 
-/** Pause, resume, complete (also from paused), or reopen (T-043, T-044, T-060, T-062). Dates never change (T-045). */
+/**
+ * Pause, resume, complete (also from paused), abandon (from active or paused), or reopen a completed
+ * or abandoned goal (T-043, T-044, T-060, T-062, T-243). Dates never change (T-045); progress,
+ * milestones, plans, and history stay as they are.
+ */
 export async function setGoalStatus(db: LocalDb, id: string, status: GoalStatus, registry: Registry = PRODUCT_REGISTRY): Promise<void> {
   await db.transaction("rw", WRITE_TABLES(db), async () => {
     const goal = await editableGoal(db, id);

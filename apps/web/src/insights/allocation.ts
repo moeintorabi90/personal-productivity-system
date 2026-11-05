@@ -55,7 +55,8 @@ export type AllocationResult =
 
 export function computeAllocations(input: AllocationInput): AllocationResult {
   const { goal, plan, today } = input;
-  if (goal.status === "completed") return { kind: "ended" };
+  // A completed or abandoned goal is not pursued: no open week (T-243 for abandoned; derived).
+  if (goal.status === "completed" || goal.status === "abandoned") return { kind: "ended" };
   if (plan.deadline === null || plan.workdays.length === 0) {
     return { kind: "inactive", inactiveManual: [...input.manual].filter(([, a]) => a !== null).map(([w]) => w).sort() };
   }

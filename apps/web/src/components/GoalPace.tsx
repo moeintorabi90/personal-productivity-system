@@ -54,6 +54,13 @@ export function GoalPacePanel({ ctx, goalId, goal, definitions }: { ctx: Insight
           {t("pace.deadlinePassed")}
         </p>
       ) : null}
+      {g.pacingHidden ? (
+        <p className="notice notice-info" data-testid="pace-hidden" data-status={goal.status}>
+          {t(goal.status === "paused" ? "pace.hiddenPaused" : "pace.hiddenAbandoned")}
+        </p>
+      ) : null}
+      {g.pacingHidden ? null : (
+        <>
       {result.kind === "inactive" ? <p className="notice notice-info">{t("pace.inactive")}</p> : null}
       {result.kind === "mismatch" ? (
         <div className="notice notice-warn" role="status" data-testid="mismatch-warning">
@@ -103,13 +110,15 @@ export function GoalPacePanel({ ctx, goalId, goal, definitions }: { ctx: Insight
           </dd>
         </div>
       </dl>
+        </>
+      )}
       <h3>{t("pace.streaks")}</h3>
       <ul className="count-list" data-testid="goal-streaks">
         <li>{t("pace.consistencyStreak", { current: g.consistency.current, longest: g.consistency.longest, count: g.consistency.counted })}</li>
-        <li>{t("pace.paceStreak", { current: g.pace.current, longest: g.pace.longest, count: g.pace.counted })}</li>
+        {g.pacingHidden ? null : <li>{t("pace.paceStreak", { current: g.pace.current, longest: g.pace.longest, count: g.pace.counted })}</li>}
       </ul>
       <p className="hint">{t("pace.streakNote")}</p>
-      <AllocationTable ctx={ctx} goalId={goalId} goal={goal} definitions={definitions} />
+      {g.pacingHidden ? null : <AllocationTable ctx={ctx} goalId={goalId} goal={goal} definitions={definitions} />}
       <PlanHistory goal={goal} definitions={definitions} />
       <WeeklyPlans ctx={ctx} goalId={goalId} goal={goal} definitions={definitions} plans={g.plans} />
     </section>

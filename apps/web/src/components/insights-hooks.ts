@@ -97,6 +97,8 @@ export function goalInsight(ctx: InsightsCtx, goalId: string, goal: GoalData) {
     pace: paceStreak(input),
     consistency: consistencyStreak(goal, days.attributed, ctx.today),
     deadlinePassed: goal.deadline !== null && goal.deadline < ctx.today && goal.status !== "completed",
+    // While paused (owner, T-243) or abandoned (derived), every pace indicator is hidden; actual progress stays.
+    pacingHidden: goal.status === "paused" || goal.status === "abandoned",
     input,
   };
 }
