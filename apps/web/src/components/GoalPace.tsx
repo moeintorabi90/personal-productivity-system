@@ -411,6 +411,13 @@ function PlanDateRow({ ctx, goalId, goal, plan, date, definitions }: { ctx: Insi
         {offered.length > 0 && !blocked && goal.archivedAt === null ? (
           <div data-testid={conflict ? "decide" : "change-choice"}>
             <p className="hint">{conflict ? t("pace.chooseVersion") : t("pace.changeChoice")}</p>
+            {/* An automatic write may have replaced the chosen segment with one that is not in `options`
+                (writes never add to them); it is shown as applying but is not one of the choices (T-237). */}
+            {!conflict && applied !== null && !offered.some((s) => canonicalize(s) === canonicalize(applied)) ? (
+              <p data-testid="choice-current">
+                {segmentText(t, goal, applied, definitions)} <span className="pill pill-ok">{t("pace.applying")}</span> <span className="hint">{t("pace.applyingNotListed")}</span>
+              </p>
+            ) : null}
             <ul className="count-list">
               {offered.map((s) => {
                 const key = canonicalize(s);

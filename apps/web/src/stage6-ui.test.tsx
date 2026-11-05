@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AppServices, createServices, ServicesProvider } from "./app-context.tsx";
 import { App } from "./App.tsx";
 import { planChoiceId, weekPlanId } from "./backup/derived-id.ts";
+import { canonicalize } from "./backup/jcs.ts";
 import {
   CORRECTIONS,
   GOAL_WEEK_ALLOCATIONS,
@@ -211,6 +212,40 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     fireEvent.click(within(await screen.findByTestId("confirm-choice")).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(screen.queryByTestId("plan-conflict")).toBeNull());
     await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("20")); // 100 over 5 workdays
+  });
+
+  it("after an automatic write replaced the chosen segment, \"Change choice\" shows the one applying apart from the recorded versions, which stay as they were (T-237)", async () => {
+    const goalId = await goal();
+    await waitFor(() => expect(screen.getByTestId("today-target").textContent).toBe("30"));
+    const planId = weekPlanId(goalId, "2026-11-02");
+    const plan = (await services.db.records.get([GOAL_WEEK_PLANS, planId]))!.data as GoalWeekPlanData;
+    // z: this device's live segment, written by the app's automatic plan write; x and y: the versions chosen between earlier.
+    const z = plan.dates[0]!.entries[0]!.segment;
+    const manual = (num: number) => ({ state: "allocated" as const, allocation: { num, den: 1 }, source: "manual" as const });
+    const byKey = <T,>(list: T[]) => [...list].sort((p, q) => (canonicalize(p) < canonicalize(q) ? -1 : 1));
+    const write = (options: GoalWeekPlanData["dates"][number]["options"]) =>
+      putRecord(services.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, planId, { ...plan, dates: [{ ...plan.dates[0]!, options }] });
+    const rows = (box: HTMLElement) => within(box).getAllByRole("listitem");
+
+    const recorded = byKey([manual(100), manual(200)]);
+    await write(recorded);
+    const change = await screen.findByTestId("change-choice");
+    const current = within(change).getByTestId("choice-current");
+    expect(current.textContent).toMatch(/^150 .*applies now.*not one of the recorded versions below/); // 150 = z, the week's automatic amount
+    expect(rows(change).map((li) => li.textContent!.replace("Choose", "").trim())).toEqual(["100 (manual)", "200 (manual)"]); // only the recorded versions
+    expect(rows(change).every((li) => !li.textContent!.includes("applies now"))).toBe(true);
+    expect(within(change).getAllByRole("button", { name: "Choose" })).toHaveLength(2);
+    const stored = async () => ((await services.db.records.get([GOAL_WEEK_PLANS, planId]))!.data as GoalWeekPlanData).dates[0]!;
+    expect((await stored()).options).toEqual(recorded); // z is not added to them
+    expect(canonicalize((await stored()).entries[0]!.segment)).toBe(canonicalize(z));
+
+    // When the segment applying is one of the recorded versions, it is marked in the list as before, with no separate line.
+    await write(byKey([manual(100), z]));
+    await waitFor(() => expect(within(screen.getByTestId("change-choice")).queryByTestId("choice-current")).toBeNull());
+    const marked = rows(screen.getByTestId("change-choice")).find((li) => li.textContent!.includes("applies now"))!;
+    expect(marked.textContent).toMatch(/^150/);
+    expect(within(marked).queryByRole("button", { name: "Choose" })).toBeNull();
+    expect(within(screen.getByTestId("change-choice")).getAllByRole("button", { name: "Choose" })).toHaveLength(1);
   });
 
   it("two choice events that each claim to have seen the other are shown as a data-integrity issue with uncertain order, and the plan is unchanged (independent review)", async () => {

@@ -863,6 +863,7 @@ export const en = {
   "pace.chooseVersion": "Choose the version to keep (nothing is chosen by time or age):",
   "pace.changeChoice": "Change choice: pick another recorded version for this date.",
   "pace.applying": "applies now",
+  "pace.applyingNotListed": "(an automatic plan update; not one of the recorded versions below)",
   "pace.choose": "Choose",
   "pace.confirmChoice": "Use {choice} from this date on? Past targets and streaks are recalculated.",
   "pace.confirm": "Confirm",
