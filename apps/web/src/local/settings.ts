@@ -51,7 +51,7 @@ export async function updateSharedPreferences(
     await putRecord(db, PRODUCT_REGISTRY, "preferences", SHARED_PREFERENCES_ID, next);
     // A change of week start makes the week under the new start apply from today (T-247), in the
     // same transaction, also when that week's record already exists.
-    if (rest.weekStart !== undefined && rest.weekStart !== current.data.weekStart) await refreshWeekPlans(db, PRODUCT_REGISTRY, "change");
+    if (rest.weekStart !== undefined && rest.weekStart !== current.data.weekStart) await refreshWeekPlans(db, PRODUCT_REGISTRY, "change", Date.now(), true);
   });
 }
 

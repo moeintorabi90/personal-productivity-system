@@ -35,7 +35,7 @@ import { loadInsightRecords } from "./local/insights.ts";
 import { createProject, createTask, updateTask } from "./local/organization.ts";
 import { envelopeFits, nowIso } from "./backup/envelope.ts";
 import { deviceIdentity, plannedWriteEnvelope, putRecord, toEnvelope, updateDeviceSettings } from "./local/records.ts";
-import { updateSharedPreferences } from "./local/settings.ts";
+import { getSharedPreferences, updateSharedPreferences } from "./local/settings.ts";
 import { loadTimer } from "./local/timer.ts";
 import { endSession, pauseSession, recordPastSession, resumeSession, startSession } from "./local/work.ts";
 
@@ -948,5 +948,27 @@ describe("19. timer (T-230 to T-240)", () => {
     await goTo("داشبورد");
     expect(await screen.findByRole("heading", { level: 1, name: "داشبوردها" })).toBeTruthy();
     expect((await screen.findAllByText("پیوستگی استفاده از برنامه")).length).toBeGreaterThan(0);
+  });
+});
+
+describe("week start changes the plans cannot record (T-247)", () => {
+  it("Settings shows a clear message and changes nothing when a goal's takeover counter for today is at its maximum", async () => {
+    let goalId = "";
+    await renderApp(async (s) => {
+      goalId = await createGoal(s.db, { name: "Pages", startDate: "2026-11-02", deadline: "2026-11-29", kind: "taskCount", target: 600, workdays: [1, 2, 3, 4, 5] });
+      await updateSharedPreferences(s.db, { weekStart: 0 }); // the Sunday week takes over from Wednesday: this device's mark
+      const id = weekPlanId(goalId, "2026-11-01");
+      const plan = (await s.db.records.get([GOAL_WEEK_PLANS, id]))!.data as GoalWeekPlanData;
+      const dates = plan.dates.map((x) => ({ ...x, takeovers: x.takeovers!.map((t) => ({ ...t, seq: PLAN_SEQ_MAX })) }));
+      await s.db.transaction("rw", [s.db.records, s.db.tombstones, s.db.meta], () => putRecord(s.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, id, { ...plan, dates }));
+    });
+    const plansBefore = (await services.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).map((r) => r.contentHash);
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const select = await screen.findByLabelText("Week starts on");
+    fireEvent.change(select, { target: { value: "1" } }); // back to Monday needs the next counter
+    expect((await screen.findByTestId("settings-save-error")).textContent).toContain("The week start was not changed");
+    expect((await getSharedPreferences(services.db)).weekStart).toBe(0);
+    expect((select as HTMLSelectElement).value).toBe("0");
+    expect((await services.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).map((r) => r.contentHash)).toEqual(plansBefore);
   });
 });

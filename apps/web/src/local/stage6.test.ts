@@ -14,6 +14,8 @@ import {
   type GoalWeekAllocationData,
   type GoalWeekPlanData,
   type SessionData,
+  PLAN_SEQ_MAX,
+  PRODUCT_REGISTRY,
   SESSIONS,
   TASK_ESTIMATE_CAPTURES,
 } from "../backup/registry.ts";
@@ -24,6 +26,7 @@ import { recordAppUse } from "./insights.ts";
 import { createTask, updateTask } from "./organization.ts";
 import { createBlock, setRecurrence, updateBlock } from "./planning.ts";
 import { appliedSegment, planDateOn } from "../insights/plan-merge.ts";
+import { putRecord } from "./records.ts";
 import { updateSharedPreferences } from "./settings.ts";
 import {
   countdownReachedZero,
@@ -234,6 +237,54 @@ describe("a change of week start applies the new week's plan from that day, also
     const saturday = await planOf(d, goalId, "2026-10-31");
     expect(saturday.dates.map((x) => [x.from, x.takeovers])).toEqual([["2026-11-05", undefined]]);
     expect(await weekOn(d, "2026-11-05")).toBe("2026-10-31"); // its later `from` applies, as before
+  });
+
+  /** Sets this device's takeover mark on `week`'s date from 11-05 to `seq` (a counter used up by earlier changes). */
+  async function setOwnMark(d: TestDevice, goalId: string, week: string, seq: number) {
+    const plan = await planOf(d, goalId, week);
+    const dates = plan.dates.map((x) => (x.from !== "2026-11-05" ? x : { ...x, takeovers: x.takeovers!.map((t) => (t.device === d.deviceId ? { ...t, seq } : t)) }));
+    await d.db.transaction("rw", [d.db.records, d.db.tombstones, d.db.meta], () => putRecord(d.db, PRODUCT_REGISTRY, GOAL_WEEK_PLANS, weekPlanId(goalId, week), { ...plan, dates }));
+  }
+  const prefsAndPlans = async (d: TestDevice) =>
+    (await d.db.records.toArray()).filter((r) => r.type === "preferences" || r.type === GOAL_WEEK_PLANS).map((r) => [r.type, r.id, r.contentHash, r.version]);
+
+  it("a takeover counter at its maximum: the week start change is refused (SEQ_LIMIT) with nothing written; one below it succeeds and uses the maximum", async () => {
+    for (const [seq, refused] of [[PLAN_SEQ_MAX, true], [PLAN_SEQ_MAX - 1, false]] as const) {
+      at("2026-11-02T08:00:00Z");
+      const { d, goalId } = await sundayGoal();
+      at("2026-11-05T09:00:00Z");
+      await updateSharedPreferences(d.db, { weekStart: 6 }); // the Saturday week takes over: a mark of this device
+      await setOwnMark(d, goalId, "2026-10-31", seq);
+      const before = await prefsAndPlans(d);
+      at("2026-11-05T10:00:00Z");
+      const result = updateSharedPreferences(d.db, { weekStart: 0 }); // back to Sunday needs the next counter
+      if (refused) {
+        await expect(result).rejects.toMatchObject({ name: "GoalPlanError", code: "SEQ_LIMIT" });
+        expect(await prefsAndPlans(d)).toEqual(before);
+        expect(await weekOn(d, "2026-11-05")).toBe("2026-10-31");
+      } else {
+        await result;
+        expect(await weekOn(d, "2026-11-05")).toBe("2026-11-01");
+        const mark = (await planOf(d, goalId, "2026-11-01")).dates.find((x) => x.from === "2026-11-05")!.takeovers!.find((t) => t.device === d.deviceId)!;
+        expect(mark.seq).toBe(PLAN_SEQ_MAX);
+      }
+    }
+  });
+
+  it("outside a change of week start, a takeover the counter cannot record leaves the plan as it is, as the entry counter does: the goal change itself is kept", async () => {
+    const { d, goalId } = await sundayGoal();
+    at("2026-11-05T09:00:00Z");
+    await updateSharedPreferences(d.db, { weekStart: 6 });
+    await setOwnMark(d, goalId, "2026-10-31", PLAN_SEQ_MAX);
+    // The shared setting written as it was before this fix (no plan refresh): the Saturday week still applies.
+    const prefs = (await d.db.records.get(["preferences", "00000000-0000-4000-8000-000000000001"]))!;
+    await d.db.transaction("rw", [d.db.records, d.db.tombstones, d.db.meta], () => putRecord(d.db, PRODUCT_REGISTRY, "preferences", prefs.id, { ...prefs.data, weekStart: 0 }));
+    const plans = (await prefsAndPlans(d)).filter(([type]) => type === GOAL_WEEK_PLANS);
+    at("2026-11-05T10:00:00Z");
+    await updateGoal(d.db, goalId, { target: 900 });
+    await recordAppUse(d.db);
+    expect((await prefsAndPlans(d)).filter(([type]) => type === GOAL_WEEK_PLANS)).toEqual(plans);
+    expect(await weekOn(d, "2026-11-05")).toBe("2026-10-31");
   });
 });
 

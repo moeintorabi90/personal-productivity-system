@@ -9,6 +9,7 @@ import { useId, useMemo, useState } from "react";
 import { usePreferences, useServices, useT } from "../app-context.tsx";
 import { CAPACITY_MAX_MINUTES } from "../backup/registry.ts";
 import { formatDateTime } from "../i18n/index.ts";
+import { GoalPlanError } from "../local/goal-plans.ts";
 import { updateDeviceSettings } from "../local/records.ts";
 import { updateSharedPreferences } from "../local/settings.ts";
 import { useSharedPreferences } from "./planning-ui.tsx";
@@ -36,6 +37,8 @@ export function SettingsView() {
   const { db } = useServices();
   const ids = { language: useId(), theme: useId(), calendar: useId(), week: useId(), zone: useId(), zones: useId() };
   const [zoneDraft, setZoneDraft] = useState<string | null>(null);
+  /** A shared setting that was refused, with nothing written (a week start a goal's plan cannot record, T-247). */
+  const [saveError, setSaveError] = useState<string | null>(null);
   const zones = useMemo(allTimeZones, []);
   const suggested = deviceTimeZone();
   const sampleDate = useMemo(() => new Date().toISOString(), []);
@@ -46,7 +49,13 @@ export function SettingsView() {
     if (language !== undefined || theme !== undefined) {
       await updateDeviceSettings(db, { ...(language ? { language } : {}), ...(theme ? { theme } : {}) });
     }
-    if (Object.keys(shared).length) await updateSharedPreferences(db, shared);
+    if (!Object.keys(shared).length) return;
+    setSaveError(null);
+    try {
+      await updateSharedPreferences(db, shared);
+    } catch (e) {
+      setSaveError(e instanceof GoalPlanError && e.code === "SEQ_LIMIT" ? t("pace.error.weekStartSeqLimit") : t("backup.error.generic"));
+    }
   }
 
   const zoneValue = zoneDraft ?? prefs.timeZone ?? "";
@@ -111,6 +120,11 @@ export function SettingsView() {
             </option>
           ))}
         </select>
+        {saveError ? (
+          <p className="notice notice-error" role="alert" data-testid="settings-save-error">
+            {saveError}
+          </p>
+        ) : null}
       </div>
 
       <div className="field">

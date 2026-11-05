@@ -904,6 +904,8 @@ export const en = {
   "pace.error.RECORD_LIMIT": "This choice cannot be recorded: this week's plan would become larger than a backup record may be. Nothing was changed or removed.",
   "pace.planNotUpdatedSize": "Today's plan changed, but it could not be recorded on this device: this week's plan would become larger than a backup record may be. The daily target shown still comes from the last recorded plan.",
   "pace.error.SEQ_LIMIT": "This device cannot record a choice for this date: its counter is at the maximum. Nothing was changed.",
+  "pace.error.weekStartSeqLimit":
+    "The week start was not changed: this device cannot record the change in a goal's plan for today, because its counter for today is at the maximum. Nothing was changed or imported.",
   "pace.planNotUpdated": "Today's plan changed, but it could not be recorded on this device: its counter for today's date is at the maximum. The daily target shown still comes from the last recorded plan. Another device can record the update.",
   "pace.decisionBlocked": "This device cannot record a choice for this date: the recorded data puts its counter at the maximum. Nothing is changed here; choose on another device, or import a backup from before the issue.",
   "dash.title": "Dashboards",

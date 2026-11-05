@@ -1277,6 +1277,71 @@ describe("changes of week start on one day travel in backups (T-247; derived \"W
     expect(await weekOn(b, "2026-11-04")).toBe("2026-11-02");
   });
 
+  /** Puts this device's takeover mark with counter \`seq\` on \`week\`'s date from 11-05, as if earlier changes had used it up. */
+  async function setOwnMark(d: TestDevice, goalId: string, week: string, seq: number, over: string[]) {
+    const plan = (await planOf(d, goalId, week))!;
+    const dates = plan.dates.map((x) => {
+      if (x.from !== "2026-11-05") return x;
+      const others = (x.takeovers ?? []).filter((t) => t.device !== d.deviceId);
+      const takeovers = [...others, { device: d.deviceId, seq, seen: {}, over }].sort((p, q) => p.device.localeCompare(q.device));
+      return { ...x, takeovers };
+    });
+    await d.db.transaction("rw", [d.db.records, d.db.tombstones, d.db.meta], () => putRecord(d.db, registry, GOAL_WEEK_PLANS, weekPlanId(goalId, week), { ...plan, dates }));
+  }
+  /** Everything an import, a decision, or an undo could write. */
+  const stateOf = async (d: TestDevice) => ({
+    records: await prefsAndPlans(d),
+    conflicts: (await d.db.pendingConflicts.toArray()).length,
+    replaced: (await d.db.replacedVersions.toArray()).length,
+    imports: (await d.db.importLog.toArray()).length,
+  });
+
+  it("an import whose week start the takeover counter cannot record is refused (SEQ_LIMIT) with nothing written; below the maximum it imports", async () => {
+    for (const [seq, refused] of [[PLAN_SEQ_MAX, true], [PLAN_SEQ_MAX - 1, false]] as const) {
+      at("2026-11-02T08:00:00Z");
+      const { b, goalId } = await goalOnB();
+      await setOwnMark(b, goalId, "2026-11-02", seq, ["2026-11-01"]); // the Monday week took over the Sunday week before
+      const text = weekStartFrom(await exportText(b), 0);
+      const before = await stateOf(b);
+      at("2026-11-05T09:00:00Z");
+      const result = await codeOf(importInto(b, text, apply));
+      if (refused) {
+        expect(result).toBe("SEQ_LIMIT");
+        expect(await stateOf(b)).toEqual(before); // not the week start, no plan, no import record
+        expect(await weekOn(b)).toBe("2026-11-02");
+      } else {
+        expect(result).toBe("OK");
+        expect(await weekOn(b)).toBe("2026-11-01");
+        expect((await planOf(b, goalId, "2026-11-01"))!.dates[0]!.takeovers).toMatchObject([{ device: b.deviceId, seq: PLAN_SEQ_MAX }]);
+      }
+    }
+  });
+
+  it("choosing the backup's week start in a conflict is refused the same way, and the conflict stays to decide later", async () => {
+    const { b, goalId, own } = await goalOnB();
+    at("2026-11-05T09:00:00Z");
+    await updateSharedPreferences(b.db, { weekStart: 6 }); // the Saturday week takes over here
+    await setOwnMark(b, goalId, "2026-10-31", PLAN_SEQ_MAX, ["2026-11-01", "2026-11-02"]); // over Sunday too, from earlier changes
+    await importInto(b, weekStartFrom(own, 0), apply); // a preferences conflict: nothing changes
+    const view = (await loadConflictViews(b.db, registry)).find((v) => v.conflict.type === "preferences")!;
+    const before = await stateOf(b);
+    expect(await codeOf(resolveConflict(b.db, registry, view.conflict.conflictId, "useBackup", view.token))).toBe("SEQ_LIMIT");
+    expect(await stateOf(b)).toEqual(before);
+    expect(await weekStartOn(b)).toBe(6);
+  });
+
+  it("undoing an imported week start is refused the same way, and the earlier version stays to restore later", async () => {
+    const { b, goalId, own } = await goalOnB();
+    at("2026-11-05T09:00:00Z");
+    await importInto(b, weekStartFrom(own, 0), apply); // the Sunday week takes over here
+    await setOwnMark(b, goalId, "2026-11-01", PLAN_SEQ_MAX, ["2026-11-02"]);
+    const replaced = (await b.db.replacedVersions.toArray()).find((r) => r.type === "preferences")!;
+    const before = await stateOf(b);
+    expect(await codeOf(restoreReplacedVersion(b.db, registry, replaced.replacedId))).toBe("SEQ_LIMIT");
+    expect(await stateOf(b)).toEqual(before);
+    expect(await weekStartOn(b)).toBe(0);
+  });
+
   it("once a device has seen the other's change, its own later change applies on both, carried by its counters, not its clock", async () => {
     const { a, b, goalId } = await independentChanges("10:00", "09:00");
     await importInto(b, await exportText(a), apply); // B has now seen A's change to Sunday

@@ -195,7 +195,8 @@ function plansToday(goal: GoalData, today: string): boolean {
  * from today. `owner`: today's date waits for the owner's decision (T-223). `same`: the computed
  * segment is already in effect. `write`: this device's entry for today is to be written.
  * `blocked`: the computed segment differs from the one in effect, but it cannot be written: this
- * device's counter for today is at its maximum (`canWriteEntry`, reason `counter`), or the record's
+ * device's counter for today is at its maximum (`canWriteEntry`, reason `counter`), its takeover
+ * counter for today would pass it (`claimDay` returns null, reason `takeover`, T-247), or the record's
  * exact envelope would break a per-record limit of the backup format (`limit`, from
  * `planWriteLimit`: reason `devices` for more than 32 devices in its version vector,
  * `versionCounter` for this device's edit counter at its maximum, `size` for more than 256 KiB). The recorded plan stays, and the goal view says so.
@@ -203,12 +204,14 @@ function plansToday(goal: GoalData, today: string): boolean {
  */
 export type PlanWriteStep =
   | { kind: "none" | "owner" | "same" }
-  | { kind: "start"; segment: SegmentData }
+  /** `data`: the exact record to write. */
+  | { kind: "start"; segment: SegmentData; data: GoalWeekPlanData }
   /** `switching`: another week record applies today (after a change of week start, T-247), so this one takes over. */
-  | { kind: "write"; segment: SegmentData; switching: boolean }
-  | { kind: "blocked"; reason: "counter" | EnvelopeLimit; segment: SegmentData; inEffect: SegmentData | null };
+  | { kind: "write"; segment: SegmentData; switching: boolean; data: GoalWeekPlanData }
+  | { kind: "blocked"; reason: "counter" | "takeover" | EnvelopeLimit; segment: SegmentData; inEffect: SegmentData | null };
 
 export function planWriteStep(
+  goalId: string,
   goal: GoalData,
   state: AllocationState,
   manual: ReadonlyMap<string, number | null>,
@@ -222,7 +225,10 @@ export function planWriteStep(
   const existing = goalPlans.find((p) => p.weekStart === state.currentWeek);
   if (!existing) {
     // Without a deadline and workdays there is nothing to allocate (T-180): no record is started.
-    return state.plan.deadline === null || state.plan.workdays.length === 0 ? { kind: "none" } : { kind: "start", segment };
+    if (state.plan.deadline === null || state.plan.workdays.length === 0) return { kind: "none" };
+    const data = plannedRecord(goalPlans, { goalId, weekStart: state.currentWeek, dates: [] }, today, thisDevice, segment);
+    if (!data) return { kind: "blocked", reason: "takeover", segment, inEffect: null };
+    return { kind: "start", segment, data };
   }
   const todayDate = existing.dates.find((d) => d.from === today);
   if (todayDate && needsDecision(todayDate)) return { kind: "owner" }; // undecided, in conflict, or inconsistent
@@ -233,18 +239,21 @@ export function planWriteStep(
   const switching = applied !== null && applied.plan.weekStart !== state.currentWeek;
   if (!switching && inEffect && canonicalize(inEffect) === canonicalize(segment)) return { kind: "same" };
   if (!canWriteEntry(todayDate, thisDevice)) return { kind: "blocked", reason: "counter", segment, inEffect };
-  const problem = limit(plannedRecord(goalPlans, existing, today, thisDevice, segment));
+  const data = plannedRecord(goalPlans, existing, today, thisDevice, segment);
+  if (!data) return { kind: "blocked", reason: "takeover", segment, inEffect };
+  const problem = limit(data);
   if (problem) return { kind: "blocked", reason: problem, segment, inEffect };
-  return { kind: "write", segment, switching };
+  return { kind: "write", segment, switching, data };
 }
 
 /**
  * The record a plan write puts: this device's entry for today in `plan`, with a takeover mark when
- * the goal's other week records would otherwise still apply today (`claimDay`, T-247).
+ * the goal's other week records would otherwise still apply today (`claimDay`, T-247). Null when
+ * that mark's counter would pass its maximum: nothing is to be written.
  */
-export function plannedRecord(goalPlans: readonly GoalWeekPlanData[], plan: GoalWeekPlanData, today: string, device: string, segment: SegmentData): GoalWeekPlanData {
-  const date = writeEntry(plan.dates.find((d) => d.from === today), today, device, segment);
-  return withDate(plan, claimDay(goalPlans, plan, date, today, device));
+export function plannedRecord(goalPlans: readonly GoalWeekPlanData[], plan: GoalWeekPlanData, today: string, device: string, segment: SegmentData): GoalWeekPlanData | null {
+  const date = claimDay(goalPlans, plan, writeEntry(plan.dates.find((d) => d.from === today), today, device, segment), today, device);
+  return date ? withDate(plan, date) : null;
 }
 
 /**
@@ -254,7 +263,14 @@ export function plannedRecord(goalPlans: readonly GoalWeekPlanData[], plan: Goal
  * computed segment differs from the one in effect; a date the owner has not decided is never
  * written over (the owner decides it, T-223). Runs inside the caller's transaction.
  */
-export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "open" | "change", now: number = Date.now()): Promise<void> {
+export async function refreshWeekPlans(
+  db: LocalDb,
+  registry: Registry,
+  mode: "open" | "change",
+  now: number = Date.now(),
+  /** After a change of week start (T-247): a plan this device cannot record for a counter at its maximum refuses the whole change. */
+  weekStartChange = false,
+): Promise<void> {
   const { today, zone, weekStart } = await todayOf(db, now);
   const goals = await rowsOf<GoalData>(db, GOALS);
   const running = goals.filter((g) => plansToday(g.data, today));
@@ -268,16 +284,19 @@ export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "o
     const state = allocationState(goal.id, goal.data, goalDays(goal.id, goal.data, records, zone).amounts, allocations, today, weekStart);
     const id = weekPlanId(goal.id, state.currentWeek);
     const goalPlans = plans.filter((p) => p.data.goalId === goal.id).map((p) => p.data);
-    const step = planWriteStep(goal.data, state, manualAmounts(allocations, goal.id), goalPlans, today, device.id, limit);
+    const step = planWriteStep(goal.id, goal.data, state, manualAmounts(allocations, goal.id), goalPlans, today, device.id, limit);
+    if (weekStartChange && step.kind === "blocked" && (step.reason === "counter" || step.reason === "takeover")) {
+      // The week under the new start could not apply from today: the caller's transaction is undone,
+      // so the week start, the import, the decision, or the undo changes nothing (as `decidePlanDate`).
+      throw new GoalPlanError("SEQ_LIMIT", "this device's counter for today's plan is at its maximum; the week start was not changed");
+    }
     if (step.kind === "start") {
       // After a change of week start, a takeover mark makes it apply from today over the goal's
       // other week records with a date from today (T-247); earlier days keep theirs.
-      const empty: GoalWeekPlanData = { goalId: goal.id, weekStart: state.currentWeek, dates: [] };
-      await putRecord(db, registry, GOAL_WEEK_PLANS, id, plannedRecord(goalPlans, empty, today, device.id, step.segment));
+      await putRecord(db, registry, GOAL_WEEK_PLANS, id, step.data);
     } else if (step.kind === "write" && (mode === "change" || step.switching)) {
       // A switch back to a week whose record already exists is written on opening too (T-247).
-      const existing = goalPlans.find((p) => p.weekStart === state.currentWeek)!;
-      await putRecord(db, registry, GOAL_WEEK_PLANS, id, plannedRecord(goalPlans, existing, today, device.id, step.segment));
+      await putRecord(db, registry, GOAL_WEEK_PLANS, id, step.data);
     }
     // "owner", "same", "blocked", and "none" write nothing; "blocked" is shown on the goal page.
   }
@@ -291,7 +310,7 @@ export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "o
  * preferences and the plans are written together or not at all.
  */
 export async function refreshAfterWeekStart(db: LocalDb, registry: Registry, before: number, now: number = Date.now()): Promise<void> {
-  if ((await getSharedPreferences(db)).weekStart !== before) await refreshWeekPlans(db, registry, "change", now);
+  if ((await getSharedPreferences(db)).weekStart !== before) await refreshWeekPlans(db, registry, "change", now, true);
 }
 
 /* ---------- plan and status history (T-182, T-185) ---------- */

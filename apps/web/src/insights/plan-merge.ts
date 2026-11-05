@@ -249,15 +249,17 @@ export function planDateOn(plans: readonly GoalWeekPlanData[], day: string, this
  * week in effect from that day is the one this device now writes, also when its record already
  * existed. The mark's `seq` follows every mark of this device for the goal and day, `seen` holds
  * the other devices' marks this device has, and `over` the other records with a date from `day`.
- * Unchanged when this record already applies.
+ * Unchanged when this record already applies. Null when the mark's `seq` would pass
+ * `PLAN_SEQ_MAX`: this device cannot make the record apply that day, and the caller writes nothing.
  */
-export function claimDay(plans: readonly GoalWeekPlanData[], plan: GoalWeekPlanData, date: PlanDateData, day: string, device: string): PlanDateData {
+export function claimDay(plans: readonly GoalWeekPlanData[], plan: GoalWeekPlanData, date: PlanDateData, day: string, device: string): PlanDateData | null {
   const others = plans.filter((p) => p.goalId === plan.goalId && p.weekStart !== plan.weekStart);
   const applied = planDateOn([...others, withDate(plan, date)], day, device);
   if (!applied || applied.plan.weekStart === plan.weekStart) return date;
   const tied = others.filter((p) => p.weekStart <= day && day <= addDays(p.weekStart, 6) && p.dates.some((d) => d.from === day));
   const marks = [date, ...tied.map((p) => p.dates.find((d) => d.from === day)!)].flatMap((d) => d.takeovers ?? []);
   const seq = Math.max(0, ...marks.map((m) => (m.device === device ? m.seq : (m.seen[device] ?? 0)))) + 1;
+  if (seq > PLAN_SEQ_MAX) return null;
   const seen: Record<string, number> = {};
   for (const m of marks) if (m.device !== device) seen[m.device] = Math.max(seen[m.device] ?? 0, m.seq);
   const mark: TakeoverData = { device, seq, seen, over: tied.map((p) => p.weekStart).sort() };

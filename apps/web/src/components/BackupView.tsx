@@ -26,6 +26,7 @@ import { PRODUCT_REGISTRY } from "../backup/registry.ts";
 import { formatDateTime, formatLocalDate, type MessageKey, type Translate } from "../i18n/index.ts";
 import type { DeviceIdentity, VersionEntry } from "../local/db.ts";
 import { getMeta } from "../local/db.ts";
+import { GoalPlanError } from "../local/goal-plans.ts";
 import { renameDevice } from "../local/repository.ts";
 import { definitionLabel } from "../local/work.ts";
 import { useGoals, useWork } from "./data-hooks.ts";
@@ -36,6 +37,8 @@ const registry = PRODUCT_REGISTRY;
 
 function errorMessage(t: Translate, error: unknown): string {
   if (error instanceof BackupError) return t(`backup.error.${error.code}` as MessageKey);
+  // A week start the backup, a decision, or an undo would change, which a goal's plan cannot record today (T-247).
+  if (error instanceof GoalPlanError && error.code === "SEQ_LIMIT") return t("pace.error.weekStartSeqLimit");
   if (error instanceof ResolutionError && error.code === "HAS_LINKED_ITEMS") {
     return t("backup.resolve.error", {
       reason: error.linkedItems.length > 0 ? t("backup.resolve.hasLinkedCount", { count: error.linkedItems.length }) : t("backup.resolve.hasLinked"),

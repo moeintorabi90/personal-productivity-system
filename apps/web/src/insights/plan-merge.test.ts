@@ -499,7 +499,7 @@ describe("week records with a date from the same day, after changes of week star
   const claim = (plans: GoalWeekPlanData[], week: string, device: string, n = 1): GoalWeekPlanData[] => {
     const plan = plans.find((p) => p.weekStart === week) ?? { goalId: GOAL, weekStart: week, dates: [] };
     const date = claimDay(plans, plan, writeEntry(plan.dates.find((d) => d.from === DAY), DAY, device, seg(n)), DAY, device);
-    return [...plans.filter((p) => p.weekStart !== week), withDate(plan, date)];
+    return [...plans.filter((p) => p.weekStart !== week), withDate(plan, date!)];
   };
   const byWeek = (plans: readonly GoalWeekPlanData[]) => [...plans].sort((x, y) => x.weekStart.localeCompare(y.weekStart));
   /** Merges per week key, as an import with "Apply updates" does, in the given order. */

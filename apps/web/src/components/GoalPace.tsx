@@ -41,7 +41,7 @@ export function GoalPacePanel({ ctx, goalId, goal, definitions }: { ctx: Insight
   const ratio = goal.target > 0 ? g.progress / goal.target : null;
   // Today's plan differs from the recorded one but this device's counter cannot go higher (refreshWeekPlans leaves it).
   const limit = planWriteLimit(ctx.planning.plans, ctx.deviceId, new Date(ctx.now).toISOString());
-  const step = planWriteStep(goal, g.allocation, manualAmounts(ctx.planning.allocations, goalId), g.plans, ctx.today, ctx.deviceId, limit);
+  const step = planWriteStep(goalId, goal, g.allocation, manualAmounts(ctx.planning.allocations, goalId), g.plans, ctx.today, ctx.deviceId, limit);
   return (
     <section className="card" aria-labelledby="pace-title" data-testid="goal-pace">
       <h2 id="pace-title">{t("pace.title")}</h2>
