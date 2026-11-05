@@ -6,7 +6,7 @@
  * import and the decide commands call them, and the goal views read them.
  */
 import { canonicalize } from "../backup/jcs.ts";
-import { type GoalWeekPlanChoiceData, type GoalWeekPlanData, PLAN_SEQ_MAX, type PlanDateData, type PlanEntryData, type SegmentData } from "../backup/registry.ts";
+import { type GoalWeekPlanChoiceData, type GoalWeekPlanData, PLAN_SEQ_MAX, type PlanDateData, type PlanEntryData, type SegmentData, type TakeoverData } from "../backup/registry.ts";
 import { addDays } from "../planning/time.ts";
 import { hasCoverageCycle, hasUnsettledSeenAnomaly } from "./plan-integrity.ts";
 
@@ -103,8 +103,20 @@ export function mergeDate(a: PlanDateData, b: PlanDateData): PlanDateData | null
     if (!seen || entry.seq > seen.seq) byDevice.set(entry.device, entry);
     else if (entry.seq === seen.seq && key(entry) !== key(seen)) return null;
   }
-  return { from: a.from, entries: sortEntries([...byDevice.values()]), options: unionOptions(a.options, b.options) };
+  // Takeover marks (T-247) merge the same way: per device, the higher `seq`; equal `seq` with
+  // different content is an integrity issue.
+  const marks = new Map<string, TakeoverData>();
+  for (const mark of [...(a.takeovers ?? []), ...(b.takeovers ?? [])]) {
+    const seen = marks.get(mark.device);
+    if (!seen || mark.seq > seen.seq) marks.set(mark.device, mark);
+    else if (mark.seq === seen.seq && key(mark) !== key(seen)) return null;
+  }
+  return { from: a.from, entries: sortEntries([...byDevice.values()]), options: unionOptions(a.options, b.options), ...withMarks([...marks.values()]) };
 }
+
+/** The `takeovers` field for a date: sorted by device, or absent when there is none. */
+const withMarks = (marks: readonly TakeoverData[]): { takeovers?: TakeoverData[] } =>
+  marks.length > 0 ? { takeovers: [...marks].sort((x, y) => (x.device < y.device ? -1 : x.device > y.device ? 1 : 0)) } : {};
 
 /**
  * Merges two versions of a weekly plan record date by date (T-227): dates on one side only are
@@ -123,13 +135,7 @@ export function mergePlans(local: GoalWeekPlanData, incoming: GoalWeekPlanData):
       dates.set(d.from, merged);
     }
   }
-  const takesOver = [...new Set([...(local.takesOver ?? []), ...(incoming.takesOver ?? [])])].sort();
-  return {
-    goalId: local.goalId,
-    weekStart: local.weekStart,
-    ...(takesOver.length > 0 ? { takesOver } : {}),
-    dates: [...dates.values()].sort((x, y) => (x.from < y.from ? -1 : 1)),
-  };
+  return { goalId: local.goalId, weekStart: local.weekStart, dates: [...dates.values()].sort((x, y) => (x.from < y.from ? -1 : 1)) };
 }
 
 /** Dates of a record that need the owner's decision: undecided or in conflict, or inconsistent. */
@@ -165,7 +171,7 @@ export function writeEntry(date: PlanDateData | undefined, from: string, device:
   const seen: Record<string, number> = {};
   for (const e of entries) if (e.device !== device) seen[e.device] = e.seq;
   const entry: PlanEntryData = { device, seq: nextSeq(date, device), segment, seen };
-  return { from, entries: sortEntries([...entries.filter((e) => e.device !== device), entry]), options: unionOptions(date?.options ?? []) };
+  return { from, entries: sortEntries([...entries.filter((e) => e.device !== device), entry]), options: unionOptions(date?.options ?? []), ...withMarks(date?.takeovers ?? []) };
 }
 
 /**
@@ -196,32 +202,66 @@ export interface AppliedPlan {
   resolution: DateResolution;
 }
 
+type Dated = { plan: GoalWeekPlanData; date: PlanDateData };
+
+/** Whether takeover mark `a` is covered by `b`: a later mark of the same device, or one that had seen it. */
+const markCovered = (a: TakeoverData, b: TakeoverData) => (a.device === b.device ? b.seq > a.seq : (b.seen[a.device] ?? 0) >= a.seq);
+
 /**
- * Which of two week records wins a tie: the same `from` on a day both cover, after a change of week
- * start (T-247). A record that takes over from the other wins; otherwise, or if each names the
- * other (only from devices that did not see each other), the later week key, as before.
+ * Which of several week records with a date from the same day applies (T-247; derived "Week start
+ * changes on one day"). Their takeover marks for that date are ordered like plan entries: a mark is
+ * covered by a later mark of its device or by one that had seen it. A record that one of the marks
+ * left uncovered names in `over` is out, unless it holds such a mark itself (two devices that did
+ * not see each other). Of the rest, the later week key, as before T-247.
  */
-export function winsTie(a: GoalWeekPlanData, b: GoalWeekPlanData): boolean {
-  const aTakes = a.takesOver?.includes(b.weekStart) ?? false;
-  const bTakes = b.takesOver?.includes(a.weekStart) ?? false;
-  if (aTakes !== bTakes) return aTakes;
-  return a.weekStart > b.weekStart;
+export function tieWinner(tied: readonly Dated[]): Dated {
+  const marks = tied.flatMap((t) => (t.date.takeovers ?? []).map((mark) => ({ mark, week: t.plan.weekStart })));
+  const live = marks.filter((m) => !marks.some((o) => o !== m && markCovered(m.mark, o.mark)));
+  const over = new Set(live.flatMap((m) => m.mark.over));
+  const holders = new Set(live.map((m) => m.week));
+  const candidates = tied.filter((t) => holders.has(t.plan.weekStart) || !over.has(t.plan.weekStart));
+  return (candidates.length > 0 ? candidates : tied).reduce((best, t) => (t.plan.weekStart > best.plan.weekStart ? t : best));
 }
 
 /**
  * The plan date in effect on `day`: among the goal's records whose seven days include it, the date
- * with the latest `from` on or before `day`; on a tie, `winsTie` (T-247). Null: no recorded plan.
+ * with the latest `from` on or before `day`; several records with that same `from` go to
+ * `tieWinner` (T-247). Null: no recorded plan.
  */
 export function planDateOn(plans: readonly GoalWeekPlanData[], day: string, thisDevice: string): AppliedPlan | null {
-  let best: { plan: GoalWeekPlanData; date: PlanDateData } | null = null;
+  let latest: Dated[] = [];
   for (const plan of plans) {
     if (!(plan.weekStart <= day && day <= addDays(plan.weekStart, 6))) continue;
-    for (const date of plan.dates) {
-      if (date.from > day) continue;
-      if (!best || date.from > best.date.from || (date.from === best.date.from && winsTie(plan, best.plan))) best = { plan, date };
-    }
+    let own: PlanDateData | null = null;
+    for (const date of plan.dates) if (date.from <= day && (!own || date.from > own.from)) own = date;
+    if (!own) continue;
+    if (latest.length === 0 || own.from > latest[0]!.date.from) latest = [{ plan, date: own }];
+    else if (own.from === latest[0]!.date.from) latest.push({ plan, date: own });
   }
-  return best ? { ...best, resolution: resolveDate(best.date, thisDevice) } : null;
+  if (latest.length === 0) return null;
+  const best = latest.length === 1 ? latest[0]! : tieWinner(latest);
+  return { ...best, resolution: resolveDate(best.date, thisDevice) };
+}
+
+/**
+ * `date` (of `plan`, from `day`) with this device's takeover mark added when, with it written, the
+ * goal's other week records would still apply on `day` (T-247): after a change of week start, the
+ * week in effect from that day is the one this device now writes, also when its record already
+ * existed. The mark's `seq` follows every mark of this device for the goal and day, `seen` holds
+ * the other devices' marks this device has, and `over` the other records with a date from `day`.
+ * Unchanged when this record already applies.
+ */
+export function claimDay(plans: readonly GoalWeekPlanData[], plan: GoalWeekPlanData, date: PlanDateData, day: string, device: string): PlanDateData {
+  const others = plans.filter((p) => p.goalId === plan.goalId && p.weekStart !== plan.weekStart);
+  const applied = planDateOn([...others, withDate(plan, date)], day, device);
+  if (!applied || applied.plan.weekStart === plan.weekStart) return date;
+  const tied = others.filter((p) => p.weekStart <= day && day <= addDays(p.weekStart, 6) && p.dates.some((d) => d.from === day));
+  const marks = [date, ...tied.map((p) => p.dates.find((d) => d.from === day)!)].flatMap((d) => d.takeovers ?? []);
+  const seq = Math.max(0, ...marks.map((m) => (m.device === device ? m.seq : (m.seen[device] ?? 0)))) + 1;
+  const seen: Record<string, number> = {};
+  for (const m of marks) if (m.device !== device) seen[m.device] = Math.max(seen[m.device] ?? 0, m.seq);
+  const mark: TakeoverData = { device, seq, seen, over: tied.map((p) => p.weekStart).sort() };
+  return { ...date, ...withMarks([...(date.takeovers ?? []).filter((m) => m.device !== device), mark]) };
 }
 
 /* ---------- choice history (T-237) ---------- */

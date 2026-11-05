@@ -8,6 +8,7 @@ import {
   sharedPreferencesSchema,
 } from "../backup/registry.ts";
 import type { LocalDb, RecordRow } from "./db.ts";
+import { refreshWeekPlans } from "./goal-plans.ts";
 import { getDeviceSettings, putRecord } from "./records.ts";
 
 const KEY: [string, string] = ["preferences", SHARED_PREFERENCES_ID];
@@ -48,6 +49,9 @@ export async function updateSharedPreferences(
     if (dailyCapacityMinutes === null) delete next.dailyCapacityMinutes;
     else if (dailyCapacityMinutes !== undefined) next.dailyCapacityMinutes = dailyCapacityMinutes;
     await putRecord(db, PRODUCT_REGISTRY, "preferences", SHARED_PREFERENCES_ID, next);
+    // A change of week start makes the week under the new start apply from today (T-247), in the
+    // same transaction, also when that week's record already exists.
+    if (rest.weekStart !== undefined && rest.weekStart !== current.data.weekStart) await refreshWeekPlans(db, PRODUCT_REGISTRY, "change");
   });
 }
 

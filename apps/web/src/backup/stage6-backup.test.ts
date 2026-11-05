@@ -1086,10 +1086,9 @@ describe("13. the version-8 sample", () => {
     const task = await createTask(a.db, { title: "Draft chapter", estimateMinutes: 90 });
     const block = await createBlock(a.db, { taskId: task, date: "2026-11-05", startTime: "06:00", durationMinutes: 60 });
     await dragBlockTimes(a.db, block, { startsAt: "2026-11-05T09:00:00.000Z", endsAt: "2026-11-05T10:30:00.000Z" });
-    // A change of week start on Thursday (T-247): the Sunday week's new record takes over from the
-    // Monday week's, which already has a date from that day; the setting is then put back.
+    // Changes of week start on Thursday (T-247): the Sunday week's new record takes over from the
+    // Monday week's, which already has a date from that day; putting the setting back takes it back.
     await updateSharedPreferences(a.db, { weekStart: 0 });
-    await recordAppUse(a.db, Date.now());
     await updateSharedPreferences(a.db, { weekStart: 1 });
     const file = await exportFrom(a, { now: new Date("2026-11-05T09:00:00Z"), backupId: "8c1d2e3f-4a5b-4c6d-8e7f-90a1b2c3d4e5" }, registry);
     writeFileSync(v8Sample, `${file.text}\n`);
@@ -1114,11 +1113,95 @@ describe("13. the version-8 sample", () => {
     expect(new Set(events.map((e: { data: { device: string } }) => e.data.device)).size).toBe(2);
     expect(new Set(events.map((e: { data: { from: string } }) => e.data.from)).size).toBe(1);
     expect(records[DASHBOARDS]).toHaveLength(1);
-    // A week record that takes over from another after a change of week start (T-247).
-    const takeover = records[GOAL_WEEK_PLANS].find((p: { data: GoalWeekPlanData }) => p.data.takesOver)?.data as GoalWeekPlanData | undefined;
-    expect(takeover).toMatchObject({ weekStart: "2026-11-01", takesOver: ["2026-11-02"], dates: [{ from: "2026-11-05" }] });
+    // Takeover marks after changes of week start on one day (T-247): Sunday took over from Monday,
+    // then Monday back from Sunday, with the device's counter ordering them.
+    const marks = (records[GOAL_WEEK_PLANS] as { data: GoalWeekPlanData }[]).flatMap((p) =>
+      p.data.dates.flatMap((d) => (d.takeovers ?? []).map((t) => [p.data.weekStart, d.from, t.seq, t.over])),
+    ).sort((x, y) => (x[2] as number) - (y[2] as number));
+    expect(marks).toEqual([
+      ["2026-11-01", "2026-11-05", 1, ["2026-11-02"]],
+      ["2026-11-02", "2026-11-05", 2, ["2026-11-01"]],
+    ]);
+    const plans = (records[GOAL_WEEK_PLANS] as { data: GoalWeekPlanData }[]).map((p) => p.data);
+    expect(planDateOn(plans, "2026-11-05", "00000000-0000-4000-8000-000000000000")!.plan.weekStart).toBe("2026-11-02");
     const c = await device("C");
     expect(await codeOf(importInto(c, text, product))).toBe("OK");
+  });
+});
+
+describe("changes of week start on one day travel in backups (T-247; derived \"Week start changes on one day\")", () => {
+  const plansOf = async (d: TestDevice) =>
+    (await d.db.records.where("type").equals(GOAL_WEEK_PLANS).toArray()).map((r) => r.data as GoalWeekPlanData).sort((x, y) => x.weekStart.localeCompare(y.weekStart));
+  const weekOn = async (d: TestDevice, day = "2026-11-05") => planDateOn(await plansOf(d), day, d.deviceId)!.plan.weekStart;
+  const apply = { ...product, applyUpdates: true };
+
+  it("the same backups imported in different orders, and again, give the same plans, with the source's latest change in effect", async () => {
+    const a = await device("A");
+    await updateSharedPreferences(a.db, { weekStart: 0 });
+    const goalId = await createGoal(a.db, goalInput);
+    at("2026-11-05T08:00:00Z");
+    await updateGoal(a.db, goalId, { target: 700 }, registry, Date.now());
+    const snapshots = [await exportText(a)];
+    for (const [time, weekStart] of [["09:00", 6], ["10:00", 0], ["11:00", 6]] as const) {
+      at(`2026-11-05T${time}:00Z`);
+      await updateSharedPreferences(a.db, { weekStart });
+      snapshots.push(await exportText(a));
+    }
+    expect(await weekOn(a)).toBe("2026-10-31");
+    const expected = canonicalize(await plansOf(a));
+    for (const order of [[0, 1, 2, 3], [3, 2, 1, 0], [2, 3, 0, 1, 3]]) {
+      const c = await device("C");
+      for (const i of order) expect(await codeOf(importInto(c, snapshots[i]!, apply))).toBe("OK");
+      expect(canonicalize(await plansOf(c))).toBe(expected);
+      expect(await weekOn(c)).toBe("2026-10-31");
+      expect(await weekOn(c, "2026-11-04")).toBe("2026-11-01"); // the day before keeps the Sunday week's plan
+      const before = await recordsOf(c);
+      await importInto(c, snapshots[3]!, apply); // again: nothing changes
+      await importInto(c, snapshots[0]!, apply); // an older one cannot take a change back
+      expect((await recordsOf(c)).filter((r) => r.type === GOAL_WEEK_PLANS)).toEqual(before.filter((r) => r.type === GOAL_WEEK_PLANS));
+    }
+  });
+
+  /**
+   * One goal on A and B under a Monday week start, its target changed on A on Thursday and carried
+   * to B; then, without seeing each other, A changes to Sunday and B to Saturday, at `aTime` and `bTime`.
+   */
+  async function independentChanges(aTime: string, bTime: string) {
+    const { a, b, goalId } = await sharedGoal();
+    at("2026-11-05T08:00:00Z");
+    await updateGoal(a.db, goalId, { target: 700 }, registry, Date.now());
+    await importInto(b, await exportText(a), apply);
+    at(`2026-11-05T${aTime}:00Z`);
+    await updateSharedPreferences(a.db, { weekStart: 0 });
+    at(`2026-11-05T${bTime}:00Z`);
+    await updateSharedPreferences(b.db, { weekStart: 6 });
+    at("2026-11-05T12:00:00Z");
+    return { a, b, goalId };
+  }
+
+  it("two devices that did not see each other: after exchanging backups both show the later week key, whichever changed later by its clock (T-247)", async () => {
+    for (const [aTime, bTime] of [["09:00", "10:00"], ["10:00", "09:00"]] as const) {
+      const { a, b } = await independentChanges(aTime, bTime);
+      expect([await weekOn(a), await weekOn(b)]).toEqual(["2026-11-01", "2026-10-31"]); // each its own change
+      const fromA = await exportText(a);
+      const fromB = await exportText(b);
+      await importInto(a, fromB, apply);
+      await importInto(b, fromA, apply);
+      expect([await weekOn(a), await weekOn(b)]).toEqual(["2026-11-01", "2026-11-01"]);
+      expect(canonicalize(await plansOf(a))).toBe(canonicalize(await plansOf(b)));
+    }
+  });
+
+  it("once a device has seen the other's change, its own later change applies on both, carried by its counters, not its clock", async () => {
+    const { a, b, goalId } = await independentChanges("10:00", "09:00");
+    await importInto(b, await exportText(a), apply); // B has now seen A's change to Sunday
+    // B's week start is still Saturday; its next plan write makes the Saturday week apply again.
+    at("2026-11-05T08:30:00Z"); // an earlier clock reading than A's change: it does not matter
+    await updateGoal(b.db, goalId, { target: 750 }, registry, Date.now());
+    expect(await weekOn(b)).toBe("2026-10-31");
+    await importInto(a, await exportText(b), apply);
+    expect(await weekOn(a)).toBe("2026-10-31");
+    expect(canonicalize(await plansOf(a))).toBe(canonicalize(await plansOf(b)));
   });
 });
 

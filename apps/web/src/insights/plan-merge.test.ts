@@ -11,6 +11,7 @@ import {
   appliedSegment,
   candidatesOf,
   canChangeChoice,
+  claimDay,
   conflictDates,
   decideEntry,
   decisionChoices,
@@ -486,45 +487,107 @@ describe("18. choice history (T-237)", () => {
   });
 });
 
-describe("two week records with a date from the same day, after a change of week start (T-247)", () => {
+describe("week records with a date from the same day, after changes of week start (T-247; derived \"Week start changes on one day\")", () => {
+  const DAY = "2026-11-05";
+  const SAT = "2026-10-31";
+  const SUN = "2026-11-01";
+  const MONK = "2026-11-02";
   const seg = (n: number): SegmentData => ({ state: "allocated", allocation: { num: n, den: 1 }, source: "automatic" });
-  const rec = (weekStart: string, from: string, n: number, takesOver?: string[]): GoalWeekPlanData => ({
-    goalId: GOAL,
-    weekStart,
-    ...(takesOver ? { takesOver } : {}),
-    dates: [writeEntry(undefined, from, A, seg(n))],
-  });
-  const weekOn = (plans: GoalWeekPlanData[], day: string) => planDateOn(plans, day, A)!.plan.weekStart;
+  const rec = (weekStart: string, n: number): GoalWeekPlanData => ({ goalId: GOAL, weekStart, dates: [writeEntry(undefined, DAY, A, seg(n))] });
+  const weekOn = (plans: readonly GoalWeekPlanData[]) => planDateOn(plans, DAY, A)!.plan.weekStart;
+  /** Device `device` makes `week` apply on DAY, as a plan write after a change of week start does. */
+  const claim = (plans: GoalWeekPlanData[], week: string, device: string, n = 1): GoalWeekPlanData[] => {
+    const plan = plans.find((p) => p.weekStart === week) ?? { goalId: GOAL, weekStart: week, dates: [] };
+    const date = claimDay(plans, plan, writeEntry(plan.dates.find((d) => d.from === DAY), DAY, device, seg(n)), DAY, device);
+    return [...plans.filter((p) => p.weekStart !== week), withDate(plan, date)];
+  };
+  const byWeek = (plans: readonly GoalWeekPlanData[]) => [...plans].sort((x, y) => x.weekStart.localeCompare(y.weekStart));
+  /** Merges per week key, as an import with "Apply updates" does, in the given order. */
+  const mergeAll = (...sides: GoalWeekPlanData[][]) => {
+    const out = new Map<string, GoalWeekPlanData>();
+    for (const side of sides) for (const p of side) out.set(p.weekStart, out.has(p.weekStart) ? mergePlans(out.get(p.weekStart)!, p)! : p);
+    return byWeek([...out.values()]);
+  };
 
-  it("the record that takes over wins, whether its week key is smaller or larger; without it, the later key wins as before", () => {
-    expect(weekOn([rec("2026-11-01", "2026-11-05", 1), rec("2026-10-31", "2026-11-05", 2, ["2026-11-01"])], "2026-11-05")).toBe("2026-10-31");
-    expect(weekOn([rec("2026-10-31", "2026-11-05", 1), rec("2026-11-01", "2026-11-05", 2, ["2026-10-31"])], "2026-11-05")).toBe("2026-11-01");
-    expect(weekOn([rec("2026-11-01", "2026-11-05", 1), rec("2026-10-31", "2026-11-05", 2)], "2026-11-05")).toBe("2026-11-01");
-    // Each naming the other (devices that never saw each other): the later key, as before.
-    expect(weekOn([rec("2026-11-01", "2026-11-05", 1, ["2026-10-31"]), rec("2026-10-31", "2026-11-05", 2, ["2026-11-01"])], "2026-11-05")).toBe("2026-11-01");
-    // The order of the records does not matter.
-    expect(weekOn([rec("2026-10-31", "2026-11-05", 2, ["2026-11-01"]), rec("2026-11-01", "2026-11-05", 1)], "2026-11-05")).toBe("2026-10-31");
+  it("one device back and forth: each change makes its week apply, with counters, never clock times", () => {
+    let plans = [rec(SUN, 1)];
+    plans = claim(plans, SAT, A);
+    expect(weekOn(plans)).toBe(SAT);
+    plans = claim(plans, SUN, A); // back to a record that already exists
+    expect(weekOn(plans)).toBe(SUN);
+    for (const week of [SAT, SUN, MONK, SAT, MONK, SUN]) {
+      plans = claim(plans, week, A);
+      expect(weekOn(plans)).toBe(week);
+    }
+    // One mark per device and record; its counter runs across the goal's records for that day.
+    const marks = plans.flatMap((p) => (p.dates[0]!.takeovers ?? []).map((t) => [p.weekStart, t.seq]));
+    expect(byWeek(plans).map((p) => p.dates[0]!.takeovers?.length ?? 0)).toEqual([1, 1, 1]);
+    expect(Math.max(...marks.map(([, n]) => n as number))).toBe(plans.find((p) => p.weekStart === SUN)!.dates[0]!.takeovers![0]!.seq);
   });
 
-  it("a merge keeps the union of the taken-over keys, in either order, and adds none when neither has any", () => {
-    const here = rec("2026-10-31", "2026-11-05", 2, ["2026-11-01"]);
-    const incoming = rec("2026-10-31", "2026-11-05", 2, ["2026-11-02"]);
-    expect(mergePlans(here, incoming)!.takesOver).toEqual(["2026-11-01", "2026-11-02"]);
-    expect(mergePlans(incoming, here)!.takesOver).toEqual(["2026-11-01", "2026-11-02"]);
-    expect(mergePlans(rec("2026-10-31", "2026-11-05", 2), rec("2026-10-31", "2026-11-05", 2))).not.toHaveProperty("takesOver");
-    expect(mergePlans(rec("2026-10-31", "2026-11-05", 2), here)!.takesOver).toEqual(["2026-11-01"]);
+  it("claiming a week that already applies adds nothing; a plain later date needs no mark", () => {
+    const plans = claim([rec(SUN, 1)], SAT, A);
+    const sat = plans.find((p) => p.weekStart === SAT)!;
+    expect(claimDay(plans, sat, sat.dates[0]!, DAY, A)).toBe(sat.dates[0]);
+    const earlier: GoalWeekPlanData = { goalId: GOAL, weekStart: SUN, dates: [writeEntry(undefined, "2026-11-02", A, seg(1))] };
+    const fresh = claim([earlier], SAT, A);
+    expect(fresh.find((p) => p.weekStart === SAT)!.dates[0]!.takeovers).toBeUndefined();
+    expect(weekOn(fresh)).toBe(SAT);
   });
 
-  it("the stored field is checked: distinct, ascending, never the record's own key, and only keys whose weeks can overlap it", () => {
-    const ok = (takesOver: unknown) => goalWeekPlanSchema.safeParse({ ...rec("2026-10-31", "2026-11-05", 2), takesOver }).success;
-    expect(ok(["2026-11-01"])).toBe(true);
-    expect(ok(["2026-10-25", "2026-11-06"])).toBe(true); // six days either side
-    expect(ok(["2026-10-31"])).toBe(false); // itself
-    expect(ok(["2026-11-07"])).toBe(false); // its week cannot overlap
-    expect(ok(["2026-10-24"])).toBe(false);
-    expect(ok(["2026-11-02", "2026-11-01"])).toBe(false); // not ascending
-    expect(ok(["2026-11-01", "2026-11-01"])).toBe(false); // not distinct
+  it("an entry written later on a claimed date keeps its marks", () => {
+    const plans = claim([rec(SUN, 1)], SAT, A);
+    const date = plans.find((p) => p.weekStart === SAT)!.dates[0]!;
+    expect(writeEntry(date, DAY, A, seg(9)).takeovers).toEqual(date.takeovers);
+    expect(writeEntry(date, DAY, B, seg(9)).takeovers).toEqual(date.takeovers);
+  });
+
+  it("merges are the same in any order and with repeats, and give the latest change of the device that made them", () => {
+    let plans = [rec(SUN, 1)];
+    const snapshots: GoalWeekPlanData[][] = [];
+    for (const week of [SAT, SUN, SAT, MONK, SUN]) {
+      plans = claim(plans, week, A);
+      snapshots.push(plans);
+    }
+    const orders = [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [2, 4, 0, 3, 1], [4, 4, 1, 4, 0, 2, 3, 3]];
+    const results = orders.map((o) => mergeAll(...o.map((i) => snapshots[i]!)));
+    for (const r of results) {
+      expect(canonicalize(r)).toBe(canonicalize(results[0]));
+      expect(weekOn(r)).toBe(SUN);
+    }
+    expect(canonicalize(mergeAll(results[0]!, results[0]!))).toBe(canonicalize(results[0])); // re-import changes nothing
+    // An older snapshot never takes back a later change.
+    expect(weekOn(mergeAll(snapshots[4]!, snapshots[2]!))).toBe(SUN);
+  });
+
+  it("two devices that did not see each other: the later week key, whatever the order of import (T-247); once one has seen the other, its later change applies", () => {
+    const base = [rec(MONK, 1)];
+    const onA = claim(base, SUN, A); // A: Monday → Sunday
+    const onB = claim(base, SAT, B); // B: Monday → Saturday, never having seen A's
+    for (const merged of [mergeAll(onA, onB), mergeAll(onB, onA), mergeAll(onB, onA, onB)]) expect(weekOn(merged)).toBe(SUN);
+    // B imports A's and then changes to Saturday again: its mark has seen A's, so Saturday applies everywhere.
+    const bAfter = claim(mergeAll(onB, onA), SAT, B);
+    expect(weekOn(bAfter)).toBe(SAT);
+    for (const merged of [mergeAll(onA, bAfter), mergeAll(bAfter, onA), mergeAll(onA, onB, bAfter)]) expect(weekOn(merged)).toBe(SAT);
+    // The same after A, having seen B's, goes back to Sunday: its mark covers B's.
+    const aAfter = claim(mergeAll(onA, bAfter), SUN, A);
+    for (const merged of [mergeAll(bAfter, aAfter), mergeAll(aAfter, bAfter, onB)]) expect(weekOn(merged)).toBe(SUN);
+  });
+
+  it("the same device and counter with different marks is an integrity issue; the stored marks are checked", () => {
+    const one = claim([rec(SUN, 1)], SAT, A).find((p) => p.weekStart === SAT)!;
+    const other: GoalWeekPlanData = { ...one, dates: [{ ...one.dates[0]!, takeovers: [{ ...one.dates[0]!.takeovers![0]!, over: ["2026-11-02"] }] }] };
+    expect(mergePlans(one, other)).toBeNull();
+    const ok = (takeovers: unknown) => goalWeekPlanSchema.safeParse({ ...one, dates: [{ ...one.dates[0]!, takeovers }] }).success;
+    const mark = { device: A, seq: 1, seen: {}, over: [SUN] };
+    expect(ok([mark])).toBe(true);
+    expect(ok([{ ...mark, over: ["2026-10-25", "2026-11-06"] }])).toBe(true); // six days either side
+    expect(ok([{ ...mark, over: [SAT] }])).toBe(false); // its own key
+    expect(ok([{ ...mark, over: ["2026-11-07"] }])).toBe(false); // cannot overlap
+    expect(ok([{ ...mark, over: [MONK, SUN] }])).toBe(false); // not ascending
+    expect(ok([{ ...mark, over: [] }])).toBe(false);
+    expect(ok([{ ...mark, seen: { [A]: 1 } }])).toBe(false); // its own device as seen
+    expect(ok([{ ...mark, device: B }, mark])).toBe(false); // not sorted by device
     expect(ok([])).toBe(false); // absent when unused
-    expect(goalWeekPlanSchema.safeParse(rec("2026-10-31", "2026-11-05", 2)).success).toBe(true);
   });
 });

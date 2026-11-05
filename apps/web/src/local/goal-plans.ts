@@ -31,12 +31,12 @@ import {
 import { canonicalize } from "../backup/jcs.ts";
 import { type EnvelopeLimit, envelopeLimitProblem, nowIso } from "../backup/envelope.ts";
 import { planChoiceId, weekAllocationId, weekPlanId } from "../backup/derived-id.ts";
-import { addDays, localDateOf } from "../planning/time.ts";
+import { localDateOf } from "../planning/time.ts";
 import { computeAllocations, segmentFor, type AllocationResult } from "../insights/allocation.ts";
 import { amountBetween, goalDays } from "../insights/actuals.ts";
 import type { Fraction } from "../insights/fraction.ts";
 import { currentPlan, goalWeekStarts, isClosedWeek, planOn, weekStartOf, workdaysIn, type GoalPlan } from "../insights/goal-plan.ts";
-import { appliedSegment, canWriteEntry, decideEntry, decisionChoices, needsDecision, planDateOn, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
+import { appliedSegment, canWriteEntry, claimDay, decideEntry, decisionChoices, needsDecision, planDateOn, resolveDate, withDate, writeEntry } from "../insights/plan-merge.ts";
 import type { VersionVector } from "../backup/versions.ts";
 import type { LocalDb, RecordRow } from "./db.ts";
 import type { Item } from "./organization.ts";
@@ -203,7 +203,9 @@ function plansToday(goal: GoalData, today: string): boolean {
  */
 export type PlanWriteStep =
   | { kind: "none" | "owner" | "same" }
-  | { kind: "start" | "write"; segment: SegmentData }
+  | { kind: "start"; segment: SegmentData }
+  /** `switching`: another week record applies today (after a change of week start, T-247), so this one takes over. */
+  | { kind: "write"; segment: SegmentData; switching: boolean }
   | { kind: "blocked"; reason: "counter" | EnvelopeLimit; segment: SegmentData; inEffect: SegmentData | null };
 
 export function planWriteStep(
@@ -226,11 +228,23 @@ export function planWriteStep(
   if (todayDate && needsDecision(todayDate)) return { kind: "owner" }; // undecided, in conflict, or inconsistent
   const applied = planDateOn(goalPlans, today, thisDevice);
   const inEffect = applied ? appliedSegment(applied.resolution) : null;
-  if (inEffect && canonicalize(inEffect) === canonicalize(segment)) return { kind: "same" };
+  // Another week's record applies today: the week start changed (T-247). The same segment is not
+  // enough then, since the week it belongs to decides the days and amounts of the daily target.
+  const switching = applied !== null && applied.plan.weekStart !== state.currentWeek;
+  if (!switching && inEffect && canonicalize(inEffect) === canonicalize(segment)) return { kind: "same" };
   if (!canWriteEntry(todayDate, thisDevice)) return { kind: "blocked", reason: "counter", segment, inEffect };
-  const problem = limit(withDate(existing, writeEntry(todayDate, today, thisDevice, segment)));
+  const problem = limit(plannedRecord(goalPlans, existing, today, thisDevice, segment));
   if (problem) return { kind: "blocked", reason: problem, segment, inEffect };
-  return { kind: "write", segment };
+  return { kind: "write", segment, switching };
+}
+
+/**
+ * The record a plan write puts: this device's entry for today in `plan`, with a takeover mark when
+ * the goal's other week records would otherwise still apply today (`claimDay`, T-247).
+ */
+export function plannedRecord(goalPlans: readonly GoalWeekPlanData[], plan: GoalWeekPlanData, today: string, device: string, segment: SegmentData): GoalWeekPlanData {
+  const date = writeEntry(plan.dates.find((d) => d.from === today), today, device, segment);
+  return withDate(plan, claimDay(goalPlans, plan, date, today, device));
 }
 
 /**
@@ -256,22 +270,14 @@ export async function refreshWeekPlans(db: LocalDb, registry: Registry, mode: "o
     const goalPlans = plans.filter((p) => p.data.goalId === goal.id).map((p) => p.data);
     const step = planWriteStep(goal.data, state, manualAmounts(allocations, goal.id), goalPlans, today, device.id, limit);
     if (step.kind === "start") {
-      // After a change of week start (T-247): the goal's other week records that also have a date
-      // from today are taken over, so the new week's plan applies from today and earlier days keep theirs.
-      const takesOver = goalPlans
-        .filter((p) => p.weekStart !== state.currentWeek && p.weekStart <= today && today <= addDays(p.weekStart, 6) && p.dates.some((x) => x.from === today))
-        .map((p) => p.weekStart)
-        .sort();
-      const data: GoalWeekPlanData = {
-        goalId: goal.id,
-        weekStart: state.currentWeek,
-        ...(takesOver.length > 0 ? { takesOver } : {}),
-        dates: [writeEntry(undefined, today, device.id, step.segment)],
-      };
-      await putRecord(db, registry, GOAL_WEEK_PLANS, id, data);
-    } else if (step.kind === "write" && mode === "change") {
+      // After a change of week start, a takeover mark makes it apply from today over the goal's
+      // other week records with a date from today (T-247); earlier days keep theirs.
+      const empty: GoalWeekPlanData = { goalId: goal.id, weekStart: state.currentWeek, dates: [] };
+      await putRecord(db, registry, GOAL_WEEK_PLANS, id, plannedRecord(goalPlans, empty, today, device.id, step.segment));
+    } else if (step.kind === "write" && (mode === "change" || step.switching)) {
+      // A switch back to a week whose record already exists is written on opening too (T-247).
       const existing = goalPlans.find((p) => p.weekStart === state.currentWeek)!;
-      await putRecord(db, registry, GOAL_WEEK_PLANS, id, withDate(existing, writeEntry(existing.dates.find((d) => d.from === today), today, device.id, step.segment)));
+      await putRecord(db, registry, GOAL_WEEK_PLANS, id, plannedRecord(goalPlans, existing, today, device.id, step.segment));
     }
     // "owner", "same", "blocked", and "none" write nothing; "blocked" is shown on the goal page.
   }

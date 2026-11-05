@@ -980,6 +980,27 @@ const planEntrySchema = z
   .refine((e) => !(e.device in e.seen), { message: "an entry does not list its own device as seen" });
 export type PlanEntryData = z.infer<typeof planEntrySchema>;
 
+/**
+ * A device's mark that its week record took over a date from the goal's other week records with
+ * the same date (T-247; derived "Week start changes on one day"): `seq` is that device's own counter
+ * for the goal and date across all its week records, `seen` the highest counters of other devices'
+ * marks for that date it had, and `over` the week keys it took over (distinct, ascending).
+ */
+const takeoverSchema = z
+  .object({
+    device: z.uuid(),
+    seq: z.number().int().min(1).max(PLAN_SEQ_MAX),
+    seen: seenSchema,
+    over: z
+      .array(localDateSchema)
+      .min(1)
+      .max(6)
+      .refine((list) => list.every((w, i) => i === 0 || w > list[i - 1]!), { message: "over must be distinct and ascending" }),
+  })
+  .strict()
+  .refine((t) => !(t.device in t.seen), { message: "a takeover does not list its own device as seen" });
+export type TakeoverData = z.infer<typeof takeoverSchema>;
+
 /** Manual allocation history of one goal and calendar week (T-206, T-218, T-224); `null` = automatic. */
 export const goalWeekAllocationSchema = z
   .object({
@@ -1003,15 +1024,6 @@ export const goalWeekPlanSchema = z
   .object({
     goalId: z.uuid(),
     weekStart: localDateSchema,
-    // T-247: the other week keys of the goal this record takes over from, on a day both have a date
-    // from (after a change of week start). Distinct, ascending, within six days of `weekStart`, never
-    // itself; only ever grows (a merge takes the union). Absent when unused.
-    takesOver: z
-      .array(localDateSchema)
-      .min(1)
-      .max(6)
-      .refine((list) => list.every((w, i) => i === 0 || w > list[i - 1]!), { message: "takesOver must be distinct and ascending" })
-      .optional(),
     dates: z
       .array(
         z
@@ -1030,6 +1042,14 @@ export const goalWeekPlanSchema = z
               (list) => list.map((s) => canonicalize(s)).every((k, i, keys) => i === 0 || k > keys[i - 1]!),
               { message: "options must be distinct and sorted by canonical JSON" },
             ),
+            // T-247 (derived "Week start changes on one day"): one mark per device that made this week
+            // the one in effect from this date over the goal's other week records with the same date.
+            takeovers: z
+              .array(takeoverSchema)
+              .min(1)
+              .max(32)
+              .refine((list) => list.every((t, i) => i === 0 || t.device > list[i - 1]!.device), { message: "takeovers must be sorted by distinct device" })
+              .optional(),
           })
           .strict(),
       )
@@ -1043,7 +1063,8 @@ export const goalWeekPlanSchema = z
     const last = new Date(Date.parse(`${p.weekStart}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
     if (p.dates.some((d) => d.from < p.weekStart || d.from > last)) ctx.addIssue({ code: "custom", message: "a date lies outside its week" });
     const first = new Date(Date.parse(`${p.weekStart}T00:00:00Z`) - 6 * 86_400_000).toISOString().slice(0, 10);
-    if (p.takesOver?.some((w) => !isLocalDate(w) || w === p.weekStart || w < first || w > last)) ctx.addIssue({ code: "custom", message: "takesOver names a week key that cannot overlap this week" });
+    const over = p.dates.flatMap((d) => (d.takeovers ?? []).flatMap((t) => t.over));
+    if (over.some((w) => !isLocalDate(w) || w === p.weekStart || w < first || w > last)) ctx.addIssue({ code: "custom", message: "a takeover names a week key that cannot overlap this week" });
   });
 export type GoalWeekPlanData = z.infer<typeof goalWeekPlanSchema>;
 export type PlanDateData = GoalWeekPlanData["dates"][number];
