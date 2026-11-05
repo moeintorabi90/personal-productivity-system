@@ -323,9 +323,9 @@ function components(adjacency: readonly number[][]): { comp: number[]; order: nu
  * (`eventSeenVerified`); independent events, and events whose claims cannot be verified, are
  * placed by their device clocks only to keep them near each other, and marked uncertain where no
  * counter or verified claim orders them. Events in a causal cycle (by any of their claims) are
- * marked cyclic and uncertain; those in a cycle of verified claims are kept together after what
- * they all saw and before what saw them, placed among themselves by their clocks only for display.
- * No clock decides which of two events came first.
+ * marked cyclic and uncertain and kept together as one block, after what they all came after and
+ * before what came after them, placed among themselves by their clocks only for display; this never
+ * changes the order of an event outside the cycle. No clock decides which of two events came first.
  *
  * Runs in about O(n·D² + n log n) for n events of D devices (choice history has no count limit): an
  * event depends directly only on its device's previous event and, per claimed device, on that
@@ -420,22 +420,31 @@ export function orderEvents<T extends { data: GoalWeekPlanChoiceData }>(events: 
     return false;
   };
 
-  // Topological order of the components; among the events ready, the earliest clock first.
-  const pending = order.map(() => 0);
-  const followers: number[][] = order.map(() => []);
+  // Display blocks: the events of each cycle (by any of their claims) kept together, placed by verified
+  // order and inside the block by clock only. Every verified dependency is also a claim, so an event
+  // that verified order puts after one event of a cycle and before another is itself on that cycle:
+  // keeping a cycle together never moves an event outside it. The blocks are the components by all claims.
+  const rawCyclic = (i: number) => rawSize[raw.comp[i]!]! > 1;
+
+  // Topological order of the blocks by verified dependencies; among the blocks ready, the one with the
+  // earliest clock first, its events one after another by clock.
+  const members = raw.order.map((list) => [...list].sort(tie));
+  const pending = members.map(() => 0);
+  const followers: number[][] = members.map(() => []);
   for (let i = 0; i < n; i++) {
     for (const j of edges[i]!) {
-      if (comp[j] === comp[i]) continue;
-      pending[comp[i]!]! += 1;
-      followers[comp[j]!]!.push(comp[i]!);
+      if (raw.comp[j] === raw.comp[i]) continue;
+      pending[raw.comp[i]!]! += 1;
+      followers[raw.comp[j]!]!.push(raw.comp[i]!);
     }
   }
+  const before = (g: number, h: number) => tie(members[g]![0]!, members[h]![0]!);
   const heap: number[] = [];
-  const push = (i: number) => {
-    heap.push(i);
+  const push = (g: number) => {
+    heap.push(g);
     for (let c = heap.length - 1; c > 0; ) {
       const p = (c - 1) >> 1;
-      if (tie(heap[c]!, heap[p]!) >= 0) break;
+      if (before(heap[c]!, heap[p]!) >= 0) break;
       [heap[c], heap[p]] = [heap[p]!, heap[c]!];
       c = p;
     }
@@ -449,8 +458,8 @@ export function orderEvents<T extends { data: GoalWeekPlanChoiceData }>(events: 
         const l = 2 * p + 1;
         const r = l + 1;
         let m = p;
-        if (l < heap.length && tie(heap[l]!, heap[m]!) < 0) m = l;
-        if (r < heap.length && tie(heap[r]!, heap[m]!) < 0) m = r;
+        if (l < heap.length && before(heap[l]!, heap[m]!) < 0) m = l;
+        if (r < heap.length && before(heap[r]!, heap[m]!) < 0) m = r;
         if (m === p) break;
         [heap[m], heap[p]] = [heap[p]!, heap[m]!];
         p = m;
@@ -458,17 +467,14 @@ export function orderEvents<T extends { data: GoalWeekPlanChoiceData }>(events: 
     }
     return top;
   };
-  const left = order.map((members) => members.length);
-  order.forEach((members, c) => {
-    if (pending[c] === 0) members.forEach(push);
+  members.forEach((_, g) => {
+    if (pending[g] === 0) push(g);
   });
   const placed: number[] = [];
   while (heap.length > 0) {
-    const i = pop();
-    placed.push(i);
-    const c = comp[i]!;
-    if (--left[c]! > 0) continue;
-    for (const f of followers[c]!) if (--pending[f]! === 0) order[f]!.forEach(push);
+    const g = pop();
+    placed.push(...members[g]!);
+    for (const f of followers[g]!) if (--pending[f]! === 0) push(f);
   }
-  return placed.map((i) => ({ event: events[i]!, cyclic: rawSize[raw.comp[i]!]! > 1, uncertain: uncertainAt(i) }));
+  return placed.map((i) => ({ event: events[i]!, cyclic: rawCyclic(i), uncertain: uncertainAt(i) }));
 }

@@ -333,6 +333,24 @@ describe("18. choice history (T-237)", () => {
     expect(ordered.map((o) => [o.cyclic, o.uncertain])).toEqual([[false, false], [true, true], [true, true], [false, false]]);
   });
 
+  it("a cycle's events stay together: an independent event whose clock falls between them is not placed among them, and all three keep their marks", () => {
+    const a1 = { data: event(A, 2, x, { [B]: 2 }, "2026-11-02T08:00:00.000Z") }; // claims B's choice
+    const b1 = { data: event(B, 2, y, { [A]: 2 }, "2026-11-02T12:00:00.000Z") }; // claims A's choice
+    const c1 = { data: event(C, 1, x, {}, "2026-11-02T10:00:00.000Z") }; // independent, clock between the two
+    // With the cycle's claims backed by a plan stored before the checks, and with no plan at all.
+    for (const plans of [[planOf(entryOf(a1.data), entryOf(b1.data), entryOf(c1.data))], []]) {
+      for (const list of [[c1, b1, a1], [a1, c1, b1], [b1, a1, c1]]) {
+        const ordered = orderEvents(list, plans);
+        // The cycle comes first by its earliest clock (08:00), its events by clock, then C's (10:00).
+        expect(ordered.map((o) => o.event)).toEqual([a1, b1, c1]);
+        expect(ordered.map((o) => [o.cyclic, o.uncertain])).toEqual([[true, true], [true, true], [false, true]]);
+      }
+    }
+    // A later independent event: the cycle as one block still keeps its place before it by clock.
+    const c0 = { data: event(C, 1, x, {}, "2026-11-02T07:00:00.000Z") }; // clock before the whole cycle
+    expect(orderEvents([a1, b1, c0], []).map((o) => o.event)).toEqual([c0, a1, b1]);
+  });
+
   describe("claims that cannot be verified order nothing (independent review, 2026-11-05)", () => {
     // B's choice claims to have seen A's: with a plan that backs it, B's comes after A's for certain.
     const a1 = { data: event(A, 1, x, {}, "2026-11-02T10:00:00.000Z") };
@@ -386,8 +404,10 @@ describe("18. choice history (T-237)", () => {
       const n = events.length;
       const d = events.map((e) => e.data);
       const trusted = d.map((e) => eventSeenVerified(e, plans));
-      const closure = (useClaim: (i: number) => boolean) => {
-        const r = d.map((b, i) => d.map((a, j) => i !== j && (a.device === b.device ? b.seq > a.seq : useClaim(i) && b.device !== a.device && (b.seen[a.device] ?? 0) >= a.seq)));
+      const closure = (useClaim: (i: number) => boolean, extra: (i: number, j: number) => boolean = () => false) => {
+        const r = d.map((b, i) =>
+          d.map((a, j) => i !== j && ((a.device === b.device ? b.seq > a.seq : useClaim(i) && b.device !== a.device && (b.seen[a.device] ?? 0) >= a.seq) || extra(i, j))),
+        );
         for (let k = 0; k < n; k++) for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (r[i]![k] && r[k]![j]) r[i]![j] = true;
         return r;
       };
@@ -396,15 +416,24 @@ describe("18. choice history (T-237)", () => {
       const tie = (i: number, j: number) => {
         const a = d[i]!;
         const b = d[j]!;
-        return a.recordedAt < b.recordedAt ? -1 : a.recordedAt > b.recordedAt ? 1 : a.device < b.device ? -1 : a.device > b.device ? 1 : a.seq - b.seq;
+        return a.recordedAt < b.recordedAt ? -1 : a.recordedAt > b.recordedAt ? 1 : a.device < b.device ? -1 : a.device > b.device ? 1 : a.seq - b.seq || i - j;
       };
+      // Each cycle by any claim is one block: verified order plus "same cycle" both ways.
+      const sameCycle = (i: number, j: number) => rawReach[i]![j]! && rawReach[j]![i]!;
+      const together = closure((i) => trusted[i]!, sameCycle);
+      // Keeping cycles together moves nothing outside them: no event outside a cycle joins its block.
+      for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (i !== j && together[i]![j] && together[j]![i]) expect(sameCycle(i, j)).toBe(true);
+      // The block that is ready first by its earliest clock comes next, its events by clock.
       const placed: number[] = [];
       const left = new Set(d.map((_, i) => i));
       while (left.size > 0) {
-        const ready = [...left].filter((i) => [...left].every((j) => j === i || !reach[i]![j] || reach[j]![i]));
+        const ready = [...left].filter((i) => [...left].every((j) => j === i || !together[i]![j] || together[j]![i]));
         const next = ready.sort(tie)[0]!;
-        placed.push(next);
-        left.delete(next);
+        const block = [...left].filter((j) => j === next || (together[next]![j] && together[j]![next])).sort(tie);
+        for (const j of block) {
+          placed.push(j);
+          left.delete(j);
+        }
       }
       return placed.map((i) => {
         const cyclic = rawReach[i]![i]!;
