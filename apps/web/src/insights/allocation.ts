@@ -75,19 +75,22 @@ export function computeAllocations(input: AllocationInput): AllocationResult {
   for (const amount of active.values()) share -= amount;
   const automatic = open.filter((w) => !active.has(w) && workdays.get(w)! > 0);
   const blocking = outOfRange.some((o) => !o.historical);
+  const shareMismatch = (share < 0 && active.size > 0) || (share > 0 && automatic.length === 0);
+  const mismatch = blocking || shareMismatch;
   // Resumed with "continue the previous plan" (T-246): every open automatic week keeps the weekly amount
-  // from before the pause (its `from` is the resume date, so no open week is earlier); nothing is shared.
+  // from before the pause (its `from` is the resume date, so no open week is earlier) instead of a share
+  // of the remaining target. The mismatch check of T-207 still applies as for any goal: manual amounts
+  // that leave a negative amount to share, or a positive one no automatic week can take, are a
+  // mismatch; then automatic weeks show no amount and manual ones keep theirs, never changed.
   const continued = goal.continuedAllocation;
   if (continued) {
     const weeks = open.map((w): WeekAllocation => {
       const manual = input.manual.get(w) ?? null;
-      const allocation = blocking ? null : active.has(w) ? frac(active.get(w)!) : workdays.get(w)! > 0 ? { ...continued.amount } : ZERO;
+      const allocation = active.has(w) ? frac(active.get(w)!) : mismatch ? null : workdays.get(w)! > 0 ? { ...continued.amount } : ZERO;
       return { weekStart: w, workdays: workdays.get(w)!, manual, allocation };
     });
-    return { kind: blocking ? "mismatch" : "allocated", weeks, share, discrepancy: 0, outOfRange };
+    return { kind: mismatch ? "mismatch" : "allocated", weeks, share, discrepancy: shareMismatch ? Math.abs(share) : 0, outOfRange };
   }
-  const shareMismatch = (share < 0 && active.size > 0) || (share > 0 && automatic.length === 0);
-  const mismatch = blocking || shareMismatch;
   const totalAutoDays = automatic.reduce((sum, w) => sum + workdays.get(w)!, 0);
   const toShare = frac(Math.max(share, 0));
   const weeks = open.map((w): WeekAllocation => {

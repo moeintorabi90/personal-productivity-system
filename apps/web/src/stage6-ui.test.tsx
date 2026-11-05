@@ -18,6 +18,8 @@ import {
   GOAL_WEEK_ALLOCATIONS,
   GOAL_WEEK_PLAN_CHOICES,
   GOAL_WEEK_PLANS,
+  GOALS,
+  type GoalData,
   type GoalWeekAllocationData,
   type GoalWeekPlanChoiceData,
   type GoalWeekPlanData,
@@ -27,7 +29,7 @@ import {
   SESSIONS,
   type SessionData,
 } from "./backup/registry.ts";
-import { createGoal, setGoalStatus } from "./local/goals.ts";
+import { createGoal, resumeGoal, setGoalStatus } from "./local/goals.ts";
 import { setWeekAllocation } from "./local/goal-plans.ts";
 import { loadInsightRecords } from "./local/insights.ts";
 import { createProject, createTask, updateTask } from "./local/organization.ts";
@@ -450,6 +452,37 @@ describe("5, 6, 17. goal pace, allocations, moves, streaks (T-181 to T-186, T-20
     await waitFor(() => expect(screen.queryByTestId("pace-hidden")).toBeNull());
     expect(paceShown()).toEqual(shown);
     expect(screen.getByTestId("goal-progress").textContent).toMatch(/30 min/);
+  });
+
+  it("resumed with the previous plan, manual amounts that no longer match the goal still show the mismatch and no calculated targets (T-207, T-246)", async () => {
+    let goalId = "";
+    await renderApp(async (s) => {
+      at("2026-11-02T08:00:00Z");
+      goalId = await createGoal(s.db, { name: "Pages", startDate: "2026-11-02", deadline: "2026-11-29", kind: "time", target: 600, workdays: [1, 2, 3, 4, 5] });
+      await setWeekAllocation(s.db, goalId, "2026-11-09", 150, Date.now()); // a manual 150 for the second week
+      at("2026-11-02T20:00:00Z");
+      await recordPastSession(s.db, { date: "2026-11-02", startTime: "06:00", durationMinutes: 500, goalId }); // 500 of 600 in week 1
+      at("2026-11-03T08:00:00Z");
+      await setGoalStatus(s.db, goalId, "paused");
+      at("2026-11-09T08:00:00Z");
+      await resumeGoal(s.db, goalId, "continue", PRODUCT_REGISTRY, Date.now());
+    });
+    await goTo("Goals");
+    fireEvent.click(await screen.findByRole("button", { name: "Open goal: Pages" }));
+    // 600 − 500 − 150 leaves −50 to share: a mismatch, as without the continued amount.
+    const warning = await screen.findByTestId("mismatch-warning");
+    expect(warning.textContent).toMatch(/50/);
+    expect(screen.getByTestId("today-target").textContent).toBe("No target while weekly amounts do not match");
+    expect(screen.getByTestId("week-target").textContent).toBe("No target");
+    expect(screen.getByTestId("month-target").textContent).toBe("No target");
+    // The continued amount and the manual amount are kept, not changed to make them fit.
+    const goalNow = (await services.db.records.get([GOALS, goalId]))!.data as GoalData;
+    expect(goalNow.continuedAllocation).toEqual({ from: "2026-11-09", amount: { num: 150, den: 1 } });
+    const allocation = (await services.db.records.where("type").equals(GOAL_WEEK_ALLOCATIONS).toArray()).map((r) => r.data as GoalWeekAllocationData);
+    expect(allocation.map((a) => [a.weekStart, a.revisions.at(-1)!.amount])).toEqual([["2026-11-09", 150]]);
+    // The plan recorded from the resume date is the mismatch, so no daily target is derived from it.
+    const plan = (await services.db.records.get([GOAL_WEEK_PLANS, weekPlanId(goalId, "2026-11-09")]))!.data as GoalWeekPlanData;
+    expect(plan.dates.map((d) => [d.from, d.entries[0]!.segment.state])).toEqual([["2026-11-09", "mismatch"]]);
   });
 
   it("abandoning hides the pace, keeps progress and history, is never shown as completed, and reopening brings the pace back (T-243)", async () => {

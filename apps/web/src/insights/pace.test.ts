@@ -52,6 +52,28 @@ const target = (input: PaceInput, day: string) => {
 describe("15. weekly allocations (T-206)", () => {
   const base = { goal: goal(), plan: planOn(goal(), MON), weekStart: 1 };
 
+  it("a continued weekly amount (T-246) does not bypass the mismatch check of T-207; manual amounts stay as they are", () => {
+    const continued = { ...base, goal: goal({ continuedAllocation: { from: "2026-11-09", amount: { num: 150, den: 1 } } }) };
+    // Target 600, 500 recorded before the current week, and a manual 150 for it: the amount to share is -50.
+    const manual = new Map([["2026-11-09", 150]]);
+    const r = computeAllocations({ ...continued, today: "2026-11-09", progressBeforeCurrentWeek: 500, manual });
+    expect(r).toMatchObject({ kind: "mismatch", share: -50, discrepancy: 50 });
+    if (r.kind !== "mismatch") return;
+    expect(r.weeks.map((w) => [w.weekStart, w.allocation && toNumber(w.allocation)])).toEqual([
+      ["2026-11-09", 150], // the manual amount, unchanged
+      ["2026-11-16", null], // no amount for automatic weeks during a mismatch
+      ["2026-11-23", null],
+    ]);
+    // A positive amount no automatic week can take is a mismatch too.
+    const allManual = new Map([["2026-11-09", 100], ["2026-11-16", 100], ["2026-11-23", 100]]);
+    expect(computeAllocations({ ...continued, today: "2026-11-09", progressBeforeCurrentWeek: 0, manual: allManual })).toMatchObject({ kind: "mismatch", share: 300, discrepancy: 300 });
+    // Without a mismatch the continued amount still applies to every automatic week, whatever the share.
+    const ok = computeAllocations({ ...continued, today: "2026-11-09", progressBeforeCurrentWeek: 0, manual: new Map([["2026-11-09", 100]]) });
+    expect(ok.kind).toBe("allocated");
+    if (ok.kind !== "allocated") return;
+    expect(ok.weeks.map((w) => toNumber(w.allocation!))).toEqual([100, 150, 150]);
+  });
+
   it("600 over four equal weeks of five workdays starts at 150 each", () => {
     const r = computeAllocations({ ...base, today: MON, progressBeforeCurrentWeek: 0, manual: new Map() });
     expect(r.kind).toBe("allocated");
