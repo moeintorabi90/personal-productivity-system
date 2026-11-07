@@ -6,6 +6,7 @@ import { FROZEN_SYNC_ENABLED } from "./flags.ts";
 import { createTranslator, directionOf, type Translate } from "./i18n/index.ts";
 import { LocalDb } from "./local/db.ts";
 import { loadEffectivePreferences } from "./local/settings.ts";
+import { StorageWatch } from "./local/storage-watch.ts";
 import { ApiClient } from "./sync/api-client.ts";
 import { SyncEngine, type SyncStatus } from "./sync/sync-engine.ts";
 
@@ -15,12 +16,15 @@ export interface AppServices {
   engine: SyncEngine;
   /** False in v1 (D-016): the frozen sync engine is never started and its screens are hidden. */
   syncEnabled: boolean;
+  /** Saves waiting on another copy of the app on this device (Stage 6 Android check). */
+  storage: StorageWatch;
 }
 
 export function createServices(options: { dbName?: string; apiBaseUrl?: string; syncEnabled?: boolean } = {}): AppServices {
   const db = new LocalDb(options.dbName);
+  const storage = new StorageWatch(db); // before the first query, so it sees every transaction
   const api = new ApiClient(options.apiBaseUrl ?? import.meta.env.VITE_API_BASE_URL ?? "");
-  return { db, api, engine: new SyncEngine(db, api), syncEnabled: options.syncEnabled ?? FROZEN_SYNC_ENABLED };
+  return { db, api, engine: new SyncEngine(db, api), syncEnabled: options.syncEnabled ?? FROZEN_SYNC_ENABLED, storage };
 }
 
 const ServicesContext = createContext<AppServices | null>(null);
@@ -60,6 +64,12 @@ export function useT(): Translate {
 export function useSyncStatus(): SyncStatus {
   const { engine } = useServices();
   return useSyncExternalStore(engine.subscribe, engine.getStatus, engine.getStatus);
+}
+
+/** True while a save has waited too long because another copy of the app holds the data. */
+export function useStorageStalled(): boolean {
+  const { storage } = useServices();
+  return useSyncExternalStore(storage.subscribe, storage.isStalled, storage.isStalled);
 }
 
 export function useOnline(): boolean {

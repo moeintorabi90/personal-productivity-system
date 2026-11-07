@@ -1,5 +1,5 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useLastBackupAt, useOnline, usePreferences, useServices, useSyncStatus, useT } from "../app-context.tsx";
+import { useLastBackupAt, useOnline, usePreferences, useServices, useStorageStalled, useSyncStatus, useT } from "../app-context.tsx";
 import { formatDateTime, type Translate } from "../i18n/index.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -79,8 +79,28 @@ function FrozenSyncStatus() {
   );
 }
 
-/** Explains what offline means for the user's data. */
+/** Explains what offline means for the user's data, and warns when saves are held up. */
 export function ConnectivityNotice() {
+  return (
+    <>
+      <StorageStallNotice />
+      <NetworkNotice />
+    </>
+  );
+}
+
+function StorageStallNotice() {
+  const t = useT();
+  const stalled = useStorageStalled();
+  if (!stalled) return null;
+  return (
+    <p className="notice notice-warn" role="alert" data-testid="storage-stalled">
+      {t("storage.stalled")}
+    </p>
+  );
+}
+
+function NetworkNotice() {
   const t = useT();
   const online = useOnline();
   const { syncEnabled } = useServices();

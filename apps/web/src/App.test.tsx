@@ -27,8 +27,10 @@ function setOnline(value: boolean) {
   window.dispatchEvent(new Event(value ? "online" : "offline"));
 }
 
-function renderApp(options: { syncEnabled?: boolean } = {}) {
-  services = createServices({ dbName: `app-test-${++dbCounter}`, apiBaseUrl: "http://127.0.0.1:9", ...options });
+function renderApp(options: { syncEnabled?: boolean; storageStalled?: () => boolean } = {}) {
+  const { storageStalled, ...serviceOptions } = options;
+  services = createServices({ dbName: `app-test-${++dbCounter}`, apiBaseUrl: "http://127.0.0.1:9", ...serviceOptions });
+  if (storageStalled) services.storage = Object.assign(Object.create(services.storage), { isStalled: storageStalled, subscribe: () => () => {} });
   render(
     <ServicesProvider services={services}>
       <App />
@@ -85,6 +87,17 @@ describe("v1 app shell (sync frozen and hidden, D-016)", () => {
     expect(screen.getByTestId("install-guide").textContent).toContain("Add to Home Screen");
     expect(start).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("warns when saves wait on another copy of the app on this device, and only then", async () => {
+    renderApp({ storageStalled: () => true });
+    expect((await screen.findByTestId("storage-stalled")).textContent).toMatch(/another copy of this app/);
+    expect(screen.getByTestId("storage-stalled").getAttribute("role")).toBe("alert");
+    cleanup();
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    expect(screen.queryByTestId("storage-stalled")).toBeNull();
+    expect(services.storage.isStalled()).toBe(false);
   });
 
   it("the frozen sync screens appear only when the build flag is on", async () => {

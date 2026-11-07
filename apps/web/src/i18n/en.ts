@@ -250,6 +250,8 @@ export const en = {
   "backup.export.share": "Share or save…",
   "backup.export.working": "Creating and checking the backup…",
   "backup.export.done": "Backup “{file}” was created and checked. Keep it somewhere safe.",
+  "storage.stalled":
+    "Saving is waiting: another copy of this app seems to be open on this device (a browser tab or the installed app) and is holding your data. Close the other copies; your change is saved as soon as the data is free. If this message stays, close the browser completely and open the app again, then check that your last change is there.",
   "backup.export.cancelled": "Sharing was cancelled; the backup was not saved.",
   "backup.export.shareRefused":
     "This browser would not share the file, so backup “{file}” was saved as a download instead (usually the Download folder). It was created and checked. Keep it somewhere safe.",
