@@ -202,16 +202,23 @@ function ExportPanel() {
       return;
     }
     try {
+      let done = t("backup.export.done", { file: file.fileName });
       if (deliver === "share") {
-        if (!(await shareBackup(file.fileName, file.text))) {
+        const outcome = await shareBackup(file.fileName, file.text);
+        if (outcome === "cancelled") {
           setMessage({ tone: "info", text: t("backup.export.cancelled") });
           return;
+        }
+        if (outcome === "refused") {
+          // BACKUP_FORMAT "Export flow": a download is the fallback for the share sheet.
+          downloadBackup(file.fileName, file.text);
+          done = t("backup.export.shareRefused", { file: file.fileName });
         }
       } else {
         downloadBackup(file.fileName, file.text);
       }
       await markBackupExported(db);
-      setMessage({ tone: "ok", text: t("backup.export.done", { file: file.fileName }) });
+      setMessage({ tone: "ok", text: done });
       // Each export decides on its own (D-014): the next one starts unprotected again.
       setProtect(false);
       setPassword("");

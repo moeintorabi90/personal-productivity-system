@@ -385,6 +385,7 @@ Everything in this section is the final v1 behavior, except items explicitly mar
 - Settings → Backup → "Export backup". Shows what will be included (counts) and the last export date.
 - Delivery:
   - Android and iPhone: the system share sheet (Web Share API with files) to save to Files, Drive, etc.; a download as fallback.
+    - The fallback also applies when the browser refuses to share the file: Android Chrome refuses files named `.json` (`NotAllowedError`) although `canShare` accepts them (seen on Android Chrome, 2026-11-07). The app then saves the same file, with the same name, as a download and says so. The file is not renamed to a type Android would share (such as `.txt`), because the name and extension above are part of the format and import pickers filter on `.json`.
   - Windows: a save dialog (File System Access API in Chromium browsers) or a normal download.
 - After export, the app records the time and shows "Last backup: N days ago". A gentle reminder after a user-chosen interval is a proposal only (not decided; no nagging by default). Backups matter on every platform because local data can be lost (ARCHITECTURE, "Platform installation, updates, and storage"), and especially on iPhone.
 

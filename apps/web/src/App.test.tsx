@@ -179,6 +179,43 @@ describe("Backup screen (D-014, D-015, D-017)", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   }, 30_000);
 
+  it("Share or save: a file the browser refuses to share is saved as a download instead; a cancelled share saves nothing", async () => {
+    // Android Chrome: canShare says yes for a .json file, share() then rejects it with NotAllowedError.
+    const share = vi.fn(async (_data: ShareData) => {
+      throw new DOMException("Permission denied", "NotAllowedError");
+    });
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: () => true });
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+    try {
+      renderApp();
+      await goTo("Backup");
+      fireEvent.click(await screen.findByRole("button", { name: "Share or save…" }));
+      await waitFor(() => expect(screen.getByTestId("export-message").textContent).toMatch(/saved as a download instead/), {
+        timeout: 20_000,
+      });
+      expect(share).toHaveBeenCalledTimes(1);
+      const shared = share.mock.calls[0]![0].files![0]!;
+      expect(downloads).toHaveLength(1);
+      expect(downloads[0]!.name).toBe(shared.name);
+      expect(downloads[0]!.name).toMatch(/^pps-backup-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
+      expect(JSON.parse(await downloads[0]!.blob.text()).format).toBe("pps-backup");
+      expect((await screen.findByTestId("last-backup")).textContent).toBe("Last backup: today");
+
+      share.mockImplementationOnce(async () => {
+        throw new DOMException("Share canceled", "AbortError");
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Share or save…" }));
+      await waitFor(() => expect(screen.getByTestId("export-message").textContent).toBe("Sharing was cancelled; the backup was not saved."), {
+        timeout: 20_000,
+      });
+      expect(downloads).toHaveLength(1);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      delete (navigator as { canShare?: unknown }).canShare;
+      delete (navigator as { share?: unknown }).share;
+    }
+  }, 45_000);
+
   it("import shows a preview; newer shared preferences apply only after confirmation; display settings never change by default", async () => {
     const other = new LocalDb(`other-${++dbCounter}`);
     await other.meta.put({ key: "device", value: { id: crypto.randomUUID(), name: "Phone" } });

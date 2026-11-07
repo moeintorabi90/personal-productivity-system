@@ -251,6 +251,8 @@ export const en = {
   "backup.export.working": "Creating and checking the backup…",
   "backup.export.done": "Backup “{file}” was created and checked. Keep it somewhere safe.",
   "backup.export.cancelled": "Sharing was cancelled; the backup was not saved.",
+  "backup.export.shareRefused":
+    "This browser would not share the file, so backup “{file}” was saved as a download instead (usually the Download folder). It was created and checked. Keep it somewhere safe.",
   "backup.import.title": "Import a backup",
   "backup.import.choose": "Choose a backup file",
   "backup.import.checking": "Checking the file…",

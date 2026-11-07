@@ -254,6 +254,8 @@ export const fa: Messages = {
   "backup.export.working": "در حال ساخت و بررسی پشتیبان…",
   "backup.export.done": "پشتیبان «{file}» ساخته و بررسی شد. آن را جای امنی نگه دارید.",
   "backup.export.cancelled": "اشتراک‌گذاری لغو شد؛ پشتیبان ذخیره نشد.",
+  "backup.export.shareRefused":
+    "این مرورگر اجازهٔ اشتراک‌گذاری فایل را نداد؛ برای همین پشتیبان «{file}» به‌جای آن دانلود شد (معمولاً در پوشهٔ Download). پشتیبان ساخته و بررسی شد. آن را جای امنی نگه دارید.",
   "backup.import.title": "واردکردن پشتیبان",
   "backup.import.choose": "انتخاب فایل پشتیبان",
   "backup.import.checking": "در حال بررسی فایل…",

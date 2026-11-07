@@ -27,13 +27,22 @@ export function canShareFiles(): boolean {
   }
 }
 
-/** Returns false if the user cancelled the share sheet. */
-export async function shareBackup(fileName: string, text: string): Promise<boolean> {
+/**
+ * "shared": the share sheet took the file. "cancelled": the user closed the sheet.
+ * "refused": the browser would not share it (NotAllowedError), so the caller saves it as a
+ * download instead. Android Chrome refuses every file named `.json` although `canShare`
+ * returns true (seen on Android Chrome); renaming the file is not an option, since the backup
+ * name and its `.json` extension are part of the format (BACKUP_FORMAT.md).
+ */
+export type ShareOutcome = "shared" | "cancelled" | "refused";
+
+export async function shareBackup(fileName: string, text: string): Promise<ShareOutcome> {
   try {
     await navigator.share({ files: [toFile(fileName, text)], title: fileName });
-    return true;
+    return "shared";
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") return false;
+    if (error instanceof DOMException && error.name === "AbortError") return "cancelled";
+    if (error instanceof DOMException && error.name === "NotAllowedError") return "refused";
     throw error;
   }
 }
