@@ -91,7 +91,7 @@ describe("v1 app shell (sync frozen and hidden, D-016)", () => {
 
   it("warns when saves wait on another copy of the app on this device, and only then", async () => {
     renderApp({ storageStalled: () => true });
-    expect((await screen.findByTestId("storage-stalled")).textContent).toMatch(/another copy of this app/);
+    expect((await screen.findByTestId("storage-stalled")).textContent).toMatch(/taking longer than usual.*open more than once on this device/);
     expect(screen.getByTestId("storage-stalled").getAttribute("role")).toBe("alert");
     cleanup();
     renderApp();

@@ -1,7 +1,8 @@
 /**
  * Android device check (Stage 6): a second, frozen copy of the app can hold the data so that saves
- * in the visible copy wait. StorageWatch marks such a wait (only time while visible counts),
- * clears it once the change is saved, and closes an idle connection when the page is frozen.
+ * in the visible copy wait. StorageWatch marks a write that got no answer for 5 s of visible time,
+ * never a read or this copy's own long work, clears the mark when the writes that raised it are
+ * done, and closes an idle connection when the page is frozen.
  */
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
@@ -51,6 +52,19 @@ async function holdMeta(name: string): Promise<() => Promise<void>> {
 }
 
 const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Keeps one Dexie transaction of this copy running (answered requests) until released. */
+function keepBusy(db: LocalDb, mode: "r" | "rw", table: "meta" | "records") {
+  let held = true;
+  const done = db.transaction(mode, db.table(table), async () => {
+    await db.table(table).get("first");
+    while (held) await db.table(table).get("spin");
+  });
+  return async () => {
+    held = false;
+    await done;
+  };
+}
 
 describe("StorageWatch", () => {
   it("marks a save that waits 5 s while visible, and clears the mark once the save is done", async () => {
@@ -111,6 +125,61 @@ describe("StorageWatch", () => {
     }
     await tick();
     expect(changes).toEqual([]);
+  });
+
+  it("a read that waits, even for a long time, never shows the mark", async () => {
+    const { db, watch, changes, advance } = setup();
+    await db.meta.put({ key: "warm", value: 1 });
+    const release = await holdMeta(db.name);
+    const read = db.meta.get("warm"); // waits behind the other connection's write
+    await tick();
+    advance(60_000);
+    watch.check();
+    expect(watch.isStalled()).toBe(false);
+    await release();
+    expect(await read).toEqual({ key: "warm", value: 1 });
+    await tick();
+    expect(changes).toEqual([]);
+  });
+
+  it("this copy's own long work does not show the mark: a long read, a long write that got answers, and a write queued behind them", async () => {
+    const { db, watch, changes, advance } = setup();
+    await db.meta.put({ key: "warm", value: 1 });
+    const releaseRead = keepBusy(db, "r", "records");
+    const releaseWrite = keepBusy(db, "rw", "meta");
+    await tick();
+    const queued = db.meta.put({ key: "queued", value: 1 }); // waits for this copy's running write
+    await tick();
+    advance(60_000);
+    watch.check();
+    expect(watch.isStalled()).toBe(false);
+    await releaseWrite();
+    await queued;
+    await releaseRead();
+    await tick();
+    expect(changes).toEqual([]);
+  });
+
+  it("the mark belongs to the writes that raised it: it clears when they are done although other work is still running", async () => {
+    const { db, watch, advance } = setup();
+    await db.meta.put({ key: "warm", value: 1 });
+    const release = await holdMeta(db.name);
+    const save = db.meta.put({ key: "change", value: 4 });
+    await tick();
+    const releaseRead = keepBusy(db, "r", "records"); // unrelated, keeps running throughout
+    await tick();
+    advance(5_000);
+    watch.check();
+    expect(watch.isStalled()).toBe(true);
+
+    await release();
+    await save;
+    await tick();
+    expect(watch.isStalled()).toBe(false);
+    advance(60_000);
+    watch.check();
+    expect(watch.isStalled()).toBe(false); // the long read never raises it
+    await releaseRead();
   });
 
   it("closes an idle connection when the page is frozen and reopens it on use or resume", async () => {
