@@ -372,6 +372,7 @@ Not covered, or covered only in part:
 - Before the push: the live app returned HTTP 200 and its bundle `index-CKpsO2qS.js` carries the app version `0.7.0` (the Stage 5 release). `git fetch` showed `origin/main` still at `b67d4d6`, so pushing `main` is a fast-forward.
 - Before the push, personal details were removed from the unpushed history at the owner's request (the owner's rule: no personal information in the public repository).
 - `main` pushed to GitHub on 2026-11-09 by the implementer on the owner's instruction; the push starts the GitHub Pages workflow. The deployment's result is checked after the push and recorded separately.
+- After the push (2026-11-09; `main` at `dda28a4`): about two minutes later the live app served a new bundle `index-Cwq9qaAK.js`, the same file name as the local build of this code; it carries the app version `0.8.0` and not `0.7.0`, and includes the save warning added in Stage 6. The app page, manifest, service worker, and bundle returned HTTP 200. The GitHub Actions run itself was not inspected (the GitHub CLI is not installed here).
 
 ## Stage 5 acceptance tests (specified 2026-10-26; implemented 2026-10-29 on `feat/stage-5-sessions-outputs`, see "Stage 5 test report")
 
