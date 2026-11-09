@@ -15,17 +15,20 @@ export function TodayView({ onOpenSettings, onOpenWork }: { onOpenSettings?: () 
   const { ctx, loading, zone } = usePlanning();
   const work = useWorkCtx();
   const today = useToday(zone);
+  // The open session comes right after the page's main heading and date, so headings stay in
+  // order for screen readers (h1 Today, then h2 Current session, then h2 Today's plan).
   return (
-    <>
-    {work.ctx ? <CurrentSessions ctx={work.ctx} /> : null}
     <section className="card" aria-labelledby="today-title">
       <h1 id="today-title">{t("today.title")}</h1>
+      {ctx && today ? (
+        <p className="today-date" data-testid="today-date">
+          {formatLocalDate(today, ctx)}
+        </p>
+      ) : null}
+      {work.ctx ? <CurrentSessions ctx={work.ctx} embedded /> : null}
       {!zone && !loading ? <TimeZonePrompt onOpenSettings={onOpenSettings} /> : null}
       {ctx && today ? (
         <>
-          <p className="today-date" data-testid="today-date">
-            {formatLocalDate(today, ctx)}
-          </p>
           {ctx.capacity === undefined ? <p className="hint">{t("today.capacityInvite")}</p> : null}
           <DayPanel ctx={ctx} plan={dayPlan(ctx, today, NO_FILTER)} heading={t("today.plan")} />
           {onOpenWork ? (
@@ -38,6 +41,5 @@ export function TodayView({ onOpenSettings, onOpenWork }: { onOpenSettings?: () 
         </>
       ) : null}
     </section>
-    </>
   );
 }

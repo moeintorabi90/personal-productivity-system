@@ -1330,6 +1330,24 @@ describe("Stage 5: actual work sessions and outputs (TESTING.md Stage 5 items 1,
 
   const navTo = async (name: string) => fireEvent.click(await within(screen.getByRole("navigation")).findByRole("button", { name }));
 
+  it("Today keeps its headings in order for screen readers: the page title first, then the open session, then the plan", async () => {
+    renderApp();
+    await screen.findByRole("heading", { level: 1, name: "Welcome" });
+    await updateSharedPreferences(services.db, { timeZone: "Asia/Tehran" });
+    await navTo("Work");
+    fireEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await screen.findByTestId("current-session");
+    await navTo("Today");
+    const main = screen.getByRole("main");
+    await within(main).findByRole("heading", { level: 2, name: "Current session" });
+    const headings = within(main)
+      .getAllByRole("heading")
+      .map((h) => `${h.tagName}:${h.textContent}`);
+    expect(headings.slice(0, 3)).toEqual(["H1:Today", "H2:Current session", "H2:Today's plan"]);
+    // Inside the Today card the session has no card frame of its own.
+    expect(screen.getByTestId("current-session").classList.contains("card")).toBe(false);
+  });
+
   it("starts, pauses, resumes, and ends a session with an output and a rating; the recorded session uses the strong color treatment with a label", async () => {
     renderApp();
     await screen.findByRole("heading", { level: 1, name: "Welcome" });

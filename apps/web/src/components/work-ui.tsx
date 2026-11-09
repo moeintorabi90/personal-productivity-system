@@ -367,13 +367,15 @@ function TimeGoalField({ ctx, taskId, value, onChange }: { ctx: WorkCtx; taskId:
 /**
  * The open session(s) on this device with pause, resume, and end (T-092, T-117). Two open sessions
  * can only come from an import: one must be ended or deleted first (T-144, T-152).
+ * `embedded`: shown inside another card (Today), so it has no card frame of its own and its
+ * heading follows that page's main heading.
  */
-export function CurrentSessions({ ctx }: { ctx: WorkCtx }) {
+export function CurrentSessions({ ctx, embedded = false }: { ctx: WorkCtx; embedded?: boolean }) {
   const t = useT();
   const open = openSessions(ctx.work.sessions);
   if (open.length === 0) return null;
   return (
-    <section className="card" aria-labelledby="current-session-title" data-testid="current-session">
+    <section className={embedded ? undefined : "card"} aria-labelledby="current-session-title" data-testid="current-session">
       <h2 id="current-session-title">{t("work.current")}</h2>
       {open.length > 1 ? (
         <p className="notice notice-warn" role="alert" data-testid="two-open">
