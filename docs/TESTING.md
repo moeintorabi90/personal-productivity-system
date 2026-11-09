@@ -367,6 +367,12 @@ Not covered, or covered only in part:
 - Several item 17 and 18 cases (for example a change of week start or workdays, and two contradicting decisions) are tested on the pure functions rather than through the screens.
 - The segment-merge design had not had the independent review that DECISIONS asks for. *(Updated 2026-11-06: Codex's independent review of the segment-merge and derived data design is complete, through the takeover-mark integrity correction `e3849fb`; no code tests were run as part of that review. The manual checks on the owner's devices above stay open.)*
 
+### Stage 6 release (2026-11-09; app 0.8.0)
+
+- Before the push: the live app returned HTTP 200 and its bundle `index-CKpsO2qS.js` carries the app version `0.7.0` (the Stage 5 release). `git fetch` showed `origin/main` still at `b67d4d6`, so pushing `main` is a fast-forward.
+- Before the push, personal details were removed from the unpushed history at the owner's request (the owner's rule: no personal information in the public repository).
+- `main` pushed to GitHub on 2026-11-09 by the implementer on the owner's instruction; the push starts the GitHub Pages workflow. The deployment's result is checked after the push and recorded separately.
+
 ## Stage 5 acceptance tests (specified 2026-10-26; implemented 2026-10-29 on `feat/stage-5-sessions-outputs`, see "Stage 5 test report")
 
 Contract: DECISIONS "Stage 5 decisions" (owner-approved T-091 to T-108, T-117, T-118, T-120 to T-125, T-129 to T-145, T-153 to T-159, T-162, T-163, T-165, T-166, T-168, T-169; proposed T-109 to T-116, T-119, T-126 to T-128, T-146 to T-152, T-160, T-161, T-164, T-167); S-1 to S-15 are resolved; the plural-recognition method behind item 6 is the list-based method with no dependency, a derived technical choice reviewed by Codex and not a new owner decision (DECISIONS T-167) (its expected results for singular/plural pairs and for translations and different units are owner-approved, T-168, as is the question for unknown pairs, T-169; the harmless-difference case and which pairs count as confidently recognized are derived; the examples assume the reviewed method knows the listed forms). Fixed dates and zones.
