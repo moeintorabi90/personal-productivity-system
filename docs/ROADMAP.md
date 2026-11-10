@@ -104,7 +104,7 @@ After D-012 (no server in v1), Stage 1 acceptance for v1 is: clean setup, offlin
 
 ## Stage 8 — Habits, daily core, accessibility, polish
 
-**Deliverables:** user-defined habits and occurrences, completion records, minimum-viable-day support, responsive and accessible UI, localization parity. The app-use streak moved to Stage 6 (derived from T-202).
+**Deliverables:** user-defined habits and occurrences, completion records, minimum-viable-day support, responsive and accessible UI, localization parity. The app-use streak moved to Stage 6 (derived from T-202). **Owner-requested candidate scope, details not yet decided (see DECISIONS, "Consequential open decisions", item 10):** routines whose due time matters in both directions (too early and too late), with intervals from minutes and hours through days, weeks, and calendar months, and a proposed default that the next due time follows the actual completion; finite courses bounded by an end date or occurrence count; quick completion without a work session and optional calendar reservation for time-consuming routines; due and overdue routines shown when the app opens. A reminder on the due day while the app is closed remains a separate platform and architecture question.
 
 **Acceptance:** planned occurrences and completions are separate; no personal routines hard-coded; essential workflows pass on Windows/Android and iPhone support status is documented; RTL/LTR/theme/accessibility checks pass.
 
